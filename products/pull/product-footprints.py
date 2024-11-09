@@ -1,6 +1,7 @@
-import requests, json, csv, logging, multiprocessing, yaml, time, os
+import requests, json, csv, logging, multiprocessing, yaml, time, os, re
 from functools import partial
 from myconfig import email, password
+import pandas as pd
 
 states = ['US-GA', 'US-ME', 'US-OR']
 # states = [
@@ -176,6 +177,59 @@ def write_epd_to_csv(epds: list, state: str):
     write_csv_cement(cement_list)
     write_csv_others(state, others_list)
 
+def split_csv_on_states(containing_dir):
+    
+    file_name = "Cement.csv"
+    file_path = os.path.join(containing_dir, file_name)
+    
+    # Create an output directory if it doesn't exist
+    output_dir = os.path.join(containing_dir, "US") 
+    os.makedirs(output_dir, exist_ok=True)
+    
+    df = pd.read_csv(file_path)
+    
+    # regex pattern to check state pin combo
+    pattern = r"^([A-Z]{2})(?:\s+\d{5})?$"
+    
+    # Dictionary to hold file writers for each state
+    state_writers = {}
+    
+    for row_num, row in df.iterrows():
+        address_split = row["Address"].split(",")
+        if address_split[-1].strip() in ("USA", "United States"):
+            state_pin = address_split[-2].strip()
+        else:
+            state_pin = address_split[-1].strip()
+
+        match = re.match(pattern, state_pin)
+        if match:
+            state = match.group(1)  # Extract the state code
+            
+            # Check if we already have a CSV writer for this state
+            if state not in state_writers:
+                # create a new folder
+                state_file_dir = os.path.join(output_dir, state)
+                os.makedirs(state_file_dir, exist_ok=True)
+                # Open a new CSV file for this state
+                state_file_path = os.path.join(state_file_dir, f"Cement-{state}.csv")
+                state_file = open(state_file_path, "w", newline="")
+                writer = csv.DictWriter(state_file, fieldnames=df.columns)
+                writer.writeheader()
+                state_writers[state] = writer
+            
+            # Write the row to the respective state's CSV file
+            state_writers[state].writerow(row.to_dict())
+            
+        else:
+            print(f"Couldn't find state at {row_num} - {row}")
+
+    # Close all the open state CSV files
+    for state, writer in state_writers.items():
+        writer.writerows([])  # Flush remaining rows
+        writer = writer  # Ensure closing
+    
+    
+
 if __name__ == "__main__":
     authorization = get_auth()
     if authorization:
@@ -184,3 +238,8 @@ if __name__ == "__main__":
             save_json_to_yaml(state, results)  # Save full JSON response to YAML
             mapped_results = [map_response(epd) for epd in results]
             write_epd_to_csv(mapped_results, state)  # Write the mapped response to CSV
+    
+    # path to cement.csv containing directory
+    cement_file_dir = ".\cement"
+    split_csv_on_states(cement_file_dir)
+    
