@@ -63,25 +63,28 @@
       width: 100% !important;
       height: 100% !important;
     }
-    
+
     #chart2 svg, #sankey svg {
       width: 100% !important;
       height: 100% !important;
       max-width: 100%;
       max-height: 100%;
     }
-    
+
     /* Ensure charts scale in hero mode */
     #widgetHero #chart2, #widgetHero #sankey {
-      width: calc(100vw - 42px) !important; /* Account for 60px left - 18px right = 42px difference */
+      width: 100vw !important;
       height: 100vh !important;
-      padding: 20px;
+      padding: 10px;
       box-sizing: border-box;
+      overflow: visible;
     }
-    
+
     #widgetHero #chart2 svg, #widgetHero #sankey svg {
-      width: calc(100vw - 82px) !important; /* 42px padding difference + 40px internal padding */
-      height: calc(100vh - 40px) !important;
+      width: calc(100vw - 20px) !important;
+      height: calc(100vh - 20px) !important;
+      max-width: calc(100vw - 20px) !important;
+      max-height: calc(100vh - 20px) !important;
     }
     
     #table {

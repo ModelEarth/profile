@@ -19,7 +19,7 @@
 
   </div>
 
-  <div id="container" style="height: 100%"></div>
+  <div id="container" style="height: calc(100vh - 60px); width: 100%"></div>
 
   <script type="text/javascript" src="https://fastly.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
   <script type="text/javascript" src="https://fastly.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
@@ -44,60 +44,96 @@
 
   <script type="text/javascript">
     var dom = document.getElementById('container');
-    var myChart = echarts.init(dom, null, {
-      renderer: 'canvas',
-      useDirtyRect: false
-    });
-    var app = {};
-    var ROOT_PATH = 'https://echarts.apache.org/examples';
-    var option;
-    var datasource = ROOT_PATH + '/data/asset/data/energy.json';
-    datasource = "energy.json";
+    var myChart = echarts.init(dom);
+    var isFullscreen = false;
 
-    // Python to generate resides in model.earth/io/charts/sankey/
-    // Instead, used javascript to load data from files in:
-    // https://github.com/ModelEarth/profile/tree/main/impacts/
-    // Copy of /io/charts/sankey/data/IO.js
-    // Removed var iojson = 
-    // Renamed to IO.json
-    datasource = "IO.json";
-
-    myChart.showLoading();
-$.get(datasource, function (data) {
-  myChart.hideLoading();
-  myChart.setOption(
-    (option = {
-      title: {
-        text: 'Node Align Right'
-      },
-      tooltip: {
-        trigger: 'item',
-        triggerOn: 'mousemove'
-      },
-      series: [
-        {
-          type: 'sankey',
-          emphasis: {
-            focus: 'adjacency'
+    $.get("IO.json", function (data) {
+      function getChartOption() {
+        return {
+          title: {
+            text: 'Node Align Left'
           },
-          nodeAlign: 'left',
-          data: data.nodes,
-          links: data.links,
-          lineStyle: {
-            color: 'source',
-            curveness: 0.5
-          }
-        }
-      ]
-    })
-  );
-});
+          tooltip: {
+            trigger: 'item',
+            triggerOn: 'mousemove'
+          },
+          toolbox: {
+            feature: {
+              myFullscreen: {
+                show: true,
+                title: isFullscreen ? 'Exit Fullscreen' : 'Fullscreen',
+                icon: 'path://M128 320v128h128v-32h-96v-96h-32zM352 320h-32v96h-96v32h128v-128zM128 192h32v-96h96v-32h-128v128zM448 192v-128h-128v32h96v96h32z',
+                onclick: function() {
+                  const container = document.getElementById('container');
+                  if (!isFullscreen) {
+                    if (container.requestFullscreen) {
+                      container.requestFullscreen();
+                    } else if (container.webkitRequestFullscreen) {
+                      container.webkitRequestFullscreen();
+                    } else if (container.msRequestFullscreen) {
+                      container.msRequestFullscreen();
+                    }
+                  } else {
+                    if (document.exitFullscreen) {
+                      document.exitFullscreen();
+                    } else if (document.webkitExitFullscreen) {
+                      document.webkitExitFullscreen();
+                    } else if (document.msExitFullscreen) {
+                      document.msExitFullscreen();
+                    }
+                  }
+                }
+              },
+              restore: { show: true, title: 'Reset' },
+              saveAsImage: { show: true, title: 'Save as Image' }
+            },
+            right: 10,
+            top: 10
+          },
+          series: [{
+            type: 'sankey',
+            nodeAlign: 'left',
+            data: data.nodes,
+            links: data.links,
+            emphasis: { focus: 'adjacency' },
+            lineStyle: {
+              color: 'source',
+              curveness: 0.5
+            },
+            label: {
+              show: isFullscreen,
+              position: 'right',
+              fontSize: 11,
+              color: '#333',
+              formatter: '{b}'
+            },
+            left: isFullscreen ? '0.5%' : '1%',
+            right: isFullscreen ? '12%' : '1%',
+            top: isFullscreen ? '0.5%' : '1%',
+            bottom: isFullscreen ? '0.5%' : '1%',
+            nodeGap: 8,
+            nodeWidth: 20,
+            layoutIterations: 32
+          }]
+        };
+      }
 
-    if (option && typeof option === 'object') {
-      myChart.setOption(option);
-    }
+      myChart.setOption(getChartOption());
+      myChart.resize();
 
-    window.addEventListener('resize', myChart.resize);
+      // Listen for fullscreen changes
+      function onFullscreenChange() {
+        isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement);
+        myChart.setOption(getChartOption());
+        setTimeout(() => myChart.resize(), 100);
+      }
+
+      document.addEventListener('fullscreenchange', onFullscreenChange);
+      document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+      document.addEventListener('msfullscreenchange', onFullscreenChange);
+    });
+
+    window.addEventListener('resize', () => myChart.resize());
   </script>
 
 </body>
