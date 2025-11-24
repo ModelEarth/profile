@@ -1,12 +1,23 @@
 // Displays a label for food nutrition or product impact.
 // profileObject is built by createProfileObject() in layout-.js template.
+import { MAIN_CATEGORY_MAP, categoryForFolder } from "./product-categories.js";
+import { formatYamlLabel } from "./yaml-label.js";
 
 let menuItems = []; // { profileObject, quantity }
 let aggregateProfile = {};
+
+// Load js-yaml if missing
+if (typeof jsyaml === "undefined") {
+    const s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/npm/js-yaml@4/dist/js-yaml.min.js";
+    document.head.appendChild(s);
+}
+
 let searchResults = []; // Store current search results
 let hasSampleItem = false; // Track if sample item is present
 
 document.addEventListener("DOMContentLoaded", loadMenu);
+
 
 function loadMenu() {
     let hash = getUrlHash();
@@ -16,78 +27,119 @@ function loadMenu() {
     const menuContainer = document.getElementById("menu-container");
     const header = document.getElementById("page-header");
 
+    // Critical fix: DOM not ready when this runs on model.earth
+    if (!header) {
+        setTimeout(loadMenu, 100);
+        return;
+    }
+
     if (hash.layout == "product") {
         header.textContent = "Product Layout";
         searchDiv.style.display = "none";
         searchResultsContainer.style.display = "none";
         menuContainer.style.display = "none";
         loadProductList();
-    } else {
-        addUSDASearchBar();
-        loadSampleFood();
-        displayInitialFoodItems();
+        return;
     }
+
+    addUSDASearchBar();
+    loadSampleFood();
+    displayInitialFoodItems();
 }
 
-function loadProductList() {
-    const csvUrl = "https://raw.githubusercontent.com/Sirishaupadhyayula/products-data/refs/heads/main/IN.csv";
+
+const API_BASE = "https://api.github.com/repos/ModelEarth/products-data/contents";
+
+async function loadProductList() {
     const container = document.getElementById("product-container");
+    if (!container) return;
 
-    if (container) {
-        container.innerHTML = "<h3>Loading products...</h3>";
+    container.innerHTML = "<h3>Loading regions...</h3>";
 
-        fetch(csvUrl)
-            .then(response => response.text())
-            .then(csvText => {
-                const lines = csvText.split("\n");
-                const headers = parseCSVLine(lines[0]);
+    const regions = await fetchJSON(API_BASE);
+    container.innerHTML = "";
 
-                container.innerHTML = "<h3>Product List:</h3>";
-
-                const table = document.createElement("table");
-                table.style.width = "100%";
-                table.style.borderCollapse = "collapse";
-
-                const headerRow = document.createElement("tr");
-                headers.forEach(header => {
-                    const th = document.createElement("th");
-                    th.textContent = header;
-                    headerRow.appendChild(th);
-                });
-                table.appendChild(headerRow);
-
-                for (let i = 1; i < lines.length; i++) {
-                    if (lines[i].trim()) {
-                        const values = parseCSVLine(lines[i]);
-                        const row = document.createElement("tr");
-
-                        values.forEach(value => {
-                            const td = document.createElement("td");
-                            td.textContent = value;
-                            row.appendChild(td);
-                        });
-
-                        table.appendChild(row);
-                    }
-                }
-
-                container.appendChild(table);
-            })
-            .catch(error => {
-                console.log("Error fetching products CSV:", error);
-                container.innerHTML = "<p>Error loading products. Please try again later.</p>";
-            });
-    }
-}
-
-function parseCSVLine(line) {
-    // This regex splits on commas not inside quotes
-    const regex = /,(?=(?:[^"]*"[^"]*")*[^"]*$)/;
-    return line.split(regex).map(field => {
-        // Remove surrounding quotes and trim whitespace
-        return field.replace(/^"(.*)"$/, '$1').trim();
+    regions.filter(x => x.type === "dir").forEach(region => {
+        const div = document.createElement("div");
+        div.classList.add("region-row");
+        div.textContent = region.name;
+        div.onclick = () => loadCategories(region.name);
+        container.appendChild(div);
     });
 }
+
+async function loadCategories(region) {
+    const container = document.getElementById("product-container");
+    container.innerHTML = `<h3>${region}</h3>`;
+
+    const categories = await fetchJSON(`${API_BASE}/${region}`);
+
+    categories.filter(x => x.type === "dir").forEach(cat => {
+        const div = document.createElement("div");
+        div.classList.add("category-row");
+        div.textContent = cat.name;
+        div.onclick = () => loadItems(region, cat.name);
+        container.appendChild(div);
+    });
+}
+
+async function loadItems(region, category) {
+    const container = document.getElementById("product-container");
+    container.innerHTML = `<h3>${region} / ${category}</h3>`;
+
+    const files = await fetchJSON(`${API_BASE}/${region}/${category}`);
+
+    files.filter(x => x.type === "file" && x.name.endsWith(".yaml")).forEach(file => {
+        const row = document.createElement("div");
+        row.classList.add("file-row");
+        row.textContent = file.name.replace(".yaml", "");
+        row.onclick = () => loadYAMLProfile(region, category, file);
+        container.appendChild(row);
+    });
+}
+
+// async function loadYAMLProfile(region, category, file) {
+//     const yamlText = await fetchText(file.download_url);
+//     const data = jsyaml.load(yamlText);
+
+//     const profile = createProfileObject(data);
+
+//     const container = document.getElementById("product-label");
+//     container.innerHTML = "";
+//     container.appendChild(renderNutritionLabel(profile, 1, false));
+// }
+
+async function loadYAMLProfile(region, category, file) {
+    const yamlText = await fetchText(file.download_url);
+    const data = jsyaml.load(yamlText);
+
+    const profile = createProfileObject(data);
+
+    const container = document.getElementById("product-label");
+    container.innerHTML = "";
+
+    // FULL YAML FIELD VIEW (PRODUCT PARSER)
+    const yamlDiv = document.createElement("div");
+    yamlDiv.id = "product-yaml-full";
+    yamlDiv.style.marginBottom = "20px";
+    formatYamlLabel(data, yamlDiv);
+    container.appendChild(yamlDiv);
+
+    // EXISTING PRODUCT LABEL
+    container.appendChild(renderNutritionLabel(profile, 1, false));
+}
+
+
+
+async function fetchJSON(url) {
+    const r = await fetch(url);
+    return r.json();
+}
+async function fetchText(url) {
+    const r = await fetch(url);
+    return r.text();
+}
+
 
 function loadSampleFood() {
     // Add a sample food item (apple) to show the user how it works

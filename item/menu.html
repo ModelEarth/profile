@@ -13,7 +13,9 @@
 <script type="text/javascript" src="../../localsite/js/localsite.js?showheader=true"></script>
 
 <link type="text/css" rel="stylesheet" href="css/label.css" />
-<script type="text/javascript" src="js/label.js"></script>
+<!-- <script type="text/javascript" src="js/label.js"></script> -->
+<script type="module" src="js/label.js"></script>
+
 <script>
 document.addEventListener('hashChangeEvent', hashChangedMenu, false);
 function hashChangedMenu() {
@@ -62,6 +64,7 @@ loadMarkdown("README.md", "readmeDiv", "_parent");
     <div id="search-results-container"></div>
     <div id="menu-container"></div>
     <div id="product-container"></div>
+    <div id="product-label"></div>
   </div>
 
 </div>
