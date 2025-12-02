@@ -29,7 +29,7 @@
 .quantity-controls input {
   width: 40px;
   text-align: center;
-  margin: 0 5px;
+  font-size: 0.9em;
 }
 
 .item-name {
@@ -140,19 +140,25 @@ input[type=number]::-webkit-outer-spin-button {
 }
 
 .menu-label {
+  flex: 0 1 48%;          /* two per row */
+  min-width: 620px;       /* gives space for long names */
+  max-width: 680px;       /* keeps layout clean */
+  box-sizing: border-box;
+  margin: 10px;
   position: relative;
-  margin: 12px 0;
-  padding: 0;
-  border: none;
-  display: block;           /* stack vertically */
-  width: 100%;              /* occupy full row */
-  clear: both;              /* stop float wrapping */
+  z-index: 0;
 }
 
 
 .menu-label h4 {
     margin: 0 0 10px 0;
     color: #333;
+}
+
+
+.menu-label:hover,
+.menu-label .collapsible-header.active {
+  z-index: 2;              
 }
 
 .decrease-qty, .increase-qty {
@@ -247,16 +253,12 @@ input[type=number]::-webkit-outer-spin-button {
 }
 
 .remove-item-btn {
-    background-color: #555;
-    color: white;
-    border: none;
-    padding: 3px 8px;
-    border-radius: 3px;
-    cursor: pointer;
-    font-size: 0.8em;
-    top: 5px;
-    right: 5px;
-    z-index: 10;
+  background-color: #555;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  padding: 3px 6px;
+  cursor: pointer;
 }
 
 .remove-item-btn:hover {
@@ -264,10 +266,12 @@ input[type=number]::-webkit-outer-spin-button {
 }
 
 .menu-label {
-    position: relative;
-    margin: 10px 0;
-    padding-top: 10px;
-    border: none;
+  flex: 1 1 340px;         
+  max-width: 340px;
+  box-sizing: border-box;
+  margin: 10px;             
+  position: relative;
+  z-index: 0;
 }
 
 .quantity-controls {
@@ -296,10 +300,13 @@ input[type=number]::-webkit-outer-spin-button {
 
 /* Container for all menu items */
 .all-menu-items {
-    border: 2px solid #333;
-    padding: 15px;
-    margin: 20px 0;
-    border-radius: 5px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;             
+  justify-content: flex-start;
+  align-items: flex-start;
+  padding: 10px;
+  box-sizing: border-box;
 }
 
 #product-container h3 {
@@ -357,37 +364,33 @@ input[type=number]::-webkit-outer-spin-button {
    Collapsible Menu Enhancements
    ──────────────────────────────── */
    .collapsible-header {
+    background: linear-gradient(180deg, #fafafa 0%, #f1f1f1 100%);
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 14px 20px;
+    font-weight: bold;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: linear-gradient(180deg, #fafafa 0%, #f1f1f1 100%);
-    padding: 14px 28px;             /* increased side padding */
-    margin: 10px 0;
-    cursor: pointer;
-    border: 1px solid #ccc;
-    border-radius: 8px;
-    font-weight: 700;
-    color: #222;
-    transition: all 0.25s ease;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-    min-width: 550px;               /* ✅ increased width */
-    width: 95%;                     /* ✅ nearly full width */
+    width: 100%;
     box-sizing: border-box;
   }
+  
 
   .collapsible-header .header-left {
     flex: 1;
     text-align: left;
-    padding-right: 10px;            /* ✅ space between name and calories */
-    word-break: break-word;         /* ✅ handles long item names nicely */
+    font-size: 0.95em;      /* slightly smaller */
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   
   .collapsible-header .header-right {
     display: flex;
     align-items: center;
-    gap: 14px;
-    font-size: 0.95em;
-    white-space: nowrap;
+    gap: 10px;
   }
   
   .collapsible-header .calories-label {
@@ -410,17 +413,9 @@ input[type=number]::-webkit-outer-spin-button {
   .arrow.rotate {
     transform: rotate(90deg);
   }
-  
   .collapsible-content {
-    border: 1px solid #ddd;
-    border-top: none;
-    border-radius: 0 0 6px 6px;
-    padding: 10px;
-    background-color: #fff;
-    overflow: hidden;
-    max-height: 0;
-    opacity: 0;
-    transition: max-height 0.3s ease, opacity 0.3s ease;
+    position: relative;  
+    z-index: 1;
   }
   
   
@@ -443,4 +438,3 @@ input[type=number]::-webkit-outer-spin-button {
     opacity: 1;
     padding: 10px;
   }
-  

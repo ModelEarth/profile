@@ -62,6 +62,7 @@
     #chart2, #sankey {
       width: 100% !important;
       height: 100% !important;
+      overflow: hidden; /* Prevent artifacts */
     }
     
     #chart2 svg, #sankey svg {
@@ -77,11 +78,14 @@
       height: 100vh !important;
       padding: 20px;
       box-sizing: border-box;
+      overflow: hidden; /* Prevent overflow artifacts */
     }
     
     #widgetHero #chart2 svg, #widgetHero #sankey svg {
-      width: calc(100vw - 82px) !important; /* 42px padding difference + 40px internal padding */
-      height: calc(100vh - 40px) !important;
+      width: 100% !important;
+      height: 100% !important;
+      max-width: 100% !important;
+      max-height: 100% !important;
     }
     
     #table {
@@ -756,7 +760,8 @@
           setTimeout(() => {
             try {
               // Build a mapping from node id -> computed color by matching label text in #chart2
-              const colorMap = {};
+              // Make colorMap global so renderSankeyChart can access it
+              window.sankeyColorMap = {};
               const svg = document.querySelector('#chart2 svg');
               if (svg) {
                 // For each sector id, try to find a text node that matches the sector name and read color
@@ -808,14 +813,14 @@
                             }
                           }
                           if (!color) color = window.getComputedStyle(textEl).fill;
-                          if (color) colorMap[id] = color;
+                          if (color) window.sankeyColorMap[id] = color;
                         }
                 });
               }
 
               // Create a color function that prefers the extracted map, falling back to sharedColorScale
               const inferredColorScale = function(id) {
-                if (colorMap && colorMap[id]) return colorMap[id];
+                if (window.sankeyColorMap && window.sankeyColorMap[id]) return window.sankeyColorMap[id];
                 try { return sharedColorScale(id); } catch (e) { return '#999'; }
               };
 
@@ -826,6 +831,44 @@
               const initialPrefs = window.ChartPreferences ? window.ChartPreferences.load() : { scalingMethod: 'raw', edgeStyle: 'light' };
               initializeSankey(top10Results, top10Indicators, { containerId: '#sankey', scalingMethod: initialPrefs.scalingMethod, edgeStyle: initialPrefs.edgeStyle, themeMode: initialPrefs.themeMode, colorScale: sharedColorScale });
             }
+            
+            // Store Sankey rendering function for later use
+            window.renderSankeyChart = function() {
+              try {
+                const sankeyContainer = document.getElementById('sankey');
+                const sankeyParent = document.getElementById('sankeyParent');
+                
+                // Ensure parent is visible and has dimensions
+                if (sankeyParent) {
+                  sankeyParent.style.display = '';
+                }
+                
+                // Wait for layout to stabilize
+                requestAnimationFrame(() => {
+                  requestAnimationFrame(() => {
+                    if (sankeyContainer && sankeyContainer.offsetWidth > 0 && sankeyContainer.offsetHeight > 0) {
+                      console.log('Rendering Sankey with dimensions:', sankeyContainer.offsetWidth, 'x', sankeyContainer.offsetHeight);
+                      const inferredColorScale = function(id) {
+                        if (window.sankeyColorMap && window.sankeyColorMap[id]) return window.sankeyColorMap[id];
+                        try { return sharedColorScale(id); } catch (e) { return '#999'; }
+                      };
+                      const currentPrefs = window.ChartPreferences ? window.ChartPreferences.load() : { scalingMethod: 'raw', edgeStyle: 'light' };
+                      initializeSankey(top10Results, top10Indicators, { 
+                        containerId: '#sankey', 
+                        scalingMethod: currentPrefs.scalingMethod, 
+                        edgeStyle: currentPrefs.edgeStyle, 
+                        themeMode: currentPrefs.themeMode, 
+                        colorScale: inferredColorScale 
+                      });
+                    } else {
+                      console.warn('Sankey container not ready:', sankeyContainer?.offsetWidth, 'x', sankeyContainer?.offsetHeight);
+                    }
+                  });
+                });
+              } catch (err) {
+                console.error('Error rendering Sankey:', err);
+              }
+            };
           }, 120);
         }
 
@@ -1075,16 +1118,32 @@
 
         const nodes = [];
         const links = [];
+        const originalLinks = []; // Store original values for tooltips
 
         // Add sector nodes with id equal to NAICS (if available) otherwise the sector name
         sectors.forEach((s) => {
           const id = s.metadata ? (s.metadata.NAICS || s.sector) : s.sector;
-          nodes.push({ id: id, name: s.sector, color: colorScale(id), type: 'sector' });
+          nodes.push({ id: id, name: s.sector, color: colorScale(id), type: 'sector', metadata: s.metadata });
         });
 
         // Add indicator nodes with id equal to indicator code
         indicators.forEach((ind) => {
-          nodes.push({ id: ind.code, name: ind.code, color: '#999', type: 'indicator' });
+          // Use color coding based on environmental category
+          let indicatorColor = '#999';
+          const code = ind.code.toLowerCase();
+          if (code.includes('ghg') || code.includes('gcc') || code.includes('co2')) {
+            indicatorColor = '#e74c3c'; // Red for emissions
+          } else if (code.includes('watr') || code.includes('water')) {
+            indicatorColor = '#3498db'; // Blue for water
+          } else if (code.includes('enrg') || code.includes('energy')) {
+            indicatorColor = '#f39c12'; // Orange for energy
+          } else if (code.includes('land')) {
+            indicatorColor = '#27ae60'; // Green for land
+          } else if (code.includes('hazw') || code.includes('waste')) {
+            indicatorColor = '#9b59b6'; // Purple for waste
+          }
+          
+          nodes.push({ id: ind.code, name: ind.name || ind.code, code: ind.code, color: indicatorColor, type: 'indicator' });
         });
 
         // Create links using id strings so the repo sankey (and chord) share semantics
@@ -1094,6 +1153,7 @@
             const val = Math.abs(s[ind.code] || 0);
             if (val > 0) {
               links.push({ source: sourceId, target: ind.code, value: val });
+              originalLinks.push({ source: sourceId, target: ind.code, value: val, originalValue: val });
             }
           });
         });
@@ -1108,7 +1168,43 @@
 
                 const svg = container.append('svg')
                     .attr('width', width)
-                    .attr('height', height);
+                    .attr('height', height)
+                    .attr('viewBox', `0 0 ${width} ${height}`)
+                    .attr('preserveAspectRatio', 'xMidYMid meet')
+                    .style('max-width', '100%')
+                    .style('height', 'auto');
+                    
+                // Add gradient definitions for enhanced visual appeal
+                const defs = svg.append('defs');
+                
+                // Create gradients for each environmental category
+                const gradients = {
+                  emissions: defs.append('linearGradient').attr('id', 'grad-emissions')
+                    .attr('x1', '0%').attr('y1', '0%').attr('x2', '100%').attr('y2', '0%'),
+                  water: defs.append('linearGradient').attr('id', 'grad-water')
+                    .attr('x1', '0%').attr('y1', '0%').attr('x2', '100%').attr('y2', '0%'),
+                  energy: defs.append('linearGradient').attr('id', 'grad-energy')
+                    .attr('x1', '0%').attr('y1', '0%').attr('x2', '100%').attr('y2', '0%'),
+                  land: defs.append('linearGradient').attr('id', 'grad-land')
+                    .attr('x1', '0%').attr('y1', '0%').attr('x2', '100%').attr('y2', '0%'),
+                  waste: defs.append('linearGradient').attr('id', 'grad-waste')
+                    .attr('x1', '0%').attr('y1', '0%').attr('x2', '100%').attr('y2', '0%')
+                };
+                
+                gradients.emissions.append('stop').attr('offset', '0%').attr('stop-color', '#e74c3c').attr('stop-opacity', 0.8);
+                gradients.emissions.append('stop').attr('offset', '100%').attr('stop-color', '#c0392b').attr('stop-opacity', 0.6);
+                
+                gradients.water.append('stop').attr('offset', '0%').attr('stop-color', '#3498db').attr('stop-opacity', 0.8);
+                gradients.water.append('stop').attr('offset', '100%').attr('stop-color', '#2980b9').attr('stop-opacity', 0.6);
+                
+                gradients.energy.append('stop').attr('offset', '0%').attr('stop-color', '#f39c12').attr('stop-opacity', 0.8);
+                gradients.energy.append('stop').attr('offset', '100%').attr('stop-color', '#e67e22').attr('stop-opacity', 0.6);
+                
+                gradients.land.append('stop').attr('offset', '0%').attr('stop-color', '#27ae60').attr('stop-opacity', 0.8);
+                gradients.land.append('stop').attr('offset', '100%').attr('stop-color', '#229954').attr('stop-opacity', 0.6);
+                
+                gradients.waste.append('stop').attr('offset', '0%').attr('stop-color', '#9b59b6').attr('stop-opacity', 0.8);
+                gradients.waste.append('stop').attr('offset', '100%').attr('stop-color', '#8e44ad').attr('stop-opacity', 0.6);
 
         // Build sankeyData using id/name/color/value so it matches the chord data semantics
         const sankeyData = {
@@ -1173,39 +1269,91 @@
         const tooltip = d3.select('#chord-tooltip');
 
         linkG.on('mouseover', function(event, d) {
+          // Find original value before scaling
+          const origLink = originalLinks.find(ol => 
+            ol.source === (d.source.id || d.source) && ol.target === (d.target.id || d.target)
+          );
+          const origValue = origLink ? origLink.originalValue : d.value;
+          
+          // Calculate percentage of total for this source
+          const sourceTotal = links
+            .filter(l => (l.source === d.source.id || l.source === d.source))
+            .reduce((sum, l) => sum + (l.value || 0), 0);
+          const percentage = sourceTotal > 0 ? ((origValue / sourceTotal) * 100).toFixed(1) : 0;
+          
+          // Enhanced tooltip with environmental context
+          let impactType = 'Environmental Impact';
+          const targetCode = (d.target.code || d.target.name || '').toLowerCase();
+          if (targetCode.includes('ghg') || targetCode.includes('gcc')) impactType = '🌡️ GHG Emissions';
+          else if (targetCode.includes('watr')) impactType = '💧 Water Use';
+          else if (targetCode.includes('enrg')) impactType = '⚡ Energy Use';
+          else if (targetCode.includes('land')) impactType = '🌳 Land Use';
+          else if (targetCode.includes('hazw')) impactType = '♻️ Hazardous Waste';
+          
+          // Format value based on magnitude
+          let formattedValue;
+          if (origValue >= 1000000) {
+            formattedValue = (origValue / 1000000).toFixed(2) + 'M';
+          } else if (origValue >= 1000) {
+            formattedValue = (origValue / 1000).toFixed(2) + 'K';
+          } else if (origValue >= 1) {
+            formattedValue = origValue.toFixed(2);
+          } else if (origValue >= 0.01) {
+            formattedValue = origValue.toFixed(4);
+          } else if (origValue > 0) {
+            formattedValue = origValue.toFixed(6);
+          } else {
+            formattedValue = '0';
+          }
+          
           tooltip.style('opacity', 1)
-               .html(`<strong>${d.source.name} → ${d.target.name}</strong><br/>Value: ${d.value.toFixed ? d.value.toFixed(3) : d.value}`);
+               .html(`
+                 <div style="padding: 4px;">
+                   <strong>${d.source.name || d.source.id}</strong> →<br/>
+                   <strong>${d.target.name || d.target.id}</strong><br/>
+                   <hr style="margin: 4px 0; border-color: rgba(255,255,255,0.3)">
+                   ${impactType}<br/>
+                   Value: <strong>${formattedValue}</strong><br/>
+                   ${percentage > 0 ? `Contribution: <strong>${percentage}%</strong>` : ''}
+                 </div>
+               `);
           const [mx, my] = d3.pointer(event, document.body);
           tooltip.style('left', (mx + 12) + 'px')
                .style('top', (my + 12) + 'px');
+          
+          // Highlight effect
+          d3.select(this).select('path')
+            .transition().duration(200)
+            .attr('stroke-opacity', 1)
+            .attr('stroke-width', d => Math.max(2, d.width * 1.3));
         })
         .on('mousemove', function(event) {
           const [mx, my] = d3.pointer(event, document.body);
           tooltip.style('left', (mx + 12) + 'px')
                .style('top', (my + 12) + 'px');
         })
-        .on('mouseleave', function() {
+        .on('mouseleave', function(event, d) {
           tooltip.style('opacity', 0);
+          // Remove highlight
+          d3.select(this).select('path')
+            .transition().duration(200)
+            .attr('stroke-opacity', edgeStyle === 'none' ? 0 : (edgeStyle === 'dark' ? 0.95 : 0.6))
+            .attr('stroke-width', d => Math.max(1, d.width));
         });
 
-                // Add text on the path
-                linkG.append('text')
-                    .attr('x', d => (d.source.x1 + d.target.x0) / 2)
-                    .attr('y', d => (d.y0 + d.y1) / 2)
-                    .attr('dy', '0.35em')
-                    .attr('text-anchor', 'middle')
-                    .style('font-size', '10px')
-                    .text(d => d.value);
+                // Add text on the path (removed - clutters the visualization)
+                // Instead, show values in tooltips
 
                 const nodeG = svg.append('g')
                     .selectAll('g')
                     .data(graph.nodes)
                     .join('g');
 
+                // Add node rectangles with animated entrance
                 nodeG.append('rect')
                     .attr('x', d => d.x0)
                     .attr('y', d => d.y0)
-                    .attr('height', d => Math.max(1, d.y1 - d.y0))
+                    .attr('height', 0) // Start with height 0 for animation
                     .attr('width', d => Math.max(1, d.x1 - d.x0))
                   .attr('fill', d => {
                     if (options && options.colorScale && d.id) return options.colorScale(d.id);
@@ -1216,13 +1364,21 @@
                     if (edgeStyle === 'dark') return d3.rgb(d.color || '#999').darker(2.2);
                     return d3.rgb(d.color || '#999').darker(1.2);
                   })
-                  .attr('stroke-width', edgeStyle === 'none' ? 0 : 1);
+                  .attr('stroke-width', edgeStyle === 'none' ? 0 : 1)
+                  .attr('rx', 2) // Rounded corners
+                  .attr('ry', 2)
+                  .style('cursor', 'pointer')
+                  .transition()
+                  .duration(800)
+                  .attr('height', d => Math.max(1, d.y1 - d.y0))
+                  .attr('y', d => d.y0);
 
         nodeG.append('text')
                   .attr('x', d => d.x0 < width / 2 ? d.x1 + 6 : d.x0 - 6)
                   .attr('y', d => (d.y1 + d.y0) / 2)
                   .attr('dy', '0.35em')
                   .attr('text-anchor', d => d.x0 < width / 2 ? 'start' : 'end')
+                  .attr('opacity', 0) // Start invisible for animation
                   .text(function(d) {
                     // In dark mode, hide numeric-only labels (e.g., NAICS codes)
                     if (themeMode === 'dark') {
@@ -1230,15 +1386,63 @@
                     }
                     return d.name;
                   })
-                  .style('font-size', '11px');
+                  .style('font-size', '11px')
+                  .style('font-weight', d => d.type === 'indicator' ? 'bold' : 'normal')
+                  .transition()
+                  .duration(800)
+                  .delay(400)
+                  .attr('opacity', 1);
 
-        // Node hover tooltip
+        // Node hover tooltip with environmental details
         nodeG.on('mouseover', function(event, d) {
+          // Calculate total inflow and outflow
+          const inflow = graph.links
+            .filter(l => (l.target.id || l.target) === d.id)
+            .reduce((sum, l) => sum + (l.value || 0), 0);
+          const outflow = graph.links
+            .filter(l => (l.source.id || l.source) === d.id)
+            .reduce((sum, l) => sum + (l.value || 0), 0);
+          
+          let typeInfo = d.type === 'sector' ? '🏭 Sector' : '📊 Environmental Indicator';
+          if (d.type === 'indicator') {
+            const code = (d.code || '').toLowerCase();
+            if (code.includes('ghg') || code.includes('gcc')) typeInfo = '🌡️ GHG Emissions Indicator';
+            else if (code.includes('watr')) typeInfo = '💧 Water Use Indicator';
+            else if (code.includes('enrg')) typeInfo = '⚡ Energy Use Indicator';
+            else if (code.includes('land')) typeInfo = '🌳 Land Use Indicator';
+            else if (code.includes('hazw')) typeInfo = '♻️ Waste Generation Indicator';
+          }
+          
+          // Format values based on magnitude
+          const formatValue = (val) => {
+            if (val >= 1000000) return (val / 1000000).toFixed(2) + 'M';
+            if (val >= 1000) return (val / 1000).toFixed(2) + 'K';
+            if (val >= 1) return val.toFixed(2);
+            if (val >= 0.01) return val.toFixed(4);
+            if (val > 0) return val.toFixed(6);
+            return '0';
+          };
+          
           tooltip.style('opacity', 1)
-               .html(`<strong>${d.name}</strong><br/>In: ${d.value ? d.value.toFixed ? d.value.toFixed(3) : d.value : 'N/A'}<br/>Out: ${d.value ? d.value.toFixed ? d.value.toFixed(3) : d.value : 'N/A'}`);
+               .html(`
+                 <div style="padding: 4px;">
+                   <strong>${d.name}</strong><br/>
+                   ${typeInfo}<br/>
+                   ${d.metadata && d.metadata.Description ? `<div style="font-size: 10px; margin-top: 4px;">${d.metadata.Description.substring(0, 100)}...</div>` : ''}
+                   <hr style="margin: 4px 0; border-color: rgba(255,255,255,0.3)">
+                   Total In: <strong>${formatValue(inflow)}</strong><br/>
+                   Total Out: <strong>${formatValue(outflow)}</strong>
+                 </div>
+               `);
           const [mx, my] = d3.pointer(event, document.body);
           tooltip.style('left', (mx + 12) + 'px')
                .style('top', (my + 12) + 'px');
+          
+          // Highlight effect
+          d3.select(this).select('rect')
+            .transition().duration(200)
+            .attr('stroke-width', 3)
+            .attr('filter', 'brightness(1.2)');
         })
         .on('mousemove', function(event) {
           const [mx, my] = d3.pointer(event, document.body);
@@ -1247,6 +1451,11 @@
         })
         .on('mouseleave', function() {
           tooltip.style('opacity', 0);
+          // Remove highlight
+          d3.select(this).select('rect')
+            .transition().duration(200)
+            .attr('stroke-width', edgeStyle === 'none' ? 0 : 1)
+            .attr('filter', 'none');
         });
 
             } catch (err) {
@@ -1324,7 +1533,7 @@ path.chord {
 <div class="content" style="padding:0px">
 
 <!-- Tooltip for chart hover effects -->
-<div id="chord-tooltip" style="position: absolute; background: rgba(0,0,0,0.8); color: white; padding: 8px 12px; border-radius: 4px; font-size: 12px; pointer-events: none; z-index: 1000; opacity: 0; transition: opacity 0.2s;"></div>
+<div id="chord-tooltip" style="position: absolute; background: rgba(0,0,0,0.9); color: white; padding: 10px 14px; border-radius: 6px; font-size: 12px; pointer-events: none; z-index: 1000; opacity: 0; transition: opacity 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); max-width: 300px;"></div>
 
 <!-- Debug output for chart2 data -->
 <div id="chart2-debug">

@@ -18,6 +18,86 @@ let hasSampleItem = false; // Track if sample item is present
 
 document.addEventListener("DOMContentLoaded", loadMenu);
 
+// function loadMenu() {
+//     let hash = getUrlHash();
+
+//     const searchDiv = document.getElementById("usda-search-div");
+//     const searchResultsContainer = document.getElementById("search-results-container");
+//     const menuContainer = document.getElementById("menu-container");
+//     const header = document.getElementById("page-header");
+
+//     if (hash.layout == "product") {
+//         header.textContent = "Product Layout";
+//         searchDiv.style.display = "none";
+//         searchResultsContainer.style.display = "none";
+//         menuContainer.style.display = "none";
+//         loadProductList();
+//     } else {
+//         addUSDASearchBar();
+//         loadSampleFood();
+//         displayInitialFoodItems();
+//     }
+// }
+
+// function loadProductList() {
+//     const csvUrl = "https://raw.githubusercontent.com/Sirishaupadhyayula/products-data/refs/heads/main/IN.csv";
+//     const container = document.getElementById("product-container");
+
+//     if (container) {
+//         container.innerHTML = "<h3>Loading products...</h3>";
+
+//         fetch(csvUrl)
+//             .then(response => response.text())
+//             .then(csvText => {
+//                 const lines = csvText.split("\n");
+//                 const headers = parseCSVLine(lines[0]);
+
+//                 container.innerHTML = "<h3>Product List:</h3>";
+
+//                 const table = document.createElement("table");
+//                 table.style.width = "100%";
+//                 table.style.borderCollapse = "collapse";
+
+//                 const headerRow = document.createElement("tr");
+//                 headers.forEach(header => {
+//                     const th = document.createElement("th");
+//                     th.textContent = header;
+//                     headerRow.appendChild(th);
+//                 });
+//                 table.appendChild(headerRow);
+
+//                 for (let i = 1; i < lines.length; i++) {
+//                     if (lines[i].trim()) {
+//                         const values = parseCSVLine(lines[i]);
+//                         const row = document.createElement("tr");
+
+//                         values.forEach(value => {
+//                             const td = document.createElement("td");
+//                             td.textContent = value;
+//                             row.appendChild(td);
+//                         });
+
+//                         table.appendChild(row);
+//                     }
+//                 }
+
+//                 container.appendChild(table);
+//             })
+//             .catch(error => {
+//                 console.log("Error fetching products CSV:", error);
+//                 container.innerHTML = "<p>Error loading products. Please try again later.</p>";
+//             });
+//     }
+// }
+
+// function parseCSVLine(line) {
+//     // This regex splits on commas not inside quotes
+//     const regex = /,(?=(?:[^"]*"[^"]*")*[^"]*$)/;
+//     return line.split(regex).map(field => {
+//         // Remove surrounding quotes and trim whitespace
+//         return field.replace(/^"(.*)"$/, '$1').trim();
+//     });
+// }
 
 function loadMenu() {
     let hash = getUrlHash();
@@ -43,10 +123,124 @@ function loadMenu() {
     }
 
     addUSDASearchBar();
+    loadFoodCategorySidebar();
     loadSampleFood();
     displayInitialFoodItems();
 }
 
+const FOOD_CATEGORIES = [
+    { name: "All Foods", query: "" },
+    { name: "Fruits and Fruit Juices", query: "Fruits and Fruit Juices" },
+    { name: "Vegetables", query: "Vegetables and Vegetable Products" },
+    { name: "Dairy and Eggs", query: "Dairy and Egg Products" },
+    { name: "Meats and Poultry", query: "Poultry Products" },
+    { name: "Fish and Seafood", query: "Finfish and Shellfish Products" },
+    { name: "Grains and Pasta", query: "Cereal Grains and Pasta" },
+    { name: "Nuts and Seeds", query: "Nut and Seed Products" },
+    { name: "Legumes", query: "Legumes and Legume Products" },
+    { name: "Baked Products", query: "Baked Products" },
+    { name: "Beverages", query: "Beverages" },
+    { name: "Fats and Oils", query: "Fats and Oils" },
+    { name: "Snacks and Sweets", query: "Sweets" },
+    { name: "Soups and Sauces", query: "Soups, Sauces, and Gravies" },
+    { name: "Fast Foods", query: "Fast Foods" }
+];
+
+let selectedCategory = null;
+
+function loadFoodCategorySidebar() {
+    const sidebar = document.getElementById("food-category-sidebar");
+    const categoryList = document.getElementById("category-list");
+
+    if (!sidebar || !categoryList) return;
+
+    sidebar.style.display = "block";
+    categoryList.innerHTML = "";
+
+    FOOD_CATEGORIES.forEach((category, index) => {
+        const categoryDiv = document.createElement("div");
+        categoryDiv.className = "category-item";
+        categoryDiv.textContent = category.name;
+        categoryDiv.dataset.query = category.query;
+        categoryDiv.dataset.index = index;
+
+        categoryDiv.onclick = function() {
+            selectFoodCategory(category, categoryDiv);
+        };
+
+        categoryList.appendChild(categoryDiv);
+    });
+}
+
+function selectFoodCategory(category, element) {
+    // Remove active class from all categories
+    document.querySelectorAll(".category-item").forEach(item => {
+        item.classList.remove("active");
+    });
+
+    // Add active class to selected category
+    element.classList.add("active");
+    selectedCategory = category.query;
+
+    // Filter foods by category
+    if (category.query === "") {
+        // Show all foods (initial display)
+        displayInitialFoodItems();
+    } else {
+        // Search USDA API by category
+        searchUSDAFoodByCategory(category.query);
+    }
+}
+
+function searchUSDAFoodByCategory(categoryQuery) {
+    const apiKey = "bLecediTVa2sWd8AegmUZ9o7DxYFSYoef9B4i1Ml";
+    const apiUrl = `https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${apiKey}&query=${encodeURIComponent(categoryQuery)}&pageSize=20&pageNumber=1`;
+
+    const container = document.getElementById("search-results-container");
+    container.innerHTML = "<h3>Loading...</h3>";
+
+    fetch(apiUrl)
+        .then(response => response.json())
+        .then(data => {
+            if (data.foods && data.foods.length > 0) {
+                searchResults = data.foods;
+                displayCategoryResults(categoryQuery);
+            } else {
+                container.innerHTML = `<p>No foods found in this category.</p>`;
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching USDA data:', error);
+            container.innerHTML = `<p>Error loading foods. Please try again.</p>`;
+        });
+}
+
+function displayCategoryResults(categoryName) {
+    const container = document.getElementById("search-results-container");
+    container.innerHTML = `<h3>${categoryName} - Click to Add Item:</h3>`;
+
+    searchResults.forEach((food, index) => {
+        const resultDiv = document.createElement("div");
+        resultDiv.className = "search-result-item";
+        resultDiv.innerHTML = `
+            <div class="food-info">
+                <strong>${food.description}</strong>
+                <br><small>Brand: ${food.brandOwner || 'Generic'}</small>
+                <br><small>Category: ${food.foodCategory || 'N/A'}</small>
+            </div>
+            <button class="add-to-menu-btn" data-index="${index}">Add Item</button>
+        `;
+        container.appendChild(resultDiv);
+    });
+
+    // Add event listeners for "Add Item" buttons
+    container.querySelectorAll(".add-to-menu-btn").forEach(button => {
+        button.onclick = function() {
+            const index = parseInt(button.dataset.index);
+            addFoodToMenu(searchResults[index]);
+        };
+    });
+}
 
 const API_BASE = "https://api.github.com/repos/ModelEarth/products-data/contents";
 
@@ -98,17 +292,6 @@ async function loadItems(region, category) {
     });
 }
 
-// async function loadYAMLProfile(region, category, file) {
-//     const yamlText = await fetchText(file.download_url);
-//     const data = jsyaml.load(yamlText);
-
-//     const profile = createProfileObject(data);
-
-//     const container = document.getElementById("product-label");
-//     container.innerHTML = "";
-//     container.appendChild(renderNutritionLabel(profile, 1, false));
-// }
-
 async function loadYAMLProfile(region, category, file) {
     const yamlText = await fetchText(file.download_url);
     const data = jsyaml.load(yamlText);
@@ -117,18 +300,8 @@ async function loadYAMLProfile(region, category, file) {
 
     const container = document.getElementById("product-label");
     container.innerHTML = "";
-
-    // FULL YAML FIELD VIEW (PRODUCT PARSER)
-    const yamlDiv = document.createElement("div");
-    yamlDiv.id = "product-yaml-full";
-    yamlDiv.style.marginBottom = "20px";
-    formatYamlLabel(data, yamlDiv);
-    container.appendChild(yamlDiv);
-
-    // EXISTING PRODUCT LABEL
     container.appendChild(renderNutritionLabel(profile, 1, false));
 }
-
 
 
 async function fetchJSON(url) {
@@ -442,14 +615,19 @@ function renderMenuLabels() {
     const caloriesValue = caloriesSection ? Math.round(caloriesSection.value) : 0;
 
     header.innerHTML = `
-    <div class="header-left">
+  <div class="header-left">
     <span class="item-title">${item.profileObject.itemName}</span>
+  </div>
+  <div class="header-right">
+    <div class="quantity-controls">
+      <input class="quantity-input" type="number" value="${item.quantity}" min="1" step="1" data-index="${idx}">
+      <button class="remove-item-btn" data-idx="${idx}">X</button>
     </div>
-    <div class="header-right">
     <span class="calories-label">${caloriesValue} kcal</span>
-    <span class="arrow">▶</span>
-    </div>
-    `;
+    <span class="arrow">▼</span>
+  </div>
+`;
+
           
             // Create collapsible content
             const content = document.createElement("div");
@@ -457,24 +635,41 @@ function renderMenuLabels() {
             content.appendChild(renderNutritionLabel(item.profileObject, item.quantity, false, idx));
           
             // Click toggle behavior
-            header.addEventListener("click", () => {
+            header.addEventListener("click", (e) => {
+                // Prevent clicks on quantity input or remove button from toggling collapse
+                if (e.target.closest(".quantity-input") || e.target.closest(".remove-item-btn")) return;
+            
                 const arrow = header.querySelector(".arrow");
                 const expanded = content.classList.contains("open");
-                content.classList.toggle("open", !expanded);
-                header.classList.toggle("active", !expanded);
-                arrow.classList.toggle("rotate", !expanded);
+            
+                if (expanded) {
+                    content.classList.remove("open");
+                    content.style.display = "none";
+                    arrow.textContent = "▼";
+                } else {
+                    content.classList.add("open");
+                    content.style.display = "block";
+                    arrow.textContent = "▲";
+                }
             });
             
-          
-           
+              
+            
           
             itemDiv.appendChild(header);
             itemDiv.appendChild(content);
             allItemsContainer.appendChild(itemDiv);
             if (idx === menuItems.length - 1) {
+                // only expand the newly added item; keep others closed
+                content.classList.add("open");
                 content.style.display = "block";
-                header.querySelector(".arrow").classList.add("rotate");
-            }
+                header.querySelector(".arrow").textContent = "▲";
+              } else {
+                // keep others collapsed
+                content.classList.remove("open");
+                content.style.display = "none";
+                header.querySelector(".arrow").textContent = "▼";
+              }
           });
           
 
@@ -534,18 +729,64 @@ function removeFromMenu(index) {
 function renderNutritionLabel(profileObject, quantity = 1, isAggregate = false, itemIndex = null) {
     const div = document.createElement("div");
     div.className = isAggregate ? "nutrition-label aggregate" : "nutrition-label";
+  
+    // Header section with item name only — no quantity or X button
+    div.innerHTML = `
+      <div class="item-label-header">
+        <div class="item-name">${profileObject.itemName}</div>
+      </div>
+      <hr class="thick-line">
+      <div class="serving-size">Amount Per Serving</div>
+      <hr class="thin-line">
+    `;
+  
+    profileObject.sections.forEach(section => {
+      const val = (section.value * quantity);
+      const unit = getUnit(section.name);
+      const formattedVal = formatValue(val, section.name);
+      const dailyValue = section.dailyValue ? Math.round(section.dailyValue * quantity) : null;
+  
+      const sectionDiv = document.createElement("div");
+      sectionDiv.className = "nutrition-section";
+      sectionDiv.innerHTML = `
+        <div class="section-title">
+          <span><strong>${section.name}</strong> <span class="value">${formattedVal}${unit}</span></span>
+          <span class="daily-value">${dailyValue ? dailyValue + '%' : ''}</span>
+        </div>
+      `;
+  
+      if (section.subsections) {
+        section.subsections.forEach(subsection => {
+          const subVal = (subsection.value * quantity);
+          const subUnit = getUnit(subsection.name);
+          const subFormattedVal = formatValue(subVal, subsection.name);
+          const subDailyValue = subsection.dailyValue ? Math.round(subsection.dailyValue * quantity) : null;
+  
+          const subSectionDiv = document.createElement("div");
+          subSectionDiv.className = "sub-section";
+          subSectionDiv.innerHTML = `
+            <span>${subsection.name}</span>
+            <span class="value">${subFormattedVal}${subUnit}</span>
+            <span class="daily-value">${subDailyValue ? subDailyValue + '%' : ''}</span>
+          `;
+          sectionDiv.appendChild(subSectionDiv);
+        });
+      }
+  
+      div.appendChild(sectionDiv);
+      div.appendChild(document.createElement('hr')).classList.add('thin-line');
+    });
+  
+    return div;
+  }
+  
+/*
+function renderNutritionLabel(profileObject, quantity = 1, isAggregate = false, itemIndex = null) {
+    const div = document.createElement("div");
+    div.className = isAggregate ? "nutrition-label aggregate" : "nutrition-label";
 
     // Add nutrition facts header
     div.innerHTML = `
-        <div class="nutrition-facts-header">
-            ${!isAggregate ? `
-                <div class="quantity-controls">
-                    <input class="quantity-input" type="number" value="${quantity}" min="1" step="1" data-index="${itemIndex}" style="width:45px">
-                </div>
-            ` : ''}
-            <!--${isAggregate ? 'Nutrition Facts' : 'Nutrition Facts'}-->
-            ${!isAggregate ? `<button class="remove-item-btn" data-idx="${itemIndex}">X</button>` : ''}
-        </div>
         <div class="item-label-header">
             <div class="item-name">${profileObject.itemName}</div>
         </div>
@@ -593,7 +834,7 @@ function renderNutritionLabel(profileObject, quantity = 1, isAggregate = false, 
 
     return div;
 }
-
+*/
 function updateHeaderCalories() {
     const headers = document.querySelectorAll(".collapsible-header");
     headers.forEach((header, idx) => {
