@@ -62,6 +62,7 @@ document.addEventListener("DOMContentLoaded", loadMenu);
 //                 headers.forEach(header => {
 //                     const th = document.createElement("th");
 //                     th.textContent = header;
+
 //                     headerRow.appendChild(th);
 //                 });
 //                 table.appendChild(headerRow);
