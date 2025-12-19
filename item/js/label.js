@@ -1026,44 +1026,59 @@ function formatValue(value, nutrientName) {
 }
 
 function updateAggregateProfile() {
-    const aggSections = {};
-    menuItems.forEach(item => {
-        item.profileObject.sections.forEach(section => {
-            if (!aggSections[section.name]) {
-                aggSections[section.name] = 0;
-            }
-            aggSections[section.name] += section.value * item.quantity;
-            if (section.subsections) {
-                section.subsections.forEach(subsection => {
-                    const key = section.name + " - " + subsection.name;
-                    if (!aggSections[key]) {
-                        aggSections[key] = 0;
-                    }
-                    aggSections[key] += subsection.value * item.quantity;
-                });
-            }
-        });
-    });
+  const sectionMap = {};
 
-    const sections = [];
-    Object.keys(aggSections).forEach(name => {
-        if (name.includes(" - ")) {
-            const [parent, sub] = name.split(" - ");
-            let parentSection = sections.find(s => s.name === parent);
-            if (!parentSection) {
-                parentSection = { name: parent, value: 0, subsections: [] };
-                sections.push(parentSection);
-            }
-            parentSection.subsections = parentSection.subsections || [];
-            parentSection.subsections.push({ name: sub, value: aggSections[name] });
-        } else {
-            sections.push({ name, value: aggSections[name] });
-        }
+  menuItems.forEach(item => {
+    const qty = item.quantity;
+
+    item.profileObject.sections.forEach(section => {
+
+      // Initialize parent section
+      if (!sectionMap[section.name]) {
+        sectionMap[section.name] = {
+          name: section.name,
+          value: 0,
+          dailyValue: section.dailyValue != null ? 0 : null,
+          subsections: section.subsections ? [] : null
+        };
+      }
+
+      // Accumulate parent values
+      sectionMap[section.name].value += section.value * qty;
+
+      if (section.dailyValue != null) {
+        sectionMap[section.name].dailyValue += section.dailyValue * qty;
+      }
+
+      // Accumulate subsections
+      if (section.subsections) {
+        section.subsections.forEach(sub => {
+          let existingSub = sectionMap[section.name].subsections
+            .find(s => s.name === sub.name);
+
+          if (!existingSub) {
+            existingSub = {
+              name: sub.name,
+              value: 0,
+              dailyValue: sub.dailyValue != null ? 0 : null
+            };
+            sectionMap[section.name].subsections.push(existingSub);
+          }
+
+          existingSub.value += sub.value * qty;
+
+          if (sub.dailyValue != null) {
+            existingSub.dailyValue += sub.dailyValue * qty;
+          }
+        });
+      }
     });
-    aggregateProfile = {
-        itemName: "Meal Total",
-        sections
-    };
+  });
+
+  aggregateProfile = {
+    itemName: "Meal Total",
+    sections: Object.values(sectionMap)
+  };
 }
 
 function getUrlHash() {
