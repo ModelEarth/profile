@@ -60,6 +60,112 @@ loadMenu();
   color: white;
   font-weight: bold;
 }
+
+/* 2-level menu styles */
+#food-category-sidebar {
+  background: white;
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.category-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.category-title {
+  flex: 1;
+  background-color: #f9f9f9;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  color: #333;
+  transition: all 0.3s;
+  text-align: left;
+  font-size: 14px;
+}
+
+.category-title:hover {
+  background-color: #e8f5e9;
+  border-color: #4CAF50;
+}
+
+.category-title.active {
+  background-color: #4CAF50;
+  color: white;
+  border-color: #4CAF50;
+}
+
+.category-arrow {
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  background-color: #f9f9f9;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  transition: all 0.3s;
+  font-size: 12px;
+}
+
+.category-arrow:hover {
+  background-color: #e8f5e9;
+  border-color: #4CAF50;
+}
+
+.toggle-arrow {
+  display: inline-block;
+  transition: transform 0.3s;
+  width: 16px;
+  text-align: center;
+}
+
+.toggle-arrow.open {
+  transform: rotate(90deg);
+}
+
+.subcategory-list {
+  display: none;
+  list-style: none;
+  margin-top: 8px;
+  margin-left: 0;
+  padding-left: 15px;
+  border-left: 2px solid #ddd;
+}
+
+.subcategory-list.open {
+  display: block;
+}
+
+.subcategory-item {
+  margin-bottom: 6px;
+}
+
+.subcategory-link {
+  display: block;
+  padding: 6px 10px;
+  color: #666;
+  text-decoration: none;
+  font-size: 13px;
+  border-radius: 3px;
+  transition: all 0.3s;
+  cursor: pointer;
+}
+
+.subcategory-link:hover {
+  background-color: #f0f0f0;
+  color: #333;
+  padding-left: 15px;
+}
 </style>
 
 <script>
@@ -77,7 +183,7 @@ loadMarkdown("README.md", "readmeDiv", "_parent");
   <h1 id="page-header">Nutritious Meal Planner</h1>
 
   <div style="overflow: auto;">
-    <div id="food-category-sidebar" style="float: left; width: 220px; margin-right: 20px; display: none;">
+    <div id="food-category-sidebar" style="float: left; width: 250px; margin-right: 20px; display: none;">
       <h3 style="margin-top: 0;">Food Categories</h3>
       <div id="category-list"></div>
     </div>

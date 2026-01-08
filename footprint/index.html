@@ -706,6 +706,10 @@
                         <input type="radio" name="dataSource" value="us"> US States
                     </label>
                     <label>
+                        <input type="radio" name="dataSource" value="india"> India States & UTs
+                    </label>
+
+                    <label>
                         <input type="radio" name="dataSource" value="combined"> Combined
                     </label>
                 </div>
@@ -818,6 +822,7 @@
         let selectedTradeType = 'domestic'; // Default trade type
         let selectedDataFile = 'trade_impact.csv'; // Default file
         let usStateData = [];
+        let indiaStateData = [];
         let internationalData = [];
         let combinedData = [];
         let industriesData = [];
@@ -1025,7 +1030,15 @@
                 return;
             } else if (currentDataSource === 'international') {
                 currentData = internationalData;
-            } else if (currentDataSource === 'combined') {
+            }
+            else if (currentDataSource === 'india') {
+                filteredData = indiaStateData;
+                createTable(filteredData, currentDataSource);
+                updateTotals(filteredData, currentDataSource);
+                return;
+            }
+
+            else if (currentDataSource === 'combined') {
                 currentData = combinedData;
             } else {
                 return;
@@ -1673,7 +1686,50 @@
                 return fallbackData;
             }
         }
-        
+        // Load India state data
+        async function loadIndiaStateData() {
+            try {
+                console.log("Loading India state data...");
+
+                const data = await d3.csv("../../trade-data/year/temp/IN/domestic/india_states.csv");
+
+                // Convert CSV rows into standardized structure for UI (like US states)
+                const indiaStateData = data.map(d => ({
+                    stateName: d.State,
+                    stateAbbr: d.Code || d.State,     // optional short code
+                    output: +d.Output || 0,
+                    employment: +d.Employment || 0,
+
+                    // UI-friendly formatting
+                    outputFormatted: formatCurrency(+d.Output || 0),
+                    employmentFormatted: formatEmployment(+d.Employment || 0),
+
+                    // Required for combined view
+                    type: "state"
+                }));
+
+                updateDataInfo('India state economic output & employment');
+
+                updateDataSources("india", [{
+                    label: "India State Dataset",
+                    path: "data/india_states.csv",
+                    type: "india",
+                    isLink: true,
+                    displayPath: "india_states.csv"
+                }]);
+
+                console.log("Finished loading India data:", indiaStateData.length, "states");
+
+                return indiaStateData;
+
+            } catch (error) {
+                console.error("Error loading India data:", error);
+                return [];
+            }
+        }
+
+
+
         // Load individual state data using USEEIO.js
         async function loadStateData(stateCode) {
             try {
@@ -2475,7 +2531,36 @@
                         }
                     }
                 ];
-            } else if (dataType === 'international') {
+            }
+            else if (dataType === 'india') {
+                columns = [
+                    {
+                        title: "State / UT",
+                        field: "stateName",
+                        widthGrow: 2,
+                        formatter: function(cell) {
+                            const data = cell.getRow().getData();
+                            return `<a href="#india=${data.stateName}" style="color: #2196f3; text-decoration: none;">${data.stateName}</a>`;
+                        }
+                    },
+                    {
+                        title: "Economic Output",
+                        field: "outputFormatted",
+                        sorter: function(a, b, aRow, bRow) {
+                            return aRow.getData().output - bRow.getData().output;
+                        }
+                    },
+                    {
+                        title: "Employment",
+                        field: "employmentFormatted",
+                        sorter: function(a, b, aRow, bRow) {
+                            return aRow.getData().employment - bRow.getData().employment;
+                        }
+                    }
+                ];
+            }
+
+            else if (dataType === 'international') {
                 // Check if US data is included and has extended columns
                 const hasUSData = data.find(row => row.country === 'US' && row.allColumns);
                 
@@ -2672,7 +2757,13 @@
                         updateHashWithDataSource('country=all&state=all');
                     }
                 }
-                
+                else if (newSource === 'india') {
+                    data = await loadIndiaStateData();
+                    if (updateHash) {
+                        updateHashWithDataSource('india=all');
+                    }
+                }
+
                 createTable(data, newSource);
                 if (newSource === 'international') {
                     // Pass availability info for international data
@@ -2686,7 +2777,8 @@
                     const shouldIncludeUS = hash.includes('country=US') || (!hash.includes('country=') && !hash.includes('state='));
                     const totalCountries = shouldIncludeUS ? exiobaseCountries.length : exiobaseCountries.filter(c => c !== 'US').length;
                     updateTotals(data, newSource, totalCountries);
-                } else {
+                }
+                else {
                     updateTotals(data, newSource);
                 }
                 

@@ -837,32 +837,28 @@ function renderMenuLabels() {
             container.appendChild(allItemsContainer);
         }
 
-        // Event listeners for quantity controls inside nutrition labels
-        container.querySelectorAll(".quantity-input").forEach(input => {
-            input.onchange = function () {
-                const idx = +input.dataset.index;
-                menuItems[idx].quantity = Math.max(1, parseInt(input.value) || 1);
-              
-                //Update only this item’s nutrition label (not all)
-                const parentContent = input.closest(".collapsible-content");
-                if (parentContent) {
-                  parentContent.innerHTML = "";
-                  parentContent.appendChild(renderNutritionLabel(menuItems[idx].profileObject, menuItems[idx].quantity, false, idx));
-                }
-              
-                //Update header calories immediately
-                updateHeaderCalories();
-              
-                //Update the meal total (aggregate)
-                updateAggregateProfile();
-                const aggContainer = document.querySelector(".aggregate");
-                if (aggContainer) {
-                  aggContainer.innerHTML = "";
-                  aggContainer.appendChild(renderNutritionLabel(aggregateProfile, 1, true));
-                }
-              };
-              
-          });
+// FIXED: Event listeners for quantity controls - re-render entire menu
+container.querySelectorAll(".quantity-input").forEach(input => {
+    input.onchange = function () {
+        const idx = +input.dataset.index;
+        menuItems[idx].quantity = Math.max(1, parseInt(input.value) || 1);
+      
+        // Update header calories immediately
+        updateHeaderCalories();
+      
+        // Update the meal total (aggregate)
+        updateAggregateProfile();
+        const aggContainer = document.querySelector(".aggregate");
+        if (aggContainer) {
+            aggContainer.innerHTML = "";
+            aggContainer.appendChild(renderNutritionLabel(aggregateProfile, 1, true));
+        }
+      
+        // CRITICAL FIX: Re-render the entire menu to update all quantities and totals
+        // This ensures all event listeners are properly re-attached
+        renderMenuLabels();
+    };
+});
           
 
         container.querySelectorAll(".remove-item-btn").forEach(button => {
