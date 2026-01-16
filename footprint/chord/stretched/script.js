@@ -863,8 +863,17 @@ class ChordDiagram {
     redraw() {
         // Clear and recreate the chart with new dimensions
         d3.select(this.containerId).select("svg").remove();
-        this.setupSVG();
+
+        // Process data first to know label positions
         this.processData();
+
+        // Recalculate top margin for labels
+        this.topLabelMargin = this.calculateTopLabelSpace();
+        if (this.adjustedMargins) {
+            this.adjustedMargins.top = Math.max(this.options.margin.top, this.topLabelMargin);
+        }
+
+        this.setupSVG();
         this.createGradients();
         this.render();
     }
@@ -872,35 +881,116 @@ class ChordDiagram {
     init() {
         // Setup responsive dimensions
         this.updateDimensions();
-        
+
         // Add resize listener for responsiveness
         window.addEventListener('resize', () => {
             this.updateDimensions();
             this.redraw();
         });
-        
+
         // pullOutSize is now set in setupSVG based on label mode
-        
+
         // Add offset for separated chord layout like chart1
         const totalNodes = this.data.nodes.length;
         const emptyPerc = 0.5; // What % of the circle should become empty
         const emptyStroke = Math.round(totalNodes * emptyPerc);
         this.offset = (2 * Math.PI) * (emptyStroke/(totalNodes + emptyStroke))/4;
-        
-        this.setupSVG();
+
+        // Process data first to know label positions
         this.processData();
+
+        // Calculate additional top margin needed for labels at top of chart
+        this.topLabelMargin = this.calculateTopLabelSpace();
+
+        // Adjust top margin based on label space needed
+        if (this.adjustedMargins) {
+            this.adjustedMargins.top = Math.max(this.adjustedMargins.top, this.topLabelMargin);
+        }
+
+        this.setupSVG();
         this.createGradients();
         this.render();
+    }
+
+    calculateTopLabelSpace() {
+        // Simple approach: find how close the topmost label is to pointing straight up
+        if (!this.chordLayout || !this.orderedNodes || this.useCompactLabels) {
+            return this.options.margin.top;
+        }
+
+        // Get container width to match font-size breakpoints used in renderFullLabels
+        const container = document.querySelector(this.containerId);
+        const containerWidth = container ? container.clientWidth : window.innerWidth;
+
+        // Match the font-size logic from renderFullLabels (lines 1330, 1376, 1425)
+        let pxPerChar;
+        if (containerWidth > 1400) {
+            pxPerChar = 8; // 14px font
+        } else if (containerWidth > 800) {
+            pxPerChar = 7; // 12px font
+        } else {
+            pxPerChar = 6; // 10px font
+        }
+
+        const groups = this.chordLayout.groups();
+
+        // "Straight up" in SVG with our offset applied is around 3π/2
+        const upAngle = 3 * Math.PI / 2;
+
+        let closestToUp = Infinity;
+        let closestLabelLength = 0;
+
+        groups.forEach((group) => {
+            const angle = ((group.startAngle + group.endAngle) / 2) + this.offset;
+            const normalizedAngle = ((angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+
+            // Angular distance from straight up
+            let distFromUp = Math.abs(normalizedAngle - upAngle);
+            if (distFromUp > Math.PI) distFromUp = 2 * Math.PI - distFromUp;
+
+            if (this.orderedNodes[group.index]) {
+                const node = this.orderedNodes[group.index];
+                const labelText = node.name || node.id || '';
+                const displayText = labelText.length > 32 ? labelText.substring(0, 29) + '...' : labelText;
+
+                // Track the label closest to pointing up
+                if (distFromUp < closestToUp) {
+                    closestToUp = distFromUp;
+                    closestLabelLength = displayText.length;
+                }
+            }
+        });
+
+        // If closest label is far from vertical (> ~60°), labels are spread out
+        if (closestToUp > 1.05) { // ~60 degrees
+            console.log(`Top label calc: spread out (dist=${(closestToUp * 180 / Math.PI).toFixed(0)}°), margin=10, width=${containerWidth}`);
+            return 10;
+        }
+
+        // Scale: closestToUp=0 → most upright, closestToUp=1.05 → spread out
+        // uprightness: 1 = pointing straight up, 0 = 60° away
+        const uprightness = Math.max(0, 1 - (closestToUp / 1.05));
+
+        // Extra margin scales with uprightness and font size
+        // Base extra is 80px at smallest font, scale up for larger fonts
+        const fontScale = pxPerChar / 6; // 1.0 for small, ~1.17 for medium, ~1.33 for large
+        const extraMargin = uprightness * 80 * fontScale;
+        const requiredMargin = 10 + extraMargin;
+
+        console.log(`Top label calc: uprightness=${(uprightness * 100).toFixed(0)}%, dist=${(closestToUp * 180 / Math.PI).toFixed(0)}°, margin=${requiredMargin.toFixed(0)}, width=${containerWidth}, pxPerChar=${pxPerChar}`);
+
+        return requiredMargin;
     }
 
     setupSVG() {
         // Use adjusted margins if available, otherwise use default
         const margins = this.adjustedMargins || this.options.margin;
-        
-        // Create main SVG
+
+        // Create main SVG with overflow visible to prevent label clipping
         this.svg = d3.select(this.containerId).append("svg")
             .attr("width", this.width + margins.left + margins.right)
-            .attr("height", this.height + margins.top + margins.bottom);
+            .attr("height", this.height + margins.top + margins.bottom)
+            .style("overflow", "visible");
 
         // Create wrapper group
         this.wrapper = this.svg.append("g")

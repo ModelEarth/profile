@@ -53,9 +53,17 @@
       height: 16px;
       color: #666;
     }
-    
+
     .fullscreen-toggle-btn:hover .fullscreen-icon {
       color: #007bff;
+    }
+
+    /* Initial state: chord chart shows collapse icon, sankey shows expand icon */
+    #chart2Wrapper .expand-icon {
+      display: none;
+    }
+    #sankeyWrapper .collapse-icon {
+      display: none;
     }
     
     /* Make charts responsive and auto-scale to their containers */
@@ -154,6 +162,21 @@
     <a id="footprintLink" href="../state/" >US State Reports</a>
     <h2>Sector Supply Impacts</h2>
 
+    <div id="pageReport">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <p id="info" style="margin: 0;">Loading ...</p>
+        <select id="number-format-select" style="margin-left: 10px;">
+            <option value="simple" selected>simple</option>
+            <option value="full">full</option>
+            <option value="scientific">scientific</option>
+        </select>
+    </div>
+    <div id="table"></div>
+    <div style="display:block; margin: 10px 0 20px 0;">
+      <button id="showAllBtn" class="controlDD" style="padding: 6px 12px; cursor: pointer; background: #333; color: white; white-space: nowrap;">Show all rows</button>
+    </div>
+  </div>
+
     <!-- D3 Separated chord chart -->
     <div style="position: relative;">
       <div>
@@ -239,18 +262,18 @@
 
       <div id="widgetHero"></div>
       
-          <div style="display:flex; gap:20px; width:100%">
+          <div style="display:flex; flex-wrap:wrap; gap:20px; width:100%">
             <!-- Left: D3 Separated chord chart -->
-            <div id="chart2Parent" style="flex:0 0 25%; min-width:300px; height:480px; position:relative;">
-              <div id="chart2Wrapper" myparent="chart2Parent" class="basePanel" style="width:100%; height:100%; position: relative;">
-                <div id="chart2" style="width:100%; height:100%;"></div>
+            <div id="chart2Parent" style="flex:0 0 100%; min-width:300px; height:600px; position:relative;">
+              <div id="chart2Wrapper" myparent="chart2Parent" class="basePanel" style="width:100%; height:100%; position: relative; overflow:hidden;">
+                <div id="chart2" style="width:100%; height:100%; overflow:hidden;"></div>
                 <!-- Expand Icon for Chart2 -->
                 <div class="fullscreen-toggle-container" style="position: absolute; top: 8px; right: 8px; z-index: 10;">
-                  <button class="fullscreen-toggle-btn" mywidgetpanel="chart2Wrapper" onclick="myHero()" title="Expand Chart">
-                    <svg class="fullscreen-icon expand-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <button class="fullscreen-toggle-btn" mywidgetpanel="chart2Wrapper" onclick="myHero()" title="Collapse Chart">
+                    <svg class="fullscreen-icon expand-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: none;">
                       <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
                     </svg>
-                    <svg class="fullscreen-icon collapse-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: none;">
+                    <svg class="fullscreen-icon collapse-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>
                     </svg>
                   </button>
@@ -258,7 +281,7 @@
               </div>
             </div>
             <!-- Right: Sankey chart will sit alongside the chord chart -->
-            <div id="sankeyParent" style="flex:1; min-width:300px; height:480px; position:relative;">
+            <div id="sankeyParent" style="flex:0 0 48%; min-width:300px; height:480px; position:relative;">
               <div id="sankeyWrapper" myparent="sankeyParent" class="basePanel" style="width:100%; height:100%; position: relative;">
                 <div id="sankey" style="width:100%; height:100%;"></div>
                 <!-- Expand Icon for Sankey -->
@@ -278,20 +301,6 @@
       </div>
   </div>
 
-  <div style="padding-left:60px;padding-right:18px;">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-        <p id="info" style="margin: 0;">Loading ...</p>
-        <select id="number-format-select" style="margin-left: 10px;">
-            <option value="simple" selected>simple</option>
-            <option value="full">full</option>
-            <option value="scientific">scientific</option>
-        </select>
-    </div>
-    <div id="table"></div>
-    <div style="display:block; margin: 10px 0 20px 0;">
-      <button id="showAllBtn" class="controlDD" style="padding: 6px 12px; cursor: pointer; background: #333; color: white; white-space: nowrap;">Show all rows</button>
-    </div>
-  </div>
   
   <script src="js/config.js"></script>
   <!-- include d3-sankey -->
@@ -1101,6 +1110,89 @@
       if (window.currentChordData) {
         updateChordDiagram();
       }
+
+      // Handle side-by-side layout when both charts are compacted
+      function updateChartLayout() {
+        const chart2Parent = document.getElementById('chart2Parent');
+        const sankeyParent = document.getElementById('sankeyParent');
+        const chart2Wrapper = document.getElementById('chart2Wrapper');
+        const sankeyWrapper = document.getElementById('sankeyWrapper');
+
+        if (!chart2Parent || !sankeyParent) return;
+
+        // Check expanded state by looking at which icon is visible (collapse icon = expanded)
+        const chart2CollapseIcon = chart2Wrapper?.querySelector('.collapse-icon');
+        const sankeyCollapseIcon = sankeyWrapper?.querySelector('.collapse-icon');
+
+        const chart2Expanded = chart2CollapseIcon && getComputedStyle(chart2CollapseIcon).display !== 'none';
+        const sankeyExpanded = sankeyCollapseIcon && getComputedStyle(sankeyCollapseIcon).display !== 'none';
+
+        if (!chart2Expanded && !sankeyExpanded) {
+          // Both charts are compacted - show side-by-side
+          chart2Parent.style.flex = '0 0 48%';
+          sankeyParent.style.flex = '0 0 48%';
+        } else if (chart2Expanded && !sankeyExpanded) {
+          // Only chord is expanded - chord 100%, sankey smaller below
+          chart2Parent.style.flex = '0 0 100%';
+          sankeyParent.style.flex = '0 0 48%';
+        } else if (!chart2Expanded && sankeyExpanded) {
+          // Only sankey is expanded - both full width
+          chart2Parent.style.flex = '0 0 100%';
+          sankeyParent.style.flex = '0 0 100%';
+        } else {
+          // Both expanded - each takes full width
+          chart2Parent.style.flex = '0 0 100%';
+          sankeyParent.style.flex = '0 0 100%';
+        }
+      }
+
+      // Listen for clicks on fullscreen toggle buttons to update layout
+      document.addEventListener('click', function(e) {
+        const btn = e.target.closest('.fullscreen-toggle-btn');
+        if (btn) {
+          // Update layout after the myHero function completes
+          setTimeout(function() {
+            updateChartLayout();
+
+            // Trigger resize event so charts redraw at correct size (with delay for DOM to settle)
+            setTimeout(function() {
+              window.dispatchEvent(new Event('resize'));
+            }, 50);
+
+            // Scroll to expanded chart
+            const panelId = btn.getAttribute('mywidgetpanel');
+            const panel = panelId ? document.getElementById(panelId) : null;
+            if (panel) {
+              const collapseIcon = panel.querySelector('.collapse-icon');
+              const isExpanded = collapseIcon && getComputedStyle(collapseIcon).display !== 'none';
+              if (isExpanded) {
+                // Scroll to the chart with a small offset from top
+                const rect = panel.getBoundingClientRect();
+                const scrollTop = window.pageYOffset + rect.top - 20;
+                window.scrollTo({ top: scrollTop, behavior: 'smooth' });
+              }
+            }
+          }, 100);
+        }
+      });
+
+      // Initial layout update
+      setTimeout(updateChartLayout, 100);
+
+      // Move chord chart to hero container on initial load (so state matches collapse icon)
+      setTimeout(function() {
+        const heroContainer = document.getElementById('widgetHero');
+        const chart2Wrapper = document.getElementById('chart2Wrapper');
+        const chart2Parent = document.getElementById('chart2Parent');
+
+        if (heroContainer && chart2Wrapper && chart2Parent) {
+          // Move chord to hero container
+          chart2Wrapper.style.marginBottom = '10px';
+          heroContainer.appendChild(chart2Wrapper);
+          heroContainer.style.display = 'block';
+          chart2Parent.style.display = 'none';
+        }
+      }, 50);
     });
 
     // Initialize Sankey using the repository's sk.createSankey implementation
