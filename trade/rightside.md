@@ -9,9 +9,9 @@
 
 <b>Developing</b>  
 <a href="../../profile/trade/map/">Trade Flow Map</a>  
-<a href="../../trade-data/state-trade-map/">US State Trade Map</a>  
+<a href="map/state.html">US State Trade Map</a>  
 <a href="../../profile/charts/d3/chord-diagram/">Chord (D3)</a><!-- https://nivo.rocks/chord/ -->  
 <a href="../../io/charts/sankey/">Sankey (eCharts)</a>
-<a href="../../trade-data/state-dashboard/">US State Sankey</a>
+<a href="../charts/sankey/state.html">US State Sankey</a>
 <!-- Fix or remove: profile/charts/echarts/ -->
 
