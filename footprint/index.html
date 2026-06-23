@@ -150,6 +150,30 @@
             justify-content: space-between;
             align-items: center;
         }
+        .state-trade-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .state-trade-links[hidden] {
+            display: none;
+        }
+        .state-trade-links a {
+            padding: 6px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #22314c;
+            background: #fff;
+            text-decoration: none;
+            transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+        }
+        .state-trade-links a:hover {
+            background: #f1f5fb;
+            border-color: #94a3b8;
+        }
         
         .year-selector {
             padding: 5px 10px;
@@ -169,6 +193,14 @@
             background: #777;
             color: #fff;
             border-color: #888;
+        }
+        .dark .state-trade-links a {
+            background: #777;
+            color: #fff;
+            border-color: #888;
+        }
+        .dark .state-trade-links a:hover {
+            background: #666;
         }
         
         .totals {
@@ -779,6 +811,10 @@
                     <div>
                         <h3><span id="currentYear"></span> Summary Totals</h3>
                         <span id="dataDescription">US state-level economic output and employment data</span>
+                        <div id="stateTradeLinks" class="state-trade-links" hidden>
+                            <a id="stateTradeMapLink" href="../trade/map/state.html">State trade map</a>
+                            <a id="stateTradeSankeyLink" href="../charts/sankey/state.html">State Sankey</a>
+                        </div>
                     </div>
                     <select id="yearSelector" class="year-selector">
                         <option value="2019">2019</option>
@@ -2170,6 +2206,37 @@
         // Update data information display
         function updateDataInfo(description) {
             document.getElementById('dataDescription').textContent = description;
+            updateStateTradeLinks();
+        }
+
+        function getSingleStateFromHash() {
+            const hash = window.location.hash.substring(1);
+            const hashParams = new URLSearchParams(hash.replace(/&/g, '&').replace(/=/g, '='));
+            const stateParam = (hashParams.get('state') || '').trim().toUpperCase();
+            if (!stateParam || stateParam === 'ALL' || stateParam.includes(',') || !stateMapping[stateParam]) {
+                return '';
+            }
+            return stateParam;
+        }
+
+        function updateStateTradeLinks() {
+            const linkWrap = document.getElementById('stateTradeLinks');
+            const mapLink = document.getElementById('stateTradeMapLink');
+            const sankeyLink = document.getElementById('stateTradeSankeyLink');
+            if (!linkWrap || !mapLink || !sankeyLink) return;
+
+            const state = getSingleStateFromHash();
+            if (!state) {
+                linkWrap.hidden = true;
+                return;
+            }
+
+            const stateHash = '#state=' + encodeURIComponent(state);
+            mapLink.href = '../trade/map/state.html' + stateHash;
+            sankeyLink.href = '../charts/sankey/state.html' + stateHash;
+            mapLink.textContent = stateMapping[state] + ' trade map';
+            sankeyLink.textContent = stateMapping[state] + ' Sankey';
+            linkWrap.hidden = false;
         }
         
         // Update data description based on selected file and trade type
@@ -2941,6 +3008,7 @@
         // Handle URL hash changes for filtering
         function handleHashChange() {
             const hash = window.location.hash.substring(1);
+            updateStateTradeLinks();
             if (hash) {
                 console.log('Hash changed:', hash);
                 
