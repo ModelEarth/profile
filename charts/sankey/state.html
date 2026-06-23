@@ -333,7 +333,7 @@
         <h2>US State Trade Flow Sankey</h2>
         <p>
           Domestic inter-state trade flows for the United States, using the current 2019 state-level trade, impact, code, and specialization CSVs.
-          View the <a href="index.html">international Sankey</a> or the <a href="../../trade/map/state.html">US state trade map</a>.
+          View the <a href="index.html">international Sankey</a> or the <a id="state-map-link" href="../../trade/map/state.html">US state trade map</a>.
         </p>
       </div>
       <button id="state-help-button" type="button" aria-expanded="false" aria-controls="state-help-panel">About This View</button>
@@ -487,6 +487,7 @@ const partnerChart = echarts.init(document.getElementById("partner-chart"));
 
 const stateSelect = document.getElementById("state-select");
 const selectedStateReportAction = document.getElementById("selected-state-report-action");
+const stateMapLink = document.getElementById("state-map-link");
 const partnerStateWrap = document.getElementById("partner-state-wrap");
 const partnerStateLabel = document.getElementById("partner-state-label");
 const partnerStateSelect = document.getElementById("partner-state-select");
@@ -823,6 +824,19 @@ function stateReportUrl(code) {
   return "../../footprint/#state=" + encodeURIComponent(normalizeCode(code));
 }
 
+function stateMapUrl(selection) {
+  const params = new URLSearchParams();
+  if (selection && selection.state) params.set("state", selection.state);
+  if (selection && selection.direction && selection.direction !== "outbound") params.set("direction", selection.direction);
+  if (selection && selection.metric && selection.metric !== "level") params.set("metric", selection.metric);
+  if (selection && selection.industry) {
+    params.set("view", "industry");
+    params.set("industry", selection.industry);
+  }
+  const hash = params.toString();
+  return "../../trade/map/state.html" + (hash ? "#" + hash : "");
+}
+
 function stateReportAction(code) {
   const normalized = normalizeCode(code);
   if (!normalized) {
@@ -1132,6 +1146,7 @@ function syncControls(selection) {
   activeSelection = selection;
   syncStateOptions(selection.state);
   selectedStateReportAction.innerHTML = selection.state ? stateReportAction(selection.state) : "";
+  stateMapLink.href = stateMapUrl(selection);
   syncFlowTypeOptions(selection.flowType, selection);
   selection.flowType = flowTypeSelect.value;
   syncIndustryOptions(selection.industry, selection);
