@@ -29,13 +29,12 @@
 Multi-Regional Input-Output (MRIO)
 
 <a href="../profile/charts/sankey/">Sankey Trade Flow</a>  
-<a href="charts/sankey/state.html">US State Sankey</a><br>
+<a href="charts/sankey/state.html">US State Sankey</a>  
 <a href="../localsite/info/">Industry Supply-Chain</a>  
 [UN Goal Timelines](../../localsite/timeline/)  
-<a href="footprint/sector_supply_impacts.html">Sector Supply Impacts (Chord Chart)</a>
+<a href="footprint/sector_supply_impacts.html">Sector Supply Impacts (Chord Chart)</a>  
 <a href="trade/map/">Trade Flow Map</a>  
-<a href="trade/map/state.html">US State Map</a><br>
-<a href="../space/">3D Event Space</a>  
+<a href="trade/map/state.html">US State Map</a>  
 
 Contribute to [our visualization projects](../projects/)
 
