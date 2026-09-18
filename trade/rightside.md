@@ -7,7 +7,7 @@
 <a href="../../io/template/">IO Template</a>  
 <a href="../../profile/item/">Profile YAML</a>  
 
-<b>Developing</b>  
+<b>Maps and Charts</b>  
 <a href="../../profile/trade/map/">Trade Flow Map</a>  
 <a href="map/state.html">US State Trade Map</a>  
 <a href="../../profile/charts/d3/chord-diagram/">Chord (D3)</a><!-- https://nivo.rocks/chord/ -->  

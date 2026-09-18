@@ -1,16 +1,17 @@
 ﻿[Active Projects](../../projects/)
 # Trade Profiles (CSV and SQL)
 
-We're using UN Comtrade [Exiobase](https://exiobase.eu) trade factors and US Bureau of Economic Analysis (BEA) data with Claude Code CLI and OpenAI Codex to create Python that outputs [Exiobase .CSV files](../../exiobase/tradeflow/) and US state commodity analysis .CSV files from our [BEA+Exiobase data prep python](../../exiobase/tradeflow/bea/).
+We're using UN Comtrade [Exiobase](https://exiobase.eu) trade factors and US Bureau of Economic Analysis (BEA) data with Python that outputs international [Exiobase .CSV files](../../exiobase/tradeflow/) and US Interstate Trade ([BEA+Exiobase](../../exiobase/tradeflow/bea/)).
 
 <!--Each country-year database instance will represent a country and year from Exiobase.-->
 
 **Dashboards and Reports**  
 Pitch in to help us refine and optimize our interactive reports:  
 
+- [Data Schema](../../exiobase/tradeflow/) 
 - [Country Trade Data](../footprint/)  
 - [US States - Summary Totals](../footprint/#state=all)  
-- [BEA Dashboard](../../trade-data/bea-dashboard/)  
+- [Trade Data Dashboard](https://model.earth/trade-data/)<!-- bea-dashboard/ -->  
 - [US State Trade Sankey](../charts/sankey/state.html)  
 - [US State Trade Map](map/state.html)  
 - [Import Dependency & Supply Chain Risk Dashboard](../../trade-data/year/2019/US/imports/import-dependency-dashboard.html)  
@@ -94,11 +95,11 @@ In the CoLab, add the [Sector table output](https://github.com/ModelEarth/USEEIO
 
 **Exiobase Interactive Charts** – Three Charts using International Exiobase Data ([Issue #65](https://github.com/modelearth/projects/issues/65))
 
-- ✅ **Sankey (eCharts)** – [Live chart](../trade/map/sankey.html) · industry-to-industry embodied CO₂, water, and employment flows for the World (WM) region, 2022 · [source](map/sankey.html)
-- ✅ **US State Sankey** — [Live chart](../charts/sankey/state.html) · state-to-state domestic trade flow dashboard from BEA + Exiobase state files
-- ✅ **US State Trade Map** — [Live map](map/state.html) · state-to-state trade links and partner rankings
-TO DO: **Trade Flow Map** (Leaflet/geographic) – needs real country-pair flow data (region1 ≠ region2)
-- 📲 TO DO: **Chord Diagram** (D3) – needs bilateral region data; see existing D3 chord in [charts/d3/chord-diagram/](../charts/d3/chord-diagram/)
+- **Sankey (eCharts)** – [Live chart](../trade/map/sankey.html) · industry-to-industry embodied CO₂, water, and employment flows for the World (WM) region, 2022 · [source](map/sankey.html)
+- **US State Sankey** — [Live chart](../charts/sankey/state.html) · state-to-state domestic trade flow dashboard from BEA + Exiobase state files
+- **US State Trade Map** — [Live map](map/state.html) · state-to-state trade links and partner rankings
+- **Trade Flow Map** (Leaflet/geographic) – [country to country](map/), [state to state](map/state.html)
+- **Chord Diagram** (D3) – Use separated chord in [profile/charts/d3/chord-diagram/](../charts/d3/chord-diagram/)
 
 See our various [Data Prep processes](/profile/prep/)
 
