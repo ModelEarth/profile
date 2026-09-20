@@ -12,7 +12,22 @@
 
 <script>
 loadMarkdown("nav.md", "navDiv", "_parent");
-loadMarkdown("README.md", "readmeDiv", "_parent");
+loadMarkdown("README.md", "readmeDiv", "_parent", undefined, function() {
+  // /exiobase isn't hosted on every domain that runs this site, so once the
+  // README's links are rendered, point any /exiobase link to the canonical
+  // model.earth deployment - except when running locally on localhost.
+  if (location.hostname.indexOf('localhost') < 0) {
+    var readmeDiv = document.getElementById('readmeDiv');
+    if (readmeDiv) {
+      readmeDiv.querySelectorAll('a[href]').forEach(function(link) {
+        var url = new URL(link.href, location.href);
+        if (url.pathname.indexOf('/exiobase') === 0) {
+          link.href = 'http://model.earth' + url.pathname + url.search + url.hash;
+        }
+      });
+    }
+  }
+});
 loadMarkdown("rightside.md", "rightsideDiv", "_parent");
 </script>
 
