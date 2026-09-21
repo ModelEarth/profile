@@ -2679,11 +2679,13 @@ TradePartner.initChart("partner-chart");
 const _initHash = typeof getHash === 'function' ? getHash() : {};
 const _initSaved = readFilterState();
 const _initCurrency = _initHash.currency || _initSaved.currency || null;
+// Newest year first — the dropdown's top option is also its default.
+const _initYears = ["2024", "2023", "2022", "2021", "2020", "2019", "2018"];
 TradeShared.init({
-    years: ["2019", "2020", "2021", "2022", "2023"],
+    years: _initYears,
     currencies: ["EUR"],
     initialState: {
-        year: "2022",
+        year: _initYears[0],
         metric: MAP_FACTOR_TO_METRIC[_initHash.factor || _initSaved.factor] || "amount",
         currency: _initCurrency,
         topn: parseInt(_initHash.inflows, 10) || parseInt(_initSaved.inflows, 10) || 15
@@ -2871,7 +2873,8 @@ function skFmtCurrencyCompact(v,code) {
 }
 
 function skSortYears(years) {
-    return years.slice().sort((a,b)=>{ const la=Number(a),lb=Number(b); return (isFinite(la)&&isFinite(lb)&&la!==lb)?la-lb:String(a).localeCompare(String(b)); });
+    // Descending — newest year first, so it's the top dropdown option and the default.
+    return years.slice().sort((a,b)=>{ const la=Number(a),lb=Number(b); return (isFinite(la)&&isFinite(lb)&&la!==lb)?lb-la:String(b).localeCompare(String(a)); });
 }
 
 async function skFetchJSON(url) {
@@ -2907,7 +2910,7 @@ function skBuildManifest(paths) {
     Object.keys(fcy).forEach(k=>{ fcy[k].sort((a,b)=>SANKEY_SUPPORTED_FLOWS.indexOf(a)-SANKEY_SUPPORTED_FLOWS.indexOf(b)); });
     const dc=sorted.includes("US")?"US":(sorted[0]||"US");
     const dy=(ybc[dc]||[]);
-    const dyr=dy.length?dy[dy.length-1]:"2022";
+    const dyr=dy.length?dy[0]:"2022";
     const df=(fcy[dc+"|"+dyr]||[]);
     const dfl=df.includes("domestic")?"domestic":(df[0]||"domestic");
     return {countries:sorted.length?sorted:["US"],yearsByCountry:Object.keys(ybc).length?ybc:{US:["2022"]},

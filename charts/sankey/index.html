@@ -643,13 +643,14 @@ function formatCurrencyCompactValue(value, currencyCode) {
 }
 
 function sortYears(years) {
+  // Descending — newest year first, so it's the top dropdown option and the default.
   return years.slice().sort(function (left, right) {
     const leftNumber = Number(left);
     const rightNumber = Number(right);
     if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber !== rightNumber) {
-      return leftNumber - rightNumber;
+      return rightNumber - leftNumber;
     }
-    return String(left).localeCompare(String(right));
+    return String(right).localeCompare(String(left));
   });
 }
 
@@ -721,7 +722,7 @@ function buildManifestFromPaths(paths) {
     : (countries[0] || fallback.defaultSelection.country);
   const defaultYears = yearsByCountry[defaultCountry] || [];
   const defaultYear = defaultYears.length
-    ? defaultYears[defaultYears.length - 1]
+    ? defaultYears[0]
     : fallback.defaultSelection.year;
   const defaultFlows = flowsByCountryYear[defaultCountry + "|" + defaultYear] || [];
   const defaultFlow = defaultFlows.includes("domestic")
@@ -780,7 +781,7 @@ function sanitizeManifest(candidate) {
   const requestedYear = normalizeCode(candidate.defaultSelection && candidate.defaultSelection.year);
   const defaultYear = defaultYears.includes(requestedYear)
     ? requestedYear
-    : (defaultYears[defaultYears.length - 1] || fallback.defaultSelection.year);
+    : (defaultYears[0] || fallback.defaultSelection.year);
   const defaultFlows = flowsByCountryYear[defaultCountry + "|" + defaultYear] || SUPPORTED_FLOWS.slice();
   const requestedFlow = normalizeCode(candidate.defaultSelection && candidate.defaultSelection.flow);
   const defaultFlow = defaultFlows.includes(requestedFlow)
