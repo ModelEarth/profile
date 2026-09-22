@@ -305,7 +305,42 @@
         .dark .tabulator-footer .tabulator-page {
             color: #e0e6ed !important;
         }
-        
+
+        /* Dark mode tabulator column header filters (BEA Sector Import Factors
+           table's "BEA Detail"/"Sector Name" headerFilter: 'input' columns) */
+        .dark .tabulator-header-filter input[type="search"],
+        .dark .tabulator-header-filter input[type="text"] {
+            background-color: #222 !important;
+            border-color: #666 !important;
+            color: #e0e6ed !important;
+        }
+
+        .dark .tabulator-header-filter input[type="search"]::placeholder,
+        .dark .tabulator-header-filter input[type="text"]::placeholder {
+            color: #bbb !important;
+        }
+
+        /* Tabulator's default adds a border/outline on focus -- keep the field's
+           resting border instead of growing one when clicked into */
+        .tabulator-header-filter input[type="search"]:focus,
+        .tabulator-header-filter input[type="text"]:focus {
+            outline: none !important;
+            box-shadow: none !important;
+            border-color: #ccc !important;
+        }
+
+        .dark .tabulator-header-filter input[type="search"]:focus,
+        .dark .tabulator-header-filter input[type="text"]:focus {
+            border-color: #666 !important;
+        }
+
+        /* Dark mode column header hover (Tabulator's default hover is a light
+           gray, meant for a light background) */
+        .dark .tabulator-col:hover,
+        .dark .tabulator-col.tabulator-sortable:hover {
+            background-color: #111 !important;
+        }
+
         .data-path {
             background-color: #e9ecef;
             padding: 8px 12px;
@@ -740,6 +775,9 @@
                     <label>
                         <input type="radio" name="dataSource" value="combined"> Combined
                     </label>
+                    <label>
+                        <input type="radio" name="dataSource" value="beafactors"> BEA Sector Import Factors
+                    </label>
                 </div>
                 <a href="https://github.com/ModelEarth/exiobase/tree/main/tradeflow" class="github-link" target="trade_github">
                     <img src="../../localsite/img/icon/github/github.png" alt="Exiobase Tradeflow Repository">
@@ -833,6 +871,26 @@
                 </div>
             </div>
             
+            <!-- BEA Sector Import Factor Caveat -->
+            <div id="beaFactorNote" class="data-sources" style="display:none; margin: 15px 0;">
+                <div id="beaFactorNoteSummary" style="display:flex; justify-content:space-between; align-items:center; gap:10px; cursor:pointer;">
+                    <span>US import emission factors by BEA Detail sector (kg/USD), vs. EPA's published 2019 numbers &mdash; CO2 matches well, CH4/N2O differ due to weighting.</span>
+                    <i id="beaFactorNoteToggleIcon" class="ph-bold ph-caret-down" style="flex-shrink:0; font-size:1.8em; font-weight:bold;"></i>
+                </div>
+                <div id="beaFactorNoteDetails" style="display:none; margin-top:10px;">
+                    <strong>US import emission factors by BEA Detail sector</strong> (kg per USD imported, computed from
+                    this site's own <code>trade.csv</code> / <code>trade_factor.csv</code>, mapped to BEA Detail codes
+                    via <a href="https://github.com/USEPA/USEEIO/blob/master/import_emission_factors/concordances/exio_to_useeio2_commodity_concordance.csv" target="useeio_github">EPA's own Exiobase&rarr;BEA concordance</a>).
+                    <br>
+                    <strong>Carbon dioxide</strong> tracks EPA's <a href="https://github.com/USEPA/USEEIO/tree/master/import_emission_factors/output" target="useeio_github">published 2019 import factors</a> closely (median ratio ~0.9, 85% of BEA Detail sectors within 2x of EPA's number).
+                    <strong>Methane and Nitrous oxide come out systematically lower</strong> here than in EPA's numbers &mdash;
+                    it's a weighting-methodology difference: this page weights each BEA sector by
+                    Exiobase's own bilateral trade-dollar amounts, while EPA weights by official Census import-share statistics.
+                    CH4/N2O vary far more by country than CO2 does, so this weighting choice moves those two flows much more.
+                    EPA's reference file only covers 2019 &mdash; other years show our own computed values with no EPA column.
+                </div>
+            </div>
+
             <!-- Main Data Table -->
             <div id="loadingMessage" class="loading">Loading data...</div>
             <div id="table"></div>
@@ -865,6 +923,28 @@
         let filteredData = [];
         let useLocalUseeio = null; // null = not checked, true = local, false = github
         let useeioSourceMessageShown = false;
+        let beaFactorData = [];
+
+        // BEA Sector Import Factors mode: kg/USD import-factor comparison against EPA's
+        // published Exiobase-sourced numbers -- see #beaFactorNote above for the caveat.
+        const EUR_TO_USD_2019 = 1.1194; // ECB 2019 average reference rate
+        const EXIO_TO_BEA_CONCORDANCE_PATH = 'data/exio_to_useeio2_commodity_concordance.csv';
+        // EPA only publishes this for 2019 -- see https://github.com/USEPA/USEEIO/tree/master/import_emission_factors/output
+        const EPA_US_DETAIL_IMPORT_FACTORS_2019_URL = 'https://raw.githubusercontent.com/USEPA/USEEIO/master/import_emission_factors/output/US_detail_import_factors_exiobase_2019_17sch.csv';
+        const BEA_FACTOR_FLOWS = {
+            '901': { key: 'CO2', label: 'Carbon dioxide' },
+            '902': { key: 'CH4', label: 'Methane' },
+            '903': { key: 'N2O', label: 'Nitrous oxide' },
+        };
+        const EPA_FLOWABLE_TO_KEY = {
+            'Carbon dioxide': 'CO2',
+            'Methane': 'CH4',
+            'Nitrous oxide': 'N2O',
+        };
+        // USEEIOv2.0.1-411's sectors.json is BEA Detail level (411 codes) and gives
+        // us a code -> name lookup for the BEA Sector Import Factors table -- same
+        // local-vs-GitHub fallback other useeio-json fetches on this page already use.
+        let beaDetailNames = null; // cached after first load
         
         document.addEventListener('hashChangeEvent', function (elem) {
             console.log("profile/footprint detects URL hashChangeEvent");
@@ -2093,7 +2173,235 @@
             
             return rows;
         }
-        
+
+        // Quote-aware CSV parser -- parseCSV() above splits on every comma, which
+        // corrupts ~37 of our 200 industry names and the EPA concordance's Exiobase
+        // Sector names (e.g. "Vegetables, fruit, nuts"), both essential for matching
+        // industry.csv to BEA Detail codes in loadBeaFactorData().
+        function parseCSVQuoted(csvText) {
+            const lines = csvText.trim().split('\n');
+            if (lines.length < 2) return [];
+
+            function splitLine(line) {
+                const values = [];
+                let current = '';
+                let inQuotes = false;
+                for (let i = 0; i < line.length; i++) {
+                    const c = line[i];
+                    if (c === '"') {
+                        inQuotes = !inQuotes;
+                    } else if (c === ',' && !inQuotes) {
+                        values.push(current);
+                        current = '';
+                    } else {
+                        current += c;
+                    }
+                }
+                values.push(current);
+                return values.map(v => v.trim());
+            }
+
+            const headers = splitLine(lines[0]);
+            const rows = [];
+            for (let i = 1; i < lines.length; i++) {
+                if (!lines[i]) continue;
+                const values = splitLine(lines[i]);
+                const row = {};
+                headers.forEach((header, index) => {
+                    row[header] = values[index] !== undefined ? values[index] : '';
+                });
+                rows.push(row);
+            }
+            return rows;
+        }
+
+        // BEA Detail code -> sector name, from this site's own useeio-json data
+        // (cached after first call; falls back to an empty map on failure, so the
+        // table still renders with bare codes rather than breaking).
+        async function loadBeaDetailNames() {
+            if (beaDetailNames !== null) {
+                return beaDetailNames;
+            }
+            beaDetailNames = {};
+            try {
+                const isLocalAvailable = await checkLocalUseeioAvailability();
+                const endpoint = isLocalAvailable ?
+                    '../../useeio-json/models/2020/USEEIOv2.0.1-411/sectors.json' :
+                    'https://raw.githubusercontent.com/modelearth/useeio-json/refs/heads/main/models/2020/USEEIOv2.0.1-411/sectors.json';
+                const sectors = await fetch(endpoint).then(r => {
+                    if (!r.ok) throw new Error(`Failed to fetch BEA sector names: ${r.status}`);
+                    return r.json();
+                });
+                sectors.forEach(s => { beaDetailNames[s.code] = s.name; });
+            } catch (error) {
+                console.error('Could not load BEA Detail sector names:', error);
+            }
+            return beaDetailNames;
+        }
+
+        // Load and join trade.csv + trade_factor.csv (US imports) into kg/USD
+        // import factors by BEA Detail sector, for the "BEA Sector Import Factors"
+        // view. Joins via EPA's own Exiobase-sector-name -> BEA Detail concordance,
+        // and compares against EPA's published 2019 reference file when available.
+        async function loadBeaFactorData() {
+            const selectedYear = getSelectedYear();
+            updateDataInfo(`US import factors by BEA Detail sector (${selectedYear}), from this site's own trade data`);
+
+            const [concordanceText, industryText, tradeText, factorText] = await Promise.all([
+                fetch(EXIO_TO_BEA_CONCORDANCE_PATH).then(r => {
+                    if (!r.ok) throw new Error(`Failed to fetch concordance: ${r.status}`);
+                    return r.text();
+                }),
+                fetch(`${tradeData}year/${selectedYear}/industry.csv`).then(r => r.text()),
+                fetch(`${tradeData}year/${selectedYear}/US/imports/trade.csv`).then(r => r.text()),
+                fetch(`${tradeData}year/${selectedYear}/US/imports/trade_factor.csv`).then(r => r.text()),
+            ]);
+
+            const concordanceRows = parseCSVQuoted(concordanceText);
+            const industryRows = parseCSVQuoted(industryText);
+            const tradeRows = parseCSV(tradeText); // no embedded commas in this file's columns
+            const factorRows = parseCSV(factorText);
+
+            const industryIdToName = {};
+            industryRows.forEach(row => { industryIdToName[row.industry_id] = row.name; });
+
+            // 86 of the 200 Exiobase sectors genuinely correspond to more than one
+            // BEA Detail code (e.g. "Vegetables, fruit, nuts" -> both 111200 and
+            // 111300) -- EPA's own concordance has no weight column for these, so
+            // each is a separate valid row, not a fractional split. Fan out to
+            // every matching BEA Detail rather than keeping only the last row for
+            // a given name.
+            const exioNameToBeaDetails = {};
+            concordanceRows.forEach(row => {
+                const name = row['Exiobase Sector'];
+                const beaDetail = row['USEEIO_Detail_2017'];
+                if (!name || !beaDetail) return;
+                (exioNameToBeaDetails[name] = exioNameToBeaDetails[name] || []).push(beaDetail);
+            });
+
+            // trade_id -> BEA Detail codes it counts toward, and USD imports summed
+            // per BEA Detail (each trade_id's amount counted once per matching BEA
+            // Detail, independent of how many factor rows join to it)
+            const tradeIdToBeaDetails = {};
+            const usdByDetail = {};
+            tradeRows.forEach(row => {
+                const name = industryIdToName[row.industry1];
+                const beaDetails = name ? exioNameToBeaDetails[name] : null;
+                if (!beaDetails) return;
+                tradeIdToBeaDetails[row.trade_id] = beaDetails;
+                const usd = parseFloat(row.amount) * 1000000 * EUR_TO_USD_2019;
+                beaDetails.forEach(beaDetail => {
+                    usdByDetail[beaDetail] = (usdByDetail[beaDetail] || 0) + usd;
+                });
+            });
+
+            // kg by (BEA Detail, flow) for the 3 GHGs this site currently computes
+            // a usable M-matrix value for (see PLAN-comprehensive.md's SF6/HFC/PFC
+            // NaN note -- 904/905 aren't populated)
+            const kgByDetailFlow = {};
+            factorRows.forEach(row => {
+                const flow = BEA_FACTOR_FLOWS[row.factor_id];
+                if (!flow) return;
+                const beaDetails = tradeIdToBeaDetails[row.trade_id];
+                if (!beaDetails) return;
+                const level = parseFloat(row.level);
+                beaDetails.forEach(beaDetail => {
+                    const key = beaDetail + '|' + flow.key;
+                    kgByDetailFlow[key] = (kgByDetailFlow[key] || 0) + level;
+                });
+            });
+
+            // EPA reference (2019 only)
+            let epaByDetailFlow = {};
+            let epaAvailable = false;
+            if (selectedYear === '2019') {
+                try {
+                    const epaText = await fetch(EPA_US_DETAIL_IMPORT_FACTORS_2019_URL).then(r => {
+                        if (!r.ok) throw new Error(`EPA fetch failed: ${r.status}`);
+                        return r.text();
+                    });
+                    const epaRows = parseCSV(epaText); // no embedded commas in this file
+                    epaRows.forEach(row => {
+                        if (row.BaseIOLevel !== 'Detail') return;
+                        const key = EPA_FLOWABLE_TO_KEY[row.Flowable];
+                        if (!key) return;
+                        epaByDetailFlow[row.Sector + '|' + key] = parseFloat(row.FlowAmount);
+                    });
+                    epaAvailable = true;
+                } catch (error) {
+                    console.error('Could not load EPA reference factors:', error);
+                }
+            }
+
+            const beaNames = await loadBeaDetailNames();
+            const details = Object.keys(usdByDetail).sort();
+            const results = details.map(beaDetail => {
+                const usd = usdByDetail[beaDetail];
+                const rowObj = { beaDetail, beaName: beaNames[beaDetail] || '', usdImports: usd };
+                Object.values(BEA_FACTOR_FLOWS).forEach(flow => {
+                    const kg = kgByDetailFlow[beaDetail + '|' + flow.key] || 0;
+                    const ours = usd > 0 ? kg / usd : 0;
+                    const epa = epaByDetailFlow[beaDetail + '|' + flow.key];
+                    rowObj[flow.key + '_ours'] = ours;
+                    rowObj[flow.key + '_epa'] = (epa === undefined) ? null : epa;
+                    rowObj[flow.key + '_ratio'] = (epa && epa !== 0) ? (ours / epa) : null;
+                });
+                return rowObj;
+            });
+
+            results.epaAvailable = epaAvailable;
+            return results;
+        }
+
+        // Create the Tabulator table for the "BEA Sector Import Factors" view --
+        // separate from createTable() since its columns/shape (BEA Detail code,
+        // 3 GHGs x ours/EPA/ratio) don't fit the country/state row shape.
+        function createBeaFactorTable(data) {
+            if (currentTable) {
+                currentTable.destroy();
+            }
+
+            const numberFmt = v => (v === null || v === undefined) ? '' : v.toExponential(3);
+            const ratioFmt = v => (v === null || v === undefined) ? '' : v.toFixed(2) + 'x';
+
+            const columns = [
+                { title: 'BEA Detail', field: 'beaDetail', visible: false },
+                {
+                    title: 'Sector Name', field: 'beaName', width: 260, headerFilter: 'input',
+                    // Same sector_profile.html#demand=<code>/US link pattern already
+                    // used by commodities.html and naics.html for this same purpose.
+                    // beaDetail (the code) drives the link even though that column is hidden.
+                    formatter: cell => {
+                        const row = cell.getData();
+                        const label = cell.getValue() || row.beaDetail;
+                        return `<a href="sector_profile.html#demand=${row.beaDetail}/US">${label}</a>`;
+                    },
+                },
+                { title: 'US Imports (USD)', field: 'usdImports', formatter: cell => formatCurrency(cell.getValue()), width: 140 },
+            ];
+            Object.values(BEA_FACTOR_FLOWS).forEach(flow => {
+                columns.push({ title: `${flow.label} - Ours (kg/USD)`, field: flow.key + '_ours', formatter: cell => numberFmt(cell.getValue()), width: 160 });
+                columns.push({ title: `${flow.label} - EPA (kg/USD)`, field: flow.key + '_epa', formatter: cell => numberFmt(cell.getValue()), width: 160 });
+                columns.push({ title: `${flow.label} - Ratio`, field: flow.key + '_ratio', formatter: cell => ratioFmt(cell.getValue()), width: 110 });
+            });
+
+            currentTable = new Tabulator("#table", {
+                data: data,
+                columns: columns,
+                layout: "fitDataFill",
+                width: "100%",
+                pagination: "local",
+                paginationSize: 100,
+                paginationSizeSelector: [25, 50, 100, 500],
+                movableColumns: true,
+                resizableRows: true,
+                initialSort: [{ column: 'usdImports', dir: 'desc' }],
+                tooltips: true,
+            });
+
+            console.log('Created BEA factor table with', data.length, 'rows');
+        }
+
         // Fallback simulated data if real data fails
         async function loadSimulatedInternationalData() {
             console.log('Falling back to simulated international data');
@@ -2829,7 +3137,12 @@
             document.getElementById('table').style.display = 'none';
             document.getElementById('loadingTotals').style.display = 'block';
             document.getElementById('totalsDisplay').style.display = 'none';
-            
+
+            // BEA Sector Import Factors mode has its own note instead of the
+            // Output/Employment/Regions totals block
+            document.getElementById('totalsContainer').style.display = (newSource === 'beafactors') ? 'none' : 'block';
+            document.getElementById('beaFactorNote').style.display = (newSource === 'beafactors') ? 'block' : 'none';
+
             // Update file selector visibility
             updateFileSelector();
             
@@ -2861,6 +3174,20 @@
                     if (updateHash) {
                         updateHashWithDataSource('india=all');
                     }
+                }
+                else if (newSource === 'beafactors') {
+                    data = await loadBeaFactorData();
+                    beaFactorData = data;
+                    if (updateHash) {
+                        updateHashWithDataSource('beafactors=all');
+                    }
+                }
+
+                if (newSource === 'beafactors') {
+                    createBeaFactorTable(data);
+                    document.getElementById('loadingMessage').style.display = 'none';
+                    document.getElementById('table').style.display = 'block';
+                    return;
                 }
 
                 createTable(data, newSource);
@@ -2925,6 +3252,16 @@
                 }
             });
             
+            // Set up BEA Sector Import Factors caveat expand/collapse
+            document.getElementById('beaFactorNoteSummary').addEventListener('click', function() {
+                const details = document.getElementById('beaFactorNoteDetails');
+                const icon = document.getElementById('beaFactorNoteToggleIcon');
+                const expanded = details.style.display !== 'none';
+                details.style.display = expanded ? 'none' : 'block';
+                icon.classList.toggle('ph-caret-down', expanded);
+                icon.classList.toggle('ph-caret-up', !expanded);
+            });
+
             // Set up industry filter event listeners
             document.getElementById('industrycat').addEventListener('click', function() {
                 const popup = document.getElementById('categoryPopup');
@@ -2977,6 +3314,9 @@
             if (hash.includes('country=all&state=all')) {
                 initialView = 'combined';
                 document.querySelector('input[value="combined"]').checked = true;
+            } else if (hash.includes('beafactors=all') || hash.includes('beafactors=')) {
+                initialView = 'beafactors';
+                document.querySelector('input[value="beafactors"]').checked = true;
             } else if (hash.includes('india=all') || hash.includes('india=')) {
                 initialView = 'india';
                 document.querySelector('input[value="india"]').checked = true;
@@ -3046,6 +3386,13 @@
                     if (currentDataSource !== 'combined') {
                         document.querySelector('input[value="combined"]').checked = true;
                         handleDataSourceChange('combined', false);
+                    }
+                }
+                // Handle BEA Sector Import Factors view
+                else if (hash.includes('beafactors=all') || hash.includes('beafactors=')) {
+                    if (currentDataSource !== 'beafactors') {
+                        document.querySelector('input[value="beafactors"]').checked = true;
+                        handleDataSourceChange('beafactors', false);
                     }
                 }
                 // Handle India view
@@ -3431,6 +3778,7 @@
                     usStateData = [];
                     internationalData = [];
                     combinedData = [];
+                    beaFactorData = [];
                     
                     // Reload page data for new year
                     console.log('Year changed to:', selectedYear, '- reloading data...');
@@ -3465,10 +3813,14 @@
             // Parse the new data source parameters
             const newParams = new URLSearchParams(dataSourceParams.replace(/&/g, '&').replace(/=/g, '='));
             
-            // Remove existing state/country parameters
+            // Remove existing data-source-defining parameters (all of them, not just
+            // state/country -- otherwise switching e.g. india -> beafactors left a
+            // stale india=all in the hash alongside the new beafactors=all)
             hashParams.delete('state');
             hashParams.delete('country');
-            
+            hashParams.delete('india');
+            hashParams.delete('beafactors');
+
             // Add new data source parameters
             for (const [key, value] of newParams) {
                 hashParams.set(key, value);
