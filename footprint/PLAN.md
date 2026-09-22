@@ -82,9 +82,74 @@ The real successor project is [cornerstone-data](https://github.com/cornerstone-
   EPA output at `profile/footprint/SupplyChainGHGEmissionFactorsv1.4.0-rc.1.xlsx`.
   Note this tool computes *domestic* US cradle-to-shelf factors by BEA sector, not
   country-of-origin import factors, so it's a different (complementary) data product
-  from this page's comparison — but check its
-  [Releases](https://github.com/cornerstone-data/supply-chain-factors/releases) for a
-  newer prebuilt CSV before the next time that xlsx needs refreshing.
+  from this page's comparison.
+
+  **Checked 2026-09-22 for a newer release**: v1.4.0 (final, not the rc.1 we have)
+  [published 2025-10-15](https://github.com/cornerstone-data/supply-chain-factors/releases/tag/v1.4.0),
+  factors in 2024 USD using 2023 GHG data. Final files are on
+  [Zenodo](https://doi.org/10.5281/zenodo.17202747), not GitHub Releases assets:
+  `SupplyChainGHGEmissionFactorsv1.4.0.xlsx` (the file to replace our rc.1 copy with)
+  plus a bonus `USEEIOv2.6.0-phoebe-23.rds` — cornerstone's own complete USEEIO model
+  object for this build (see the pre-compiled-indicators section below).
+
+  **Don't swap the file in without also fixing `commodities.html`'s parser** — the
+  workbook structure changed between rc.1 and the v1.4.0 final, confirmed by
+  downloading both and diffing their first sheet:
+  - rc.1's first sheet (`CO2e`) had a `Reference USEEIO Code` column and a combined
+    `Supply Chain Emission Factors with Margins` column — exactly what
+    `commodities.html`'s `main()` looks for (`headerRow.indexOf('Reference USEEIO
+    Code')` etc., around line 74).
+  - v1.4.0 final's `CO2e` sheet dropped both: it's now keyed by `2017 NAICS Code`
+    only (no USEEIO code), and the combined margin column split into
+    `Supply Chain Emission Factors without Margins` + `Margins of Supply Chain
+    Emission Factors` separately.
+  - `Reference USEEIO Code` and the combined `...with Margins` column still exist,
+    but only on the second sheet (`byGHG`) — and only per individual gas (HFC-227ea,
+    Carbon dioxide, ...), not as an `All GHGs` aggregate row anymore, so getting the
+    single CO2e-equivalent total per USEEIO code now needs summing `byGHG` rows
+    (or a NAICS→USEEIO crosswalk applied to the `CO2e` sheet) instead of one direct
+    header lookup.
+  - Net effect if the file were swapped in as-is: `co2eData` silently ends up empty
+    (the existing `try/catch` swallows it — see console.warn at line 94), so every
+    row's `co2e` column would silently show 0, not an error. Needs a real parser
+    update, not just a filename change.
+
+### Pre-compiled indicators for the other five extensions — use these instead of pulling BLS/EIA/USDA/USGS directly
+
+For `employment`/`energy`/`land`/`material`/`water`, USEEIO's own indicators (JOBS,
+ENRG, LAND, MNRL, WATR) are computed by EPA/Cornerstone from separate US government
+inventories (BLS jobs, EIA energy, USDA land, USGS water/minerals), not from Exiobase
+— see `exiobase/tradeflow/bea/README.md`'s "Beyond GHGs" section. Rather than
+integrating those four agencies' raw data ourselves, EPA's own model exports already
+carry the computed per-sector results — found while checking the supply-chain-factors
+release above (2026-09-22):
+
+- **Already wired into this codebase, just not cloned locally**:
+  `profile/footprint/js/config.js`'s `getModel()` points `useeio.modelOf()` at
+  `/useeio-json/models/2020` — a sibling repo this workspace doesn't currently have.
+  [`ModelEarth/useeio-json`](https://github.com/ModelEarth/useeio-json) is our own
+  org's copy, and its `models/2020/USEEIOv2.0.1-411/` folder already has
+  `indicators.json` (23 indicators, confirmed includes JOBS/ENRG/LAND/MNRL/WATR) plus
+  full `matrix/N.json` and `matrix/D.json` — per-BEA-Detail-sector results for all of
+  them, pre-computed, ready to `fetch()` the same way `commodities.html` already
+  fetches `indicators()`/`matrix('D')` for JOBS today. Cloning this repo as a sibling
+  of `webroot` (per `config.js`'s comment: "clone the useeio-json repo into the same
+  webroot") would make ENRG/LAND/MNRL/WATR available with no new data pipeline.
+  Caveat: `USEEIOv2.0.1-411` is 2012 USD/economic-data basis — old relative to our
+  2018-2024 Exiobase years.
+- **Newer EPA builds exist but don't help here**: EPA's
+  [USEEIO v2.5 models](https://catalog.data.gov/dataset/useeio-v2-5-models)
+  (2017-2022, built for the 2024 import-emission-factors report, aliases like
+  `kingbird`/`yellowthroat` at `pasteur.epa.gov`) were checked 2026-09-22 and only
+  carry GHG + Material Footprint indicators (`GHG`, `MF-Bio`, `MF-Fossil`, `MF-Metal`,
+  `MF-Mineral`) — JOBS/ENRG/LAND/WATR aren't in these exports at all, so they're not
+  a fresher substitute for the pre-compiled indicators above, only for GHG/materials.
+- **Cornerstone's own newer full model, unverified**: the `USEEIOv2.6.0-phoebe-23.rds`
+  bundled with the v1.4.0 supply-chain-factors release above (2024 USD/2023 GHG data —
+  much newer than 2012) is cornerstone's own current build and the best candidate to
+  eventually replace `USEEIOv2.0.1-411` with, but it's an R `.rds` object — this
+  environment has no R/`pyreadr` to open it and confirm its indicator list still
+  includes JOBS/ENRG/LAND/MNRL/WATR. Needs checking with R before relying on it.
 
 ### Other
 
