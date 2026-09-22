@@ -1627,17 +1627,6 @@ async function loadYAMLProfile(region, category, file) {
     container.appendChild(mainContent);
 }
 
-function reRenderProductLabel(profile, data, container, settings) {
-    // Find and remove old label wrapper
-    const oldLabel = container.querySelector(".product-label-wrapper, .product-label, .nutrition-label:not(.aggregate)");
-    if (oldLabel) {
-        const newLabel = typeof renderProductLabel === "function"
-            ? renderProductLabel(profile, 1, settings)
-            : renderNutritionLabel(profile, 1, false);
-        oldLabel.replaceWith(newLabel);
-    }
-}
-
 // Travel distance calculator based on the YAML spec in products.md
 function setupTravelDistanceCalculator(epdData, parentEl) {
     const container = parentEl || document.getElementById("product-label");

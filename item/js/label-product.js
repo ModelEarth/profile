@@ -6,6 +6,15 @@
 // ============================================
 
 /**
+ * When this label is embedded on a page other than profile/item/ itself
+ * (e.g. io/template/), category links need to navigate there instead of
+ * just changing the hash on the current page.
+ */
+function getCategoryLinkPrefix() {
+    return window.location.pathname.includes("/profile/item/") ? "" : "../../profile/item/";
+}
+
+/**
  * Formats a value that might be an object into a readable string
  * @param {*} value - The value to format (can be string, object, etc.)
  * @param {boolean} showKeys - Whether to show keys in the output (default: true)
@@ -218,6 +227,17 @@ function renderProductLabel(profileObject, quantity = 1, options = {}) {
     return wrapper;
 }
 
+function reRenderProductLabel(profile, data, container, settings) {
+    // Find and remove old label wrapper
+    const oldLabel = container.querySelector(".product-label-wrapper, .product-label, .nutrition-label:not(.aggregate)");
+    if (oldLabel) {
+        const newLabel = typeof renderProductLabel === "function"
+            ? renderProductLabel(profile, 1, settings)
+            : renderNutritionLabel(profile, 1, false);
+        oldLabel.replaceWith(newLabel);
+    }
+}
+
 function ensureProductImageModal() {
     let modal = document.getElementById("product-image-modal");
     if (modal) {
@@ -354,7 +374,7 @@ function renderProductFDAStyle(profileObject, quantity = 1, verbosity = "medium"
 
     const declaredUnit = profileObject.declaredUnit || "unit";
     const category = profileObject.category || "";
-    const categoryLink = category ? `<a href="#layout=product&cat=${category}" class="category-link">${category.replace(/_/g, ' ')}</a>` : "";
+    const categoryLink = category ? `<a href="${getCategoryLinkPrefix()}#layout=product&cat=${category}" class="category-link">${category.replace(/_/g, ' ')}</a>` : "";
 
     // Header
     div.innerHTML = `
@@ -475,7 +495,7 @@ function renderProductBadgeStyle(profileObject, quantity = 1, verbosity = "mediu
 
     const declaredUnit = profileObject.declaredUnit || "unit";
     const category = profileObject.category || "";
-    const categoryLink = category ? `<a href="#layout=product&cat=${category}" class="category-link">${category.replace(/_/g, ' ')}</a>` : "";
+    const categoryLink = category ? `<a href="${getCategoryLinkPrefix()}#layout=product&cat=${category}" class="category-link">${category.replace(/_/g, ' ')}</a>` : "";
 
     // Get primary GWP for the main badge
     const primaryGWP = profileObject.sections.find(s =>
