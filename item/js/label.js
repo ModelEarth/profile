@@ -306,45 +306,38 @@ function renderProductCsvList(container, rows, country, listSourceUrl, titleText
     const listContainer = document.createElement("div");
     listContainer.style.marginTop = "1em";
 
-    const table = document.createElement("table");
-    table.className = "product-file-table";
+    const list = document.createElement("div");
+    list.className = "product-file-list";
 
-    const thead = document.createElement("thead");
-    const headerRow = document.createElement("tr");
-    ["Name", "GWP"].forEach((label) => {
-        const th = document.createElement("th");
-        th.textContent = label;
-        headerRow.appendChild(th);
-    });
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-
-    const tbody = document.createElement("tbody");
     rows.forEach((row) => {
         const id = getRowValue(row, ["ID", "id", "Id", "uuid", "UUID"]);
         const name = getRowValue(row, ["name", "Name"]) || "Unnamed product";
         const gwp = getRowValue(row, ["gwp", "GWP"]);
+        const gwpValue = toNumber(gwp);
 
-        const tr = document.createElement("tr");
-        tr.className = "file-row";
+        const rowDiv = document.createElement("div");
+        rowDiv.className = "file-row";
 
-        const nameCell = document.createElement("td");
+        if (gwpValue !== null) {
+            const rating = getImpactRating(gwpValue, "gwp");
+            const gwpRect = document.createElement("div");
+            gwpRect.className = "file-row-gwp";
+            gwpRect.style.backgroundColor = rating.color;
+            gwpRect.textContent = gwpValue.toFixed(1);
+            rowDiv.appendChild(gwpRect);
+        }
+
         const nameLink = document.createElement("a");
         const categoryValue = getRowValue(row, ["category", "Category", "cat", "Cat"]);
         const catParam = categoryValue ? `&cat=${encodeURIComponent(categoryValue)}` : "";
         nameLink.href = id ? `#layout=product&country=${country}${catParam}&id=${id}` : "#";
         nameLink.textContent = name;
-        nameCell.appendChild(nameLink);
-        tr.appendChild(nameCell);
+        nameLink.className = "file-row-name";
+        rowDiv.appendChild(nameLink);
 
-        const gwpCell = document.createElement("td");
-        gwpCell.textContent = gwp;
-        tr.appendChild(gwpCell);
-
-        tbody.appendChild(tr);
+        list.appendChild(rowDiv);
     });
-    table.appendChild(tbody);
-    listContainer.appendChild(table);
+    listContainer.appendChild(list);
 
     if (listSourceUrl) {
         const listSource = document.createElement("div");
@@ -1062,8 +1055,17 @@ async function selectProductSubcategory(country, subcategoryName) {
     container.innerHTML = `<h3>Loading ${subcategoryName.replace(/_/g, " ")} products...</h3>`;
 
     try {
-        const csvUrl = buildCategoryCsvUrl(country, subcategoryName);
-        const csvRows = await loadCsvList(csvUrl);
+        const localCsvUrl = buildCategoryCsvUrl(country, subcategoryName);
+        let csvUrl = localCsvUrl;
+        let csvRows = await loadCsvList(localCsvUrl);
+
+        // Local products-data checkout isn't always available (e.g. running from
+        // this repo without that submodule) - fall back to the raw GitHub CSV.
+        if (!csvRows || !csvRows.length) {
+            csvUrl = `${RAW_BASE}/${country}/${country}-${subcategoryName}.csv`;
+            csvRows = await loadCsvList(csvUrl);
+        }
+
         if (csvRows && csvRows.length) {
             renderProductCsvList(
                 container,

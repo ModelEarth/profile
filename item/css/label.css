@@ -1170,6 +1170,14 @@ input[type=number]::-webkit-outer-spin-button {
   align-items: flex-start;
   margin-bottom: 20px;
   gap: 12px;
+  container-type: inline-size;
+}
+
+@container (max-width: 300px) {
+  .eco-score-badge {
+    width: 100%;
+    font-size: 1.25em;
+  }
 }
 
 .eco-badge-header-vertical .product-info {
@@ -3763,6 +3771,12 @@ input[type=number]::-webkit-outer-spin-button {
   transition: background 0.2s;
 }
 
+.product-file-list .file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .file-row:hover,
 .region-row:hover,
 .category-row:hover {
@@ -3817,6 +3831,29 @@ input[type=number]::-webkit-outer-spin-button {
 
 .dark .product-file-table .file-row:hover {
   background: #1e3a5f;
+}
+
+.product-file-list .file-row:hover {
+  background: #e0e7ff;
+}
+
+.dark .product-file-list .file-row:hover {
+  background: #1e3a5f;
+}
+
+.file-row-gwp {
+  flex-shrink: 0;
+  min-width: 44px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  text-align: center;
+  color: white;
+  font-size: 0.8em;
+  font-weight: 600;
+}
+
+.file-row-name {
+  word-break: break-word;
 }
 
 .list-source {

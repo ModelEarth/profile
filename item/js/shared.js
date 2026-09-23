@@ -82,16 +82,48 @@ function getImpactRating(value, metricType) {
     const thresholds = IMPACT_THRESHOLDS[metricType] || IMPACT_THRESHOLDS.gwp;
     if (value <= thresholds.low) return { level: "low", color: "#22c55e", label: "Low Impact" };
     if (value <= thresholds.medium) return { level: "medium", color: "#f59e0b", label: "Moderate Impact" };
-    if (value <= thresholds.high) return { level: "high", color: "#f97316", label: "High Impact" };
-    return { level: "very-high", color: "#ef4444", label: "Very High Impact" };
+    if (value <= thresholds.high) return { level: "high", color: "#f97316", label: "High Negative Impact" };
+    return { level: "very-high", color: "#ef4444", label: "Very High Negative Impact" };
+}
+
+// 5-point Carbon Footprint scale relative to the average (100%) for a metric
+function getBetterWorseRating(percentOfAverage) {
+    const pct = Number(percentOfAverage);
+    if (!isFinite(pct)) return "";
+    if (pct <= 70) return "Lowest Carbon Footprint";
+    if (pct <= 90) return "Low Carbon Footprint";
+    if (pct <= 110) return "Medium Carbon Footprint";
+    if (pct <= 130) return "High Carbon Footprint";
+    return "Highest Carbon Footprint";
+}
+
+// Finds which decile bucket a value falls into against a category's own
+// pct10_gwp...pct90_gwp thresholds (category-relative, not a fixed scale).
+function getGWPPercentileRank(value, percentiles) {
+    percentiles = percentiles || {};
+    for (const decile of [10, 20, 30, 40, 50, 60, 70, 80, 90]) {
+        const threshold = percentiles[`p${decile}`];
+        if (threshold !== null && threshold !== undefined && value <= threshold) {
+            return decile;
+        }
+    }
+    return 95;
+}
+
+// True when at least one category percentile threshold is available
+function hasGWPPercentileData(percentiles) {
+    if (!percentiles) return false;
+    return [10, 20, 30, 40, 50, 60, 70, 80, 90].some(decile =>
+        percentiles[`p${decile}`] !== null && percentiles[`p${decile}`] !== undefined
+    );
 }
 
 function getPercentileRating(percentile) {
-    if (percentile <= 20) return { level: "excellent", color: "#22c55e", label: "Top 20%" };
-    if (percentile <= 40) return { level: "good", color: "#84cc16", label: "Top 40%" };
-    if (percentile <= 60) return { level: "average", color: "#f59e0b", label: "Average" };
-    if (percentile <= 80) return { level: "below-average", color: "#f97316", label: "Below Average" };
-    return { level: "poor", color: "#ef4444", label: "Bottom 20%" };
+    if (percentile <= 20) return { level: "excellent", color: "#22c55e", label: "In top 20% best products" };
+    if (percentile <= 40) return { level: "good", color: "#84cc16", label: "In top 40% best products" };
+    if (percentile <= 60) return { level: "average", color: "#f59e0b", label: "Product is average in range" };
+    if (percentile <= 80) return { level: "below-average", color: "#f97316", label: "Within 40% worse impacts" };
+    return { level: "poor", color: "#ef4444", label: "Within 20% worse impacts" };
 }
 
 // ============================================

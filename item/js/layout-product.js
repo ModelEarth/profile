@@ -167,14 +167,16 @@ function buildProductSections(data) {
     // 1. Primary GWP (Global Warming Potential)
     const gwp = toNumber(data.gwp);
     if (gwp !== null) {
+        const gwpPercentOfAverage = calculateImpactPercentOfAverage(gwp, "gwp");
+        const gwpRating = typeof getBetterWorseRating === "function" ? getBetterWorseRating(gwpPercentOfAverage) : "";
         sections.push({
-            name: "Global Warming Potential",
+            name: gwpRating || "Global Warming Potential",
             value: gwp,
             unit: " kgCO2e",
             primary: true,
             importance: "high",
             metricType: "gwp",
-            percentOfAverage: calculateImpactPercentOfAverage(gwp, "gwp"),
+            percentOfAverage: gwpPercentOfAverage,
             subsections: buildGWPSubsections(data)
         });
     }
@@ -521,11 +523,17 @@ function extractComposition(data) {
 // ============================================
 
 function extractPercentiles(data) {
+    const category = data.category || {};
     return {
-        p10: toNumber(data.gwp_per_category_declared_unit_10p),
-        p20: toNumber(data.gwp_per_category_declared_unit_20p),
-        p50: toNumber(data.gwp_per_category_declared_unit_50p),
-        p90: toNumber(data.gwp_per_category_declared_unit_90p)
+        p10: toNumber(category.pct10_gwp),
+        p20: toNumber(category.pct20_gwp),
+        p30: toNumber(category.pct30_gwp),
+        p40: toNumber(category.pct40_gwp),
+        p50: toNumber(category.pct50_gwp),
+        p60: toNumber(category.pct60_gwp),
+        p70: toNumber(category.pct70_gwp),
+        p80: toNumber(category.pct80_gwp),
+        p90: toNumber(category.pct90_gwp)
     };
 }
 

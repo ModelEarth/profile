@@ -430,7 +430,8 @@ function renderProductFDAStyle(profileObject, quantity = 1, verbosity = "medium"
 function renderFDASection(section, quantity) {
     const val = section.value * quantity;
     const unit = section.unit || getUnit(section.name);
-    const formattedVal = formatValue(val, section.name, section.decimals || 2);
+    const isGWP = section.metricType === "gwp";
+    const formattedVal = formatValue(val, isGWP ? "gwp" : section.name, section.decimals || 2);
     const percentOfAvg = section.percentOfAverage ? Math.round(section.percentOfAverage * quantity) : null;
 
     const sectionDiv = document.createElement("div");
@@ -442,7 +443,7 @@ function renderFDASection(section, quantity) {
     // Get appropriate tooltip for this metric
     let tooltip = "";
     const nameLower = section.name.toLowerCase();
-    if (nameLower.includes("global warming") || nameLower.includes("gwp")) {
+    if (isGWP || nameLower.includes("global warming") || nameLower.includes("gwp")) {
         tooltip = createInfoIcon(METRIC_TOOLTIPS.gwp, 'tip-gwp-label');
     } else if (nameLower.includes("uncertainty")) {
         tooltip = createInfoIcon(METRIC_TOOLTIPS.uncertainty, 'tip-uncertainty-label');
@@ -499,10 +500,16 @@ function renderProductBadgeStyle(profileObject, quantity = 1, verbosity = "mediu
 
     // Get primary GWP for the main badge
     const primaryGWP = profileObject.sections.find(s =>
-        s.name.toLowerCase().includes("global warming") && s.primary
+        s.primary && (s.metricType === "gwp" || s.name.toLowerCase().includes("global warming"))
     );
     const gwpValue = primaryGWP ? primaryGWP.value * quantity : 0;
-    const rating = getImpactRating(gwpValue, "gwp");
+    // Prefer rating the product against its own category's percentile spread
+    // (matches the Category Comparison chart) rather than a fixed generic
+    // GWP scale, since "high" absolute GWP can still be best-in-category.
+    const percentiles = profileObject.percentiles;
+    const rating = hasGWPPercentileData(percentiles)
+        ? getPercentileRating(getGWPPercentileRank(gwpValue, percentiles))
+        : getImpactRating(gwpValue, "gwp");
 
     // Header with product name above eco score badge
     div.innerHTML = `
@@ -517,7 +524,7 @@ function renderProductBadgeStyle(profileObject, quantity = 1, verbosity = "mediu
             </div>
             <hr class="badge-divider">
             <div class="eco-score-badge" style="background-color: ${rating.color}">
-                <div class="score-value">${formatValue(gwpValue, "gwp", 1)}</div>
+                <div class="score-value">${gwpValue.toFixed(1)}</div>
                 <div class="score-unit">kgCO2e</div>
                 <div class="score-label">${rating.label}</div>
             </div>
@@ -639,15 +646,10 @@ function renderPercentileChart(profileObject) {
     div.className = "percentile-chart";
 
     const percentiles = profileObject.percentiles || {};
-    const currentGWP = profileObject.sections.find(s => s.name.toLowerCase().includes("global warming") && s.primary)?.value || 0;
+    const currentGWP = profileObject.sections.find(s => s.primary && (s.metricType === "gwp" || s.name.toLowerCase().includes("global warming")))?.value || 0;
 
-    // Find where current value falls
-    let currentPercentile = 50;
-    if (percentiles.p10 && currentGWP <= percentiles.p10) currentPercentile = 10;
-    else if (percentiles.p20 && currentGWP <= percentiles.p20) currentPercentile = 20;
-    else if (percentiles.p50 && currentGWP <= percentiles.p50) currentPercentile = 50;
-    else if (percentiles.p90 && currentGWP <= percentiles.p90) currentPercentile = 90;
-    else currentPercentile = 95;
+    // Find where current value falls among the available decile thresholds
+    const currentPercentile = getGWPPercentileRank(currentGWP, percentiles);
 
     const rating = getPercentileRating(currentPercentile);
 
@@ -670,7 +672,7 @@ function renderPercentileChart(profileObject) {
             </div>
         </div>
         <div class="percentile-result" style="color: ${rating.color}">
-            This product is in the <strong>${rating.label}</strong> for its category
+            <strong>${rating.label}</strong>
         </div>
     `;
 
