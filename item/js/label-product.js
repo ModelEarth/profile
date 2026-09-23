@@ -1763,15 +1763,23 @@ function renderCertifications(data) {
             <h4>Certifications & Verification ${createInfoIcon("Third-party verification ensures EPD data accuracy. Program operators maintain quality standards for environmental claims.", 'tip-certs')}</h4>
         </div>
         <div class="certifications-grid">
-            ${certs.map(cert => `
+            ${certs.map((cert, index) => {
+                // A details value can be a raw object (e.g. verifier org info)
+                // rather than a string - render those with the same
+                // name + expandable "Details" toggle used for owned_by.
+                const detailsHtml = cert.details && typeof cert.details === "object"
+                    ? formatOwnedBy(cert.details, `cert-details-${index}`)
+                    : cert.details;
+                return `
                 <div class="cert-card ${cert.isWarning ? 'warning' : ''}">
                     <span class="cert-icon">${cert.icon}</span>
                     <div class="cert-info">
                         <div class="cert-type">${cert.type}</div>
-                        ${cert.details ? `<div class="cert-details">${cert.details}</div>` : ''}
+                        ${detailsHtml ? `<div class="cert-details">${detailsHtml}</div>` : ''}
                     </div>
                 </div>
-            `).join('')}
+                `;
+            }).join('')}
         </div>
     `;
 

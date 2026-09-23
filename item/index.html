@@ -329,6 +329,16 @@ function toggleCategorySidebar() {
       if (menuToggleBtn) {
         menuToggleBtn.classList.add("sidebar-open");
       }
+      // Reveal the category list if it was collapsed (narrow screens), and
+      // hide the back-arrow bar that stands in for it while collapsed.
+      const categoryList = document.getElementById("category-list");
+      const categoryBackBar = document.getElementById("current-category-bar");
+      if (categoryList && categoryList.style.display === "none") {
+        categoryList.style.display = "";
+      }
+      if (categoryBackBar) {
+        categoryBackBar.style.display = "none";
+      }
     } else {
       sidebar.style.display = "none";
       // Restore the menu toggle button opacity when sidebar is closed
@@ -447,7 +457,7 @@ if (typeof window.rsRefreshFromYaml === 'function') {
 
 <body data-param-input="profile-item">
 
-<div class="content contentpadding large-list content-wide">
+<div id="profile-item-content" class="content contentpadding large-list content-wide">
 
   <div class="header-row">
     <div class="header-left">
@@ -489,9 +499,13 @@ if (typeof window.rsRefreshFromYaml === 'function') {
           <a href="#" id="topic-close-link">Close Topic Menu</a>
         </div>
       </div>
+      <div id="current-category-bar" class="current-category-bar" style="display:none;">
+        <span id="current-category-back" class="current-category-back" title="Show categories">&#9664;</span>
+        <span id="current-category-title" class="current-category-title"></span>
+      </div>
       <div id="category-list"></div>
     </div>
-    <div class="content-scroll">
+    <div id="content-scroll" class="content-scroll">
       <div id="search-div"></div>
       <!-- Insights panel  -->
 <div id="insightsPanel" style="display:none; margin:14px 0;">

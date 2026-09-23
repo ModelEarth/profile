@@ -135,6 +135,7 @@ try {
 
 let searchResults = []; // Store current search results
 let lastHashSignature = null;
+let lastCategoryHashForSidebar; // Tracks hash.cat so we can detect category changes
 
 document.addEventListener("DOMContentLoaded", () => {
     if (document.addEventListener) {
@@ -316,17 +317,36 @@ async function fetchCategoryGWPPercentiles(country, category, rows) {
     }
 }
 
+// Truncates a URL's displayed link text (not its href) to 50 characters on
+// narrow screens, so long "List Source:" links don't overflow/wrap badly.
+function truncateUrlForNarrowDisplay(url, maxLen = 50) {
+    if (!url || url.length <= maxLen) return url;
+    return url.slice(0, maxLen) + "...";
+}
+
+// Turns a raw CSV header name into a display label for the sort dropdown.
+function getCsvColumnLabel(key) {
+    const known = { id: "ID", gwp: "GWP" };
+    const lower = key.toLowerCase();
+    if (known[lower]) return known[lower];
+    return key
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+// Compares two rows by a column, numerically when both sides parse as
+// numbers (e.g. gwp), otherwise as case-insensitive strings.
+function compareCsvRowsByColumn(rowA, rowB, key) {
+    const rawA = getRowValue(rowA, [key]);
+    const rawB = getRowValue(rowB, [key]);
+    const numA = toNumber(rawA);
+    const numB = toNumber(rawB);
+    if (numA !== null && numB !== null) return numA - numB;
+    return String(rawA).toLowerCase().localeCompare(String(rawB).toLowerCase());
+}
+
 function renderProductCsvList(container, rows, country, listSourceUrl, titleText = "Products", categoryPercentiles = {}) {
     container.innerHTML = "";
-    const header = document.createElement("h3");
-    header.textContent = `${titleText} (${rows.length})`;
-    container.appendChild(header);
-
-    const listContainer = document.createElement("div");
-    listContainer.style.marginTop = "1em";
-
-    const list = document.createElement("div");
-    list.className = "product-file-list";
 
     // Fall back to deriving percentiles from just this CSV's rows only when
     // the authoritative category percentiles couldn't be fetched.
@@ -339,45 +359,188 @@ function renderProductCsvList(container, rows, country, listSourceUrl, titleText
             : {};
     }
 
-    rows.forEach((row) => {
-        const id = getRowValue(row, ["ID", "id", "Id", "uuid", "UUID"]);
-        const name = getRowValue(row, ["name", "Name"]) || "Unnamed product";
-        const gwp = getRowValue(row, ["gwp", "GWP"]);
-        const gwpValue = toNumber(gwp);
+    const columns = rows.length ? Object.keys(rows[0]) : ["name", "gwp"];
+    const hash = (typeof getHash === "function") ? getHash() : getUrlHash();
+    const defaultSortKey = columns.find(c => c.toLowerCase() === "gwp")
+        || columns.find(c => c.toLowerCase() === "name")
+        || columns[0];
+    // GWP ascending (low numbers first) is the default, without writing
+    // anything to the hash until the user actually changes the sort.
+    const sortKey = hash.sort && columns.includes(hash.sort) ? hash.sort : defaultSortKey;
+    const sortDir = hash.dir === "desc" ? "desc" : "asc";
+    const isNameOrGwpColumn = (key) => ["name", "gwp"].includes(key.toLowerCase());
 
-        const rowDiv = document.createElement("div");
-        rowDiv.className = "file-row";
+    let workingRows = rows;
+    if (!hash.cat) {
+        // Across all categories (no cat hash), rows missing the sorted
+        // column's value have nothing meaningful to sort by - omit them.
+        workingRows = workingRows.filter((row) => getRowValue(row, [sortKey]) !== "");
 
-        const categoryValue = getRowValue(row, ["category", "Category", "cat", "Cat"]);
-        const catParam = categoryValue ? `&cat=${encodeURIComponent(categoryValue)}` : "";
-        const detailHref = id ? `#layout=product&country=${country}${catParam}&id=${id}` : "#";
-
-        if (gwpValue !== null) {
-            const rating = hasGWPPercentileData(categoryPercentiles)
-                ? getPercentileRating(getGWPPercentileRank(gwpValue, categoryPercentiles))
-                : getImpactRating(gwpValue, "gwp");
-            const gwpRect = document.createElement("a");
-            gwpRect.href = detailHref;
-            gwpRect.className = "file-row-gwp";
-            gwpRect.style.backgroundColor = rating.color;
-            gwpRect.textContent = gwpValue.toFixed(1);
-            rowDiv.appendChild(gwpRect);
+        // Sorting GWP low-to-high also surfaces 0/negative placeholder
+        // values first - omit those too in that specific case.
+        if (sortKey.toLowerCase() === "gwp" && sortDir === "asc") {
+            workingRows = workingRows.filter((row) => {
+                const gwpValue = toNumber(getRowValue(row, ["gwp", "GWP"]));
+                return gwpValue === null || gwpValue > 0;
+            });
         }
+    }
 
-        const nameLink = document.createElement("a");
-        nameLink.href = detailHref;
-        nameLink.textContent = name;
-        nameLink.className = "file-row-name";
-        rowDiv.appendChild(nameLink);
+    // Header row: title on the left, sort controls on the far right
+    const headerRow = document.createElement("div");
+    headerRow.className = "list-header-row";
 
-        list.appendChild(rowDiv);
+    const header = document.createElement("h3");
+    header.textContent = `${titleText} (${workingRows.length})`;
+    headerRow.appendChild(header);
+
+    const sortBar = document.createElement("div");
+    sortBar.className = "list-sort-bar";
+
+    const sortSelect = document.createElement("select");
+    sortSelect.className = "list-sort-select";
+    columns.forEach((col) => {
+        const option = document.createElement("option");
+        option.value = col;
+        option.textContent = getCsvColumnLabel(col);
+        if (col === sortKey) option.selected = true;
+        sortSelect.appendChild(option);
     });
+    sortSelect.addEventListener("change", () => {
+        const updateHashFn = typeof goHashNoHistory === "function" ? goHashNoHistory : goHash;
+        updateHashFn({ sort: sortSelect.value, dir: sortDir });
+    });
+    sortBar.appendChild(sortSelect);
+
+    // Single arrow that flips direction on click: ▼ = ascending (low first), ▲ = descending
+    const dirBtn = document.createElement("button");
+    dirBtn.type = "button";
+    dirBtn.className = "sort-dir-btn";
+    const updateDirBtn = (dir) => {
+        dirBtn.title = dir === "asc" ? "Sort ascending (click for descending)" : "Sort descending (click for ascending)";
+        dirBtn.setAttribute("aria-label", dirBtn.title);
+        dirBtn.innerHTML = `<span class="sort-dir-arrow">${dir === "asc" ? "▼" : "▲"}</span>`;
+    };
+    updateDirBtn(sortDir);
+    dirBtn.addEventListener("click", () => {
+        const updateHashFn = typeof goHashNoHistory === "function" ? goHashNoHistory : goHash;
+        updateHashFn({ sort: sortKey, dir: sortDir === "asc" ? "desc" : "asc" });
+    });
+    sortBar.appendChild(dirBtn);
+
+    headerRow.appendChild(sortBar);
+    container.appendChild(headerRow);
+
+    const listContainer = document.createElement("div");
+    listContainer.style.marginTop = "1em";
+
+    const list = document.createElement("div");
+    list.className = "product-file-list";
     listContainer.appendChild(list);
+
+    const pageSize = 500;
+    const sortedRows = workingRows.slice().sort((a, b) => {
+        const cmp = compareCsvRowsByColumn(a, b, sortKey);
+        return sortDir === "desc" ? -cmp : cmp;
+    });
+    const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize));
+    let currentPage = 1;
+
+    const pagination = document.createElement("div");
+    pagination.className = "list-pagination";
+    const prevBtn = document.createElement("button");
+    prevBtn.type = "button";
+    prevBtn.className = "page-nav-btn page-prev";
+    prevBtn.textContent = "‹ Prev";
+    const pageInfo = document.createElement("span");
+    pageInfo.className = "page-info";
+    const nextBtn = document.createElement("button");
+    nextBtn.type = "button";
+    nextBtn.className = "page-nav-btn page-next";
+    nextBtn.textContent = "Next ›";
+    pagination.appendChild(prevBtn);
+    pagination.appendChild(pageInfo);
+    pagination.appendChild(nextBtn);
+
+    function renderPage() {
+        list.innerHTML = "";
+        const start = (currentPage - 1) * pageSize;
+        const pageRows = sortedRows.slice(start, start + pageSize);
+
+        pageRows.forEach((row) => {
+            const id = getRowValue(row, ["ID", "id", "Id", "uuid", "UUID"]);
+            const name = getRowValue(row, ["name", "Name"]) || "Unnamed product";
+            const gwp = getRowValue(row, ["gwp", "GWP"]);
+            const gwpValue = toNumber(gwp);
+
+            const categoryValue = getRowValue(row, ["category", "Category", "cat", "Cat"]);
+            const catParam = categoryValue ? `&cat=${encodeURIComponent(categoryValue)}` : "";
+            const detailHref = id ? `/profile/item/#layout=product&country=${country}${catParam}&id=${id}` : "#";
+
+            const rowDiv = document.createElement("a");
+            rowDiv.className = "file-row";
+            rowDiv.href = detailHref;
+
+            if (gwpValue !== null) {
+                const rating = hasGWPPercentileData(categoryPercentiles)
+                    ? getPercentileRating(getGWPPercentileRank(gwpValue, categoryPercentiles))
+                    : getImpactRating(gwpValue, "gwp");
+                const gwpRect = document.createElement("span");
+                gwpRect.className = "file-row-gwp";
+                gwpRect.style.backgroundColor = rating.color;
+                gwpRect.textContent = gwpValue.toFixed(1);
+                rowDiv.appendChild(gwpRect);
+            }
+
+            const nameSpan = document.createElement("span");
+            nameSpan.textContent = name;
+            nameSpan.className = "file-row-name";
+            rowDiv.appendChild(nameSpan);
+
+            // Only show the sorted column's own value when it isn't already
+            // displayed (name/gwp), so every column doesn't get added to the row.
+            if (!isNameOrGwpColumn(sortKey)) {
+                const sortValue = getRowValue(row, [sortKey]);
+                if (sortValue) {
+                    const extraSpan = document.createElement("span");
+                    extraSpan.className = "file-row-extra";
+                    extraSpan.textContent = sortValue;
+                    rowDiv.appendChild(extraSpan);
+                }
+            }
+
+            list.appendChild(rowDiv);
+        });
+
+        pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+        prevBtn.disabled = currentPage <= 1;
+        nextBtn.disabled = currentPage >= totalPages;
+    }
+
+    prevBtn.addEventListener("click", () => {
+        if (currentPage > 1) {
+            currentPage--;
+            renderPage();
+        }
+    });
+    nextBtn.addEventListener("click", () => {
+        if (currentPage < totalPages) {
+            currentPage++;
+            renderPage();
+        }
+    });
+
+    renderPage();
+
+    // Only show pagination controls when there's more than one page's worth
+    if (sortedRows.length > pageSize) {
+        listContainer.appendChild(pagination);
+    }
 
     if (listSourceUrl) {
         const listSource = document.createElement("div");
         listSource.className = "list-source";
-        listSource.innerHTML = `List Source: <a href="${listSourceUrl}" target="_blank" rel="noopener">${listSourceUrl}</a>`;
+        listSource.innerHTML = `List Source: <a href="${listSourceUrl}" target="_blank" rel="noopener">${truncateUrlForNarrowDisplay(listSourceUrl)}</a>`;
         listContainer.appendChild(listSource);
     }
 
@@ -505,7 +668,13 @@ async function loadMenu() {
 
     const toggleBtn = document.getElementById("menu-toggle-btn");
 
+    const getInsightsBtn = document.getElementById("getInsightsBtn");
+    if (getInsightsBtn) {
+        getInsightsBtn.style.display = hash.layout == "product" ? "none" : "";
+    }
+
     if (hash.layout == "product") {
+        document.title = "Building Materials" + (hash.cat ? ` - ${hash.cat}` : "");
         addUSDASearchBar(); // Show search bar with country dropdown
         searchResultsContainer.style.display = "none";
         menuContainer.style.display = "none";
@@ -537,8 +706,16 @@ async function loadMenu() {
             if (hash.cat) {
                 await selectProductSubcategory(selectedCountry, hash.cat);
             } else {
-                const allCsvUrl = buildAllCsvUrl(selectedCountry);
-                const allRows = await loadCsvList(allCsvUrl);
+                let allCsvUrl = buildAllCsvUrl(selectedCountry);
+                let allRows = await loadCsvList(allCsvUrl);
+
+                // Local products-data checkout isn't always available - fall
+                // back to the raw GitHub CSV (same pattern as selectProductSubcategory).
+                if (!allRows || !allRows.length) {
+                    allCsvUrl = `${RAW_BASE}/${selectedCountry}/all.csv`;
+                    allRows = await loadCsvList(allCsvUrl);
+                }
+
                 if (allRows && allRows.length) {
                     renderProductCsvList(
                         document.getElementById("product-label"),
@@ -547,22 +724,26 @@ async function loadMenu() {
                         allCsvUrl,
                         "All Products"
                     );
-                } else {
-                    // Load first subcategory if no cat or id specified
-                    const categories = PRODUCT_CATEGORIES[selectedCountry] || PRODUCT_CATEGORIES.US;
-                    if (categories.length > 0 && categories[0].subcategories && categories[0].subcategories.length > 0) {
-                        const firstSubcat = categories[0].subcategories[0];
-                        if (typeof goHash === "function") {
-                            goHash({ cat: firstSubcat });
-                        }
-                    }
                 }
+                // Previously redirected to the first subcategory (e.g. cat=Carpet)
+                // when all.csv couldn't be loaded. Commented out so #layout=product
+                // with no cat shows every product instead (paginated in sets of 500).
+                // else {
+                //     const categories = PRODUCT_CATEGORIES[selectedCountry] || PRODUCT_CATEGORIES.US;
+                //     if (categories.length > 0 && categories[0].subcategories && categories[0].subcategories.length > 0) {
+                //         const firstSubcat = categories[0].subcategories[0];
+                //         if (typeof goHash === "function") {
+                //             goHash({ cat: firstSubcat });
+                //         }
+                //     }
+                // }
             }
         }
         return;
     }
 
     // Food view (no layout parameter)
+    document.title = "Healthy Meal Planner";
     addUSDASearchBar();
    
 const isProfileItem = window.location.pathname.includes("/profile/item");
@@ -1083,9 +1264,48 @@ function selectFoodCategory(queryString, element) {
     }
 }
 
+// Wires the back-arrow bar (shown in place of the collapsed #category-list)
+// to reveal the category list again when clicked. Idempotent - safe to call
+// every time the bar is shown.
+function setupCategoryBackBar() {
+    const bar = document.getElementById("current-category-bar");
+    if (!bar || bar.dataset.wired) return;
+    bar.dataset.wired = "true";
+    bar.addEventListener("click", () => {
+        const categoryList = document.getElementById("category-list");
+        if (categoryList) categoryList.style.display = "";
+        bar.style.display = "none";
+    });
+}
+
+// Shows the current category title with a back arrow in place of the
+// collapsed #category-list, so there's still a way to reopen it.
+function showCategoryBackBar(title) {
+    const bar = document.getElementById("current-category-bar");
+    const titleSpan = document.getElementById("current-category-title");
+    if (!bar || !titleSpan) return;
+    setupCategoryBackBar();
+    titleSpan.textContent = title.replace(/_/g, " ");
+    bar.style.display = "flex";
+}
+
 async function selectProductSubcategory(country, subcategoryName) {
     const container = document.getElementById("product-label");
     if (!container) return;
+
+    // On narrow screens, collapse the category list once the category
+    // actually changes (matches the #profile-item-content container-query
+    // breakpoint that stacks #category-sidebar above #content-scroll).
+    // Measure the same container the CSS @container query measures, not the
+    // viewport, so both stay in sync regardless of page margins/padding.
+    const profileItemContent = document.getElementById("profile-item-content");
+    const contentWidth = profileItemContent ? profileItemContent.getBoundingClientRect().width : window.innerWidth;
+    if (contentWidth <= 800 && subcategoryName !== lastCategoryHashForSidebar) {
+        const categoryList = document.getElementById("category-list");
+        if (categoryList) categoryList.style.display = "none";
+        showCategoryBackBar(subcategoryName);
+    }
+    lastCategoryHashForSidebar = subcategoryName;
 
     container.innerHTML = `<h3>Loading ${subcategoryName.replace(/_/g, " ")} products...</h3>`;
 
@@ -1249,7 +1469,7 @@ async function selectProductSubcategory(country, subcategoryName) {
 
         const listSource = document.createElement("div");
         listSource.className = "list-source";
-        listSource.innerHTML = `List Source: <a href="${listSourceUrl}" target="_blank" rel="noopener">${listSourceUrl}</a>`;
+        listSource.innerHTML = `List Source: <a href="${listSourceUrl}" target="_blank" rel="noopener">${truncateUrlForNarrowDisplay(listSourceUrl)}</a>`;
         listContainer.appendChild(listSource);
 
         container.appendChild(listContainer);
