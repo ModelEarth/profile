@@ -1384,6 +1384,90 @@ function renderMissingImpacts(data) {
 }
 
 // ============================================
+// Geolocations
+// ============================================
+
+// Recursively scans the parsed YAML for keys that look like city/state
+// fields (city, city_name, state, state_name, province, ...) rather than
+// relying on a fixed schema, since EPD/product YAML shapes vary widely.
+function detectGeolocations(data) {
+    const cities = new Set();
+    const states = new Set();
+    const cityKeyPattern = /(^|_)cities?(_|$)/;
+    const stateKeyPattern = /(^|_)(states?|provinces?)(_|$)/;
+
+    // Bing-geocode-style keys used by some EPD/product YAML (e.g. Building Transparency):
+    // admin_district = state/region, admin_district2 = county/city, locality = city
+    const cityKeyAliases = new Set(["locality", "localities", "town", "municipality", "admin_district2"]);
+    const stateKeyAliases = new Set(["admin_district"]);
+
+    function scan(value) {
+        if (Array.isArray(value)) {
+            value.forEach(scan);
+            return;
+        }
+        if (!value || typeof value !== "object") return;
+
+        Object.keys(value).forEach(key => {
+            const keyLower = key.toLowerCase();
+            const fieldValue = value[key];
+
+            if (typeof fieldValue === "string" && fieldValue.trim()) {
+                const cleaned = cleanText(fieldValue);
+                if (cleaned && (cityKeyPattern.test(keyLower) || cityKeyAliases.has(keyLower))) {
+                    cities.add(cleaned);
+                } else if (cleaned && (stateKeyPattern.test(keyLower) || stateKeyAliases.has(keyLower))) {
+                    states.add(cleaned);
+                }
+            }
+
+            if (fieldValue && typeof fieldValue === "object") {
+                scan(fieldValue);
+            }
+        });
+    }
+
+    scan(data);
+
+    return {
+        cities: Array.from(cities).sort(),
+        states: Array.from(states).sort()
+    };
+}
+
+function renderGeolocations(data) {
+    const div = document.createElement("div");
+    div.className = "geolocations";
+
+    const { cities, states } = detectGeolocations(data);
+
+    if (cities.length === 0 && states.length === 0) {
+        div.style.display = "none";
+        return div;
+    }
+
+    div.innerHTML = `
+        <div class="section-header">
+            <h4>Geolocations</h4>
+        </div>
+        ${cities.length > 0 ? `
+            <div class="geo-list cities">
+                <span class="list-label">Cities:</span>
+                ${cities.map(city => `<span class="geo-tag city">${city}</span>`).join('')}
+            </div>
+        ` : ''}
+        ${states.length > 0 ? `
+            <div class="geo-list states">
+                <span class="list-label">States:</span>
+                ${states.map(state => `<span class="geo-tag state">${state}</span>`).join('')}
+            </div>
+        ` : ''}
+    `;
+
+    return div;
+}
+
+// ============================================
 // Production Locations
 // ============================================
 
@@ -1894,10 +1978,15 @@ function renderProductDescription(data, priorityImageUrl = null, profileObject =
         }
     }
 
-    // Append additional properties inline at the bottom
+    // Append additional properties inside the description text wrapper
     const additionalProps = renderAdditionalPropertiesInline(data);
     if (additionalProps) {
-        div.appendChild(additionalProps);
+        const descriptionTextWrapper = div.querySelector(".description-text-wrapper");
+        if (descriptionTextWrapper) {
+            descriptionTextWrapper.appendChild(additionalProps);
+        } else {
+            div.appendChild(additionalProps);
+        }
     }
 
     return div;
@@ -2161,6 +2250,7 @@ function renderProductDetailsPanel(data) {
     leftCol.className = "details-column";
     leftCol.appendChild(renderCarbonStorageSection(data));
     leftCol.appendChild(renderMissingImpacts(data)); // Environmental Impact Coverage after Carbon Storage
+    leftCol.appendChild(renderGeolocations(data));
     leftCol.appendChild(renderMaterialComposition(data));
 
     const rightCol = document.createElement("div");
@@ -2203,6 +2293,7 @@ function renderProductDetailsPanelWithCalculators(data, profile) {
     leftCol.appendChild(renderTransportationPanel(data));
     leftCol.appendChild(renderCarbonStorageSection(data));
     leftCol.appendChild(renderMissingImpacts(data)); // Environmental Impact Coverage after Carbon Storage
+    leftCol.appendChild(renderGeolocations(data));
     leftCol.appendChild(renderMaterialComposition(data));
 
     // RIGHT COLUMN: Impact Calculator, Locations, Certifications

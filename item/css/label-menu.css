@@ -6,6 +6,10 @@
   justify-content: center;
 }
 
+#menu-toggle-btn {
+  padding: 8px;
+}
+
 /* Menu options button - smaller version */
 #menu-options-btn {
   padding: 5px 6px;
