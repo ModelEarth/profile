@@ -8,6 +8,11 @@
   align-items: flex-start;
 }
 
+#itembadge {
+  width: 100%;
+  max-width: 1400px;
+}
+
 .product-image-rect {
   margin: 10px auto 0px auto;
   display: flex;
