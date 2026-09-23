@@ -168,7 +168,27 @@ function buildProductSections(data) {
     const gwp = toNumber(data.gwp);
     if (gwp !== null) {
         const gwpPercentOfAverage = calculateImpactPercentOfAverage(gwp, "gwp");
-        const gwpRating = typeof getBetterWorseRating === "function" ? getBetterWorseRating(gwpPercentOfAverage) : "";
+
+        // Prefer the category's own percentile rank (matches the eco-badge and
+        // Category Comparison chart); fall back to an approximate rank derived
+        // from percentOfAverage when this product's category has no percentile data.
+        const categoryPercentiles = typeof extractPercentiles === "function" ? extractPercentiles(data) : {};
+        let gwpPercentileRank;
+        if (typeof hasGWPPercentileData === "function" && hasGWPPercentileData(categoryPercentiles)) {
+            gwpPercentileRank = getGWPPercentileRank(gwp, categoryPercentiles);
+        } else {
+            const pct = Number(gwpPercentOfAverage);
+            if (!isFinite(pct)) gwpPercentileRank = null;
+            else if (pct <= 70) gwpPercentileRank = 20;
+            else if (pct <= 90) gwpPercentileRank = 40;
+            else if (pct <= 110) gwpPercentileRank = 60;
+            else if (pct <= 130) gwpPercentileRank = 80;
+            else gwpPercentileRank = 95;
+        }
+
+        const gwpRating = typeof getCarbonFootprintLabel === "function" && gwpPercentileRank !== null
+            ? getCarbonFootprintLabel(gwpPercentileRank)
+            : "";
         sections.push({
             name: gwpRating || "Global Warming Potential",
             value: gwp,

@@ -539,7 +539,7 @@ function renderProductBadgeStyle(profileObject, quantity = 1, verbosity = "mediu
     const sectionsToShow = filterSectionsByVerbosity(profileObject.sections, verbosity);
 
     sectionsToShow.forEach(section => {
-        const metricDiv = renderBadgeMetric(section, quantity);
+        const metricDiv = renderBadgeMetric(section, quantity, profileObject.percentiles);
         breakdownDiv.appendChild(metricDiv);
     });
 
@@ -590,10 +590,14 @@ function renderProductBadgeStyle(profileObject, quantity = 1, verbosity = "mediu
     return div;
 }
 
-function renderBadgeMetric(section, quantity) {
+function renderBadgeMetric(section, quantity, percentiles) {
     const val = section.value * quantity;
     const unit = section.unit || "";
-    const rating = section.metricType ? getImpactRating(val, section.metricType) : null;
+    // For GWP, rate against the category's own percentile spread (matches the
+    // eco-score-badge above) rather than the fixed absolute scale, when available.
+    const rating = section.metricType === "gwp" && hasGWPPercentileData(percentiles)
+        ? getPercentileRating(getGWPPercentileRank(val, percentiles))
+        : (section.metricType ? getImpactRating(val, section.metricType) : null);
 
     const metricDiv = document.createElement("div");
     metricDiv.className = "eco-metric";

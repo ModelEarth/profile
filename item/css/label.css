@@ -3841,7 +3841,8 @@ input[type=number]::-webkit-outer-spin-button {
   background: #1e3a5f;
 }
 
-.file-row-gwp {
+.file-row-gwp,
+.file-row-gwp:hover {
   flex-shrink: 0;
   min-width: 44px;
   padding: 4px 8px;
@@ -3850,6 +3851,7 @@ input[type=number]::-webkit-outer-spin-button {
   color: white;
   font-size: 0.8em;
   font-weight: 600;
+  text-decoration: none;
 }
 
 .file-row-name {

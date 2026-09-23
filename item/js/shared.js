@@ -86,15 +86,33 @@ function getImpactRating(value, metricType) {
     return { level: "very-high", color: "#ef4444", label: "Very High Negative Impact" };
 }
 
-// 5-point Carbon Footprint scale relative to the average (100%) for a metric
-function getBetterWorseRating(percentOfAverage) {
-    const pct = Number(percentOfAverage);
-    if (!isFinite(pct)) return "";
-    if (pct <= 70) return "Lowest Carbon Footprint";
-    if (pct <= 90) return "Low Carbon Footprint";
-    if (pct <= 110) return "Medium Carbon Footprint";
-    if (pct <= 130) return "High Carbon Footprint";
+// 5-point Carbon Footprint scale, keyed by the same percentile rank
+// (10/20/.../90/95) that getGWPPercentileRank/getPercentileRating use, so
+// this label lines up with the category-relative rating shown elsewhere.
+function getCarbonFootprintLabel(percentileRank) {
+    const rank = Number(percentileRank);
+    if (!isFinite(rank)) return "";
+    if (rank <= 20) return "Best Carbon Footprint";
+    if (rank <= 40) return "Low Carbon Footprint";
+    if (rank <= 60) return "Medium Carbon Footprint";
+    if (rank <= 80) return "High Carbon Footprint";
     return "Highest Carbon Footprint";
+}
+
+// Computes p10...p90 GWP thresholds (nearest-rank method) from a list of
+// raw GWP values, e.g. every product's gwp column in a category CSV.
+function computeGWPPercentiles(values) {
+    const sorted = (values || [])
+        .filter(v => v !== null && v !== undefined && isFinite(v))
+        .sort((a, b) => a - b);
+    if (sorted.length === 0) return {};
+
+    const percentiles = {};
+    [10, 20, 30, 40, 50, 60, 70, 80, 90].forEach(decile => {
+        const index = Math.min(sorted.length, Math.ceil((decile / 100) * sorted.length)) - 1;
+        percentiles[`p${decile}`] = sorted[Math.max(0, index)];
+    });
+    return percentiles;
 }
 
 // Finds which decile bucket a value falls into against a category's own

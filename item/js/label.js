@@ -297,7 +297,26 @@ function buildCategoryCsvUrl(country, subcategoryName) {
     return `${LOCAL_BASE}/${country}/${country}-${subcategoryName}.csv`;
 }
 
-function renderProductCsvList(container, rows, country, listSourceUrl, titleText = "Products") {
+// Fetches one product's YAML from the category (percentile thresholds are a
+// category-level property, duplicated in every product's YAML under
+// category.pct10_gwp...pct90_gwp) so the list can use the same authoritative
+// thresholds the detail page uses, rather than deriving a different percentile
+// spread from just this CSV's rows, which can disagree with it.
+async function fetchCategoryGWPPercentiles(country, category, rows) {
+    const id = rows.length ? getRowValue(rows[0], ["ID", "id", "Id", "uuid", "UUID"]) : null;
+    if (!id) return {};
+
+    try {
+        const yamlUrl = getRawGitHubUrl(country, category, `${id}.yaml`);
+        const yamlText = await fetchText(yamlUrl);
+        const data = jsyaml.load(yamlText);
+        return typeof extractPercentiles === "function" ? extractPercentiles(data) : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function renderProductCsvList(container, rows, country, listSourceUrl, titleText = "Products", categoryPercentiles = {}) {
     container.innerHTML = "";
     const header = document.createElement("h3");
     header.textContent = `${titleText} (${rows.length})`;
@@ -309,6 +328,17 @@ function renderProductCsvList(container, rows, country, listSourceUrl, titleText
     const list = document.createElement("div");
     list.className = "product-file-list";
 
+    // Fall back to deriving percentiles from just this CSV's rows only when
+    // the authoritative category percentiles couldn't be fetched.
+    if (!hasGWPPercentileData(categoryPercentiles)) {
+        const categoryGwpValues = rows
+            .map(row => toNumber(getRowValue(row, ["gwp", "GWP"])))
+            .filter(v => v !== null);
+        categoryPercentiles = typeof computeGWPPercentiles === "function"
+            ? computeGWPPercentiles(categoryGwpValues)
+            : {};
+    }
+
     rows.forEach((row) => {
         const id = getRowValue(row, ["ID", "id", "Id", "uuid", "UUID"]);
         const name = getRowValue(row, ["name", "Name"]) || "Unnamed product";
@@ -318,9 +348,16 @@ function renderProductCsvList(container, rows, country, listSourceUrl, titleText
         const rowDiv = document.createElement("div");
         rowDiv.className = "file-row";
 
+        const categoryValue = getRowValue(row, ["category", "Category", "cat", "Cat"]);
+        const catParam = categoryValue ? `&cat=${encodeURIComponent(categoryValue)}` : "";
+        const detailHref = id ? `#layout=product&country=${country}${catParam}&id=${id}` : "#";
+
         if (gwpValue !== null) {
-            const rating = getImpactRating(gwpValue, "gwp");
-            const gwpRect = document.createElement("div");
+            const rating = hasGWPPercentileData(categoryPercentiles)
+                ? getPercentileRating(getGWPPercentileRank(gwpValue, categoryPercentiles))
+                : getImpactRating(gwpValue, "gwp");
+            const gwpRect = document.createElement("a");
+            gwpRect.href = detailHref;
             gwpRect.className = "file-row-gwp";
             gwpRect.style.backgroundColor = rating.color;
             gwpRect.textContent = gwpValue.toFixed(1);
@@ -328,9 +365,7 @@ function renderProductCsvList(container, rows, country, listSourceUrl, titleText
         }
 
         const nameLink = document.createElement("a");
-        const categoryValue = getRowValue(row, ["category", "Category", "cat", "Cat"]);
-        const catParam = categoryValue ? `&cat=${encodeURIComponent(categoryValue)}` : "";
-        nameLink.href = id ? `#layout=product&country=${country}${catParam}&id=${id}` : "#";
+        nameLink.href = detailHref;
         nameLink.textContent = name;
         nameLink.className = "file-row-name";
         rowDiv.appendChild(nameLink);
@@ -1067,12 +1102,18 @@ async function selectProductSubcategory(country, subcategoryName) {
         }
 
         if (csvRows && csvRows.length) {
+            // Use the category's own authoritative percentile thresholds (same
+            // ones the detail page reads from each product's YAML) so the
+            // list's rating matches the detail page, rather than deriving a
+            // separate percentile spread from just this CSV's rows.
+            const categoryPercentiles = await fetchCategoryGWPPercentiles(country, subcategoryName, csvRows);
             renderProductCsvList(
                 container,
                 csvRows,
                 country,
                 csvUrl,
-                subcategoryName.replace(/_/g, " ")
+                subcategoryName.replace(/_/g, " "),
+                categoryPercentiles
             );
             return;
         }
