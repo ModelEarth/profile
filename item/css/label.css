@@ -959,9 +959,14 @@ input[type=number]::-webkit-outer-spin-button {
   }
 }
 
-.dark #search-results-container,
-.dark #search-div {
+.dark #search-results-container {
   border: 1px solid #666;
+  background: #1e293b;
+}
+
+.dark #search-div {
+  border: none;
+  padding: 10px;
   background: #1e293b;
 }
 
