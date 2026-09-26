@@ -6,7 +6,7 @@ Using [SuiteCRM's](https://SuiteCRM.com) standard [database schema](https://sche
 [Webroot Manager](../../team/setup/) - Code CLI commands for Python and Rust servers
 
 <!-- looked here: https://github.com/profle/crm/blob/main/crm/sql/suitecrm-postgres.sql -->
-[Our Azure management script](../azure/) installs this [Common SQL Schema](https://github.com/ModelEarth/profile/blob/main/crm/sql/suitecrm-postgres.sql) [[Maria and SQL versions](https://github.com/ModelEarth/profile/tree/main/crm/sql)]
+[Our Azure management script](https://github.com/ModelEarth/pipeline/tree/main/azure) installs this [Common SQL Schema](https://github.com/ModelEarth/profile/blob/main/crm/sql/suitecrm-postgres.sql) [[Maria and SQL versions](https://github.com/ModelEarth/profile/tree/main/crm/sql)]
 
 **Table Names**
 users
