@@ -221,6 +221,31 @@
             border: 1px solid #ddd;
             border-radius: 5px;
         }
+
+        /* PD-COUNTRIES-TABLE start: More 25 / Show All / Less in the main Countries table footer */
+        .pd-countries-controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            padding: 4px;
+        }
+        .pd-countries-controls .btn {
+            padding: 3px 12px;
+            font-size: 13px;
+        }
+        .pd-countries-controls .pd-count {
+            font-size: 13px;
+            opacity: 0.75;
+        }
+        /* PD-COUNTRIES-TABLE end */
+
+        /* PD-US-SOURCES-DISPLAY start: US States view Data Sources only */
+        /* State file rows: drop the dark .child-row left border (#6c757d) */
+        #dataSourcesPaths.pd-us-sources .data-path.useeio-file.child-row {
+            border-left: none;
+        }
+        /* PD-US-SOURCES-DISPLAY end */
         
         .data-sources {
             margin: 20px 0;
@@ -411,7 +436,57 @@
         .data-path.child-row.hidden {
             display: none;
         }
-        
+
+        /* PD-TABLE start: More 10 / Show All / Less controls for main table */
+        .pd-table-controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 4px;
+        }
+        .pd-table-controls .pd-count {
+            font-size: 13px;
+            opacity: 0.75;
+        }
+        /* PD-TABLE end */
+
+        /* PD-SOURCES start: More 10 / Show All / Less controls for Data Sources */
+        .data-path.pd-src-overflow {
+            display: none;
+        }
+        .pd-src-controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+            font-family: inherit;
+        }
+        .pd-src-controls .pd-count {
+            font-size: 13px;
+            opacity: 0.75;
+        }
+        /* PD-SOURCES end */
+
+        /* PD-COUNTRY-SOURCES start: More 25 / Show All / Less in country Data Sources CSV preview */
+        .pd-country-controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            padding: 4px;
+        }
+        .pd-country-controls .btn {
+            padding: 3px 12px;
+            font-size: 13px;
+        }
+        .pd-country-controls .pd-count {
+            font-size: 13px;
+            opacity: 0.75;
+        }
+        /* PD-COUNTRY-SOURCES end */
+
         .data-path-menu {
             position: absolute;
             top: 8px;
@@ -889,6 +964,16 @@
                     CH4/N2O vary far more by country than CO2 does, so this weighting choice moves those two flows much more.
                     EPA's reference file only covers 2019 &mdash; other years show our own computed values with no EPA column.
                 </div>
+            </div>
+
+            <!-- BEA Sector Import Factors number format (same options as sector_supply_impacts.html) -->
+            <div id="beaFormatControls" style="display:none; justify-content:flex-end; margin-bottom:10px;">
+                <select id="beaNumberFormatSelect" class="year-selector">
+                    <option value="simple" selected>simple</option>
+                    <option value="full">full</option>
+                    <option value="scientific">scientific</option>
+                    <option value="enotation">e notation</option>
+                </select>
             </div>
 
             <!-- Main Data Table -->
@@ -2353,6 +2438,66 @@
             return results;
         }
 
+        function getBeaNumberFormat() {
+            const select = document.getElementById('beaNumberFormatSelect');
+            return select ? select.value : 'simple';
+        }
+
+        // simple / full / scientific number formats -- same output as
+        // formatNumber() in sector_supply_impacts.html
+        function formatBeaFactorNumber(value, formatType) {
+            if (value === 0 || !value) {
+                return '0.0000';
+            }
+            switch (formatType) {
+                case 'simple': {
+                    if (Math.abs(value) < 1e-33) {
+                        return value.toExponential(4);
+                    }
+                    const [mantissa, exponent] = value.toExponential().split('e');
+                    const power = parseInt(exponent);
+                    const words = {
+                        3: 'thousand', 6: 'million', 9: 'billion', 12: 'trillion',
+                        15: 'quadrillion', 18: 'quintillion', 21: 'sextillion', 24: 'septillion',
+                        27: 'octillion', 30: 'nonillion', 33: 'decillion'
+                    };
+                    if (power >= 0 && power < 3) {
+                        return (parseFloat(mantissa) * Math.pow(10, power)).toFixed(4);
+                    }
+                    // Tenths and hundredths read best as a plain decimal (0.37301, not "37.301 tenth")
+                    if (power < 0 && power > -3) {
+                        return String(Number(value.toPrecision(5)));
+                    }
+                    // Smaller fractions show the mantissa alone (8.6098e-6 -> "8.6098", no "millionth")
+                    if (power < 0) {
+                        return parseFloat(mantissa).toFixed(4);
+                    }
+                    const nearestPower = Math.floor(power / 3) * 3;
+                    const word = words[nearestPower];
+                    if (!word) return value.toExponential(4);
+                    const adjustedMantissa = parseFloat(mantissa) * Math.pow(10, power - nearestPower);
+                    return `${adjustedMantissa.toFixed(4)} ${word}`;
+                }
+                case 'full': {
+                    if (Math.abs(value) < 1e-18) {
+                        return value.toExponential(4);
+                    }
+                    return new Intl.NumberFormat('en-US', {
+                        minimumFractionDigits: 4,
+                        maximumFractionDigits: 18
+                    }).format(value);
+                }
+                case 'scientific': {
+                    const [mantissa, exponent] = value.toExponential().split('e');
+                    return `${parseFloat(mantissa).toFixed(4)} × 10<sup>${parseInt(exponent)}</sup>`;
+                }
+                case 'enotation':
+                    return value.toExponential(4);
+                default:
+                    return value.toString();
+            }
+        }
+
         // Create the Tabulator table for the "BEA Sector Import Factors" view --
         // separate from createTable() since its columns/shape (BEA Detail code,
         // 3 GHGs x ours/EPA/ratio) don't fit the country/state row shape.
@@ -2361,7 +2506,8 @@
                 currentTable.destroy();
             }
 
-            const numberFmt = v => (v === null || v === undefined) ? '' : v.toExponential(3);
+            // Reads the dropdown at render time so a format change only needs a row reformat
+            const numberFmt = v => (v === null || v === undefined) ? '' : formatBeaFactorNumber(v, getBeaNumberFormat());
             const ratioFmt = v => (v === null || v === undefined) ? '' : v.toFixed(2) + 'x';
 
             const columns = [
@@ -2385,7 +2531,7 @@
                 columns.push({ title: `${flow.label} - Ratio`, field: flow.key + '_ratio', formatter: cell => ratioFmt(cell.getValue()), width: 110 });
             });
 
-            currentTable = new Tabulator("#table", {
+            const beaTableOptions = {
                 data: data,
                 columns: columns,
                 layout: "fitDataFill",
@@ -2397,7 +2543,14 @@
                 resizableRows: true,
                 initialSort: [{ column: 'usdImports', dir: 'desc' }],
                 tooltips: true,
-            });
+            };
+            // PD-BEA start: reuse the Countries table disclosure helpers (25, More 25, Less, Show All)
+            pdCountriesTableApplyOptions(beaTableOptions);
+            // PD-BEA end
+            currentTable = new Tabulator("#table", beaTableOptions);
+            // PD-BEA start
+            pdCountriesTableAttach(currentTable);
+            // PD-BEA end
 
             console.log('Created BEA factor table with', data.length, 'rows');
         }
@@ -2853,7 +3006,9 @@
                 pathDiv.appendChild(pathContainer);
                 pathsDiv.appendChild(pathDiv);
             });
-            
+
+            // PD-US-SOURCES-DISPLAY: tag the list in the US States view only (Combined rebuilds it as 'combined')
+            pathsDiv.classList.toggle('pd-us-sources', dataType === 'us');
             container.style.display = 'block';
         }
         
@@ -2901,6 +3056,125 @@
             document.getElementById('totalsDisplay').style.display = 'block';
         }
         
+        // PD-COUNTRIES-TABLE start: progressive disclosure for the main Countries table.
+        // Rows grow in place by raising the local page size while staying on page 1 (no page navigation).
+        // Up to 100 shown rows the table grows to fit them; above 100 the viewport holds 100 rows and scrolls.
+        const PD_COUNTRIES_STEP = 25;
+        const PD_COUNTRIES_MAX_VIEWPORT_ROWS = 100;
+
+        function pdCountriesTableApplyOptions(options, step = PD_COUNTRIES_STEP) { // PD-US-STATES: step param (default 25 = Countries)
+            options.paginationSize = step;
+            delete options.paginationSizeSelector;
+            // Render page-number/First/Prev/Next/Last into a detached element so they are not shown
+            options.paginationElement = document.createElement('div');
+            options.footerElement = '<div class="pd-countries-controls">' +
+                '<button type="button" class="btn pd-more">More ' + step + '</button>' +
+                '<button type="button" class="btn pd-all">Show All</button>' +
+                '<button type="button" class="btn pd-less">Less</button>' +
+                '<span class="pd-count"></span></div>';
+        }
+
+        function pdCountriesTableAttach(table, step = PD_COUNTRIES_STEP) { // PD-US-STATES: step param (default 25 = Countries)
+            const state = { visible: step, built: false, sortKey: '', controls: null };
+
+            // PD-SWITCH-HEIGHT start: applyHeight() sets an inline height on the shared #table element. Tabulator's
+            // destroy() clears the table contents but not that style, so the next view (e.g. Countries after an
+            // expanded US States table) would inherit the old height and show a large empty area. Clear it on destroy.
+            const tabulatorDestroy = table.destroy.bind(table);
+            table.destroy = function () {
+                const el = table.element;
+                tabulatorDestroy();
+                if (el) el.style.height = '';
+            };
+            // PD-SWITCH-HEIGHT end
+
+            const sortKeyOf = (sorters) => JSON.stringify((sorters || []).map(s => [s.field, s.dir]));
+            const total = () => table.getDataCount("active");
+            const shownCount = () => Math.min(state.visible, total());
+
+            // Height measured from the actual rendered table: fits min(100, shown) rows,
+            // so up to 100 rows need no internal scrollbar; beyond 100 the viewport holds 100 rows and scrolls.
+            const applyHeight = () => {
+                const el = table.element;
+                const h = (node) => node ? node.getBoundingClientRect().height : 0;
+                const holder = el.querySelector('.tabulator-tableholder');
+                const row = el.querySelector('.tabulator-row');
+                if (!row) return;
+                const measureTarget = () => {
+                    const scrollbar = holder ? Math.max(0, holder.offsetHeight - holder.clientHeight) : 0;
+                    const viewportRows = Math.min(PD_COUNTRIES_MAX_VIEWPORT_ROWS, shownCount());
+                    return Math.ceil(h(el.querySelector('.tabulator-header')) + viewportRows * h(row) +
+                        h(el.querySelector('.tabulator-footer')) + scrollbar + 4);
+                };
+                const target = measureTarget();
+                if (target !== el.offsetHeight) table.setHeight(target);
+                // PD-US-STATES start: re-measure once at the new height. While rows are being added a temporary
+                // vertical scrollbar can force a temporary horizontal one, which would leave an empty gap under the rows.
+                const settled = measureTarget();
+                if (settled !== el.offsetHeight) table.setHeight(settled);
+                // PD-US-STATES end
+            };
+
+            const updateControls = () => {
+                if (!state.controls) return;
+                const all = total();
+                const shown = shownCount();
+                // Fewer than 25 records: everything is already visible, no controls needed
+                state.controls.style.display = all <= step ? 'none' : '';
+                // Hide the then-empty Tabulator footer (border-top + padding would leave a blank strip)
+                const footer = state.controls.closest('.tabulator-footer');
+                if (footer) footer.style.display = all <= step ? 'none' : '';
+                state.controls.querySelector('.pd-more').style.display = shown < all ? '' : 'none';
+                state.controls.querySelector('.pd-all').style.display = shown < all ? '' : 'none';
+                state.controls.querySelector('.pd-less').style.display = shown > step ? '' : 'none';
+                state.controls.querySelector('.pd-count').textContent = `Showing ${shown} of ${all}`;
+            };
+
+            const setVisible = (count) => {
+                state.visible = Math.max(step, count);
+                table.setPageSize(state.visible); // also returns to page 1
+                applyHeight();
+                updateControls();
+            };
+
+            table.on("tableBuilt", () => {
+                state.built = true;
+                state.sortKey = sortKeyOf(table.getSorters());
+                state.controls = table.element.querySelector('.pd-countries-controls');
+                if (!state.controls) return;
+                state.controls.querySelector('.pd-more').addEventListener('click', () => {
+                    setVisible(Math.min(shownCount() + step, total()));
+                });
+                state.controls.querySelector('.pd-all').addEventListener('click', () => {
+                    setVisible(total());
+                });
+                state.controls.querySelector('.pd-less').addEventListener('click', () => {
+                    // Step down to the previous multiple of 25: 100 -> 75 -> 50 -> 25 (Show All 213 -> 200)
+                    setVisible((Math.ceil(shownCount() / step) - 1) * step);
+                });
+                updateControls();
+            });
+
+            // Tabulator sorts the full dataset before paging. When the sort column or
+            // direction changes, show the first 25 rows of the new order.
+            table.on("dataSorted", (sorters) => {
+                if (!state.built) return;
+                const key = sortKeyOf(sorters);
+                if (key === state.sortKey) return;
+                state.sortKey = key;
+                // dataSorted fires mid-refresh; apply after the current refresh completes
+                Promise.resolve().then(() => setVisible(step));
+            });
+
+            // PD-BEA start: header filters (BEA Sector Name) change the row count; refresh height and buttons.
+            // The other main tables have no header filters, so this never fires for them.
+            table.on("dataFiltered", () => {
+                if (state.built) Promise.resolve().then(() => { updateControls(); applyHeight(); }); // controls first: footer may reappear
+            });
+            // PD-BEA end
+        }
+        // PD-COUNTRIES-TABLE end
+
         // Create Tabulator table
         function createTable(data, dataType = 'international') {
             // Destroy existing table
@@ -3105,7 +3379,7 @@
             }
             
             // Create new table
-            currentTable = new Tabulator("#table", {
+            const tableOptions = {
                 data: data,
                 columns: columns,
                 layout: "fitColumns",
@@ -3119,8 +3393,31 @@
                     {column: "output", dir: "desc"}
                 ],
                 tooltips: true
-            });
-            
+            };
+            // PD-COUNTRIES-TABLE start: Countries view only
+            const pdCountriesTable = dataType === 'international';
+            if (pdCountriesTable) pdCountriesTableApplyOptions(tableOptions);
+            // PD-COUNTRIES-TABLE end
+            // PD-US-STATES start: US States view reuses the Countries table disclosure helpers, in steps of 10
+            const pdUsStatesTable = dataType === 'us';
+            const PD_US_STATES_STEP = 10;
+            if (pdUsStatesTable) pdCountriesTableApplyOptions(tableOptions, PD_US_STATES_STEP);
+            // PD-US-STATES end
+            // PD-COMBINED start: Combined view reuses the Countries table disclosure helpers (25, More 25)
+            const pdCombinedTable = dataType === 'combined';
+            if (pdCombinedTable) pdCountriesTableApplyOptions(tableOptions);
+            // PD-COMBINED end
+            currentTable = new Tabulator("#table", tableOptions);
+            // PD-COUNTRIES-TABLE start
+            if (pdCountriesTable) pdCountriesTableAttach(currentTable);
+            // PD-COUNTRIES-TABLE end
+            // PD-US-STATES start
+            if (pdUsStatesTable) pdCountriesTableAttach(currentTable, PD_US_STATES_STEP);
+            // PD-US-STATES end
+            // PD-COMBINED start
+            if (pdCombinedTable) pdCountriesTableAttach(currentTable);
+            // PD-COMBINED end
+
             console.log('Created table with', data.length, 'rows');
         }
         
@@ -3142,6 +3439,7 @@
             // Output/Employment/Regions totals block
             document.getElementById('totalsContainer').style.display = (newSource === 'beafactors') ? 'none' : 'block';
             document.getElementById('beaFactorNote').style.display = (newSource === 'beafactors') ? 'block' : 'none';
+            document.getElementById('beaFormatControls').style.display = (newSource === 'beafactors') ? 'flex' : 'none';
 
             // Update file selector visibility
             updateFileSelector();
@@ -3260,6 +3558,17 @@
                 details.style.display = expanded ? 'none' : 'block';
                 icon.classList.toggle('ph-caret-down', expanded);
                 icon.classList.toggle('ph-caret-up', !expanded);
+            });
+
+            // BEA Sector Import Factors number format: restore the shared footprint
+            // preference (config.js) and reformat the table in place on change
+            const beaNumberFormatSelect = document.getElementById('beaNumberFormatSelect');
+            beaNumberFormatSelect.value = getDropdownPreference('numberFormat', 'simple');
+            beaNumberFormatSelect.addEventListener('change', function() {
+                saveDropdownPreference('numberFormat', this.value);
+                if (currentDataSource === 'beafactors' && currentTable) {
+                    currentTable.getRows().forEach(row => row.reformat());
+                }
             });
 
             // Set up industry filter event listeners
@@ -3602,7 +3911,7 @@
                 }));
                 
                 // Create Tabulator table
-                new Tabulator(`#${tableId}`, {
+                const csvTableOptions = {
                     data: csvData,
                     columns: columns,
                     layout: "fitData",
@@ -3615,14 +3924,161 @@
                     tooltips: true,
                     headerFilterPlaceholder: "Filter...",
                     headerFilter: true
-                });
-                
+                };
+                // PD-COUNTRY-SOURCES start: country (exiobase) Data Sources only
+                const pdCountry = container.closest('.data-path.exiobase') !== null;
+                if (pdCountry) pdCountryApplyOptions(csvTableOptions);
+                // PD-COUNTRY-SOURCES end
+                const csvTable = new Tabulator(`#${tableId}`, csvTableOptions);
+                // PD-COUNTRY-SOURCES start
+                if (pdCountry) pdCountryAttach(csvTable);
+                // PD-COUNTRY-SOURCES end
+
             } catch (error) {
                 console.error('Error loading CSV:', error);
                 container.innerHTML = `<div style="text-align: center; padding: 20px; color: #dc3545;">Error loading CSV: ${error.message}</div>`;
             }
         }
         
+        // PD-COUNTRY-SOURCES start: progressive disclosure for country Data Sources CSV previews.
+        // Rows grow in place (25 -> 50 -> 75 ...) by raising the local page size while staying on page 1.
+        const PD_COUNTRY_STEP = 25;
+        const PD_COUNTRY_MAX_VIEWPORT_ROWS = 100; // PD-COUNTRY-HEIGHT
+
+        function pdCountryApplyOptions(options) {
+            options.paginationSize = PD_COUNTRY_STEP;
+            delete options.paginationSizeSelector;
+            // Render page-number/First/Prev/Next/Last into a detached element so they are not shown
+            options.paginationElement = document.createElement('div');
+            options.footerElement = '<div class="pd-country-controls">' +
+                '<button type="button" class="btn pd-more">More ' + PD_COUNTRY_STEP + '</button>' +
+                '<button type="button" class="btn pd-all">Show All</button>' +
+                '<button type="button" class="btn pd-less">Less</button>' +
+                '<span class="pd-count"></span></div>';
+        }
+
+        // PD-FIT-WIDTH: browser vertical scrollbar width (0 with overlay scrollbars), measured once
+        let pdScrollbarWidthCache = null;
+        function pdScrollbarWidth() {
+            if (pdScrollbarWidthCache === null) {
+                const probe = document.createElement('div');
+                probe.style.cssText = 'position:absolute;top:-9999px;width:100px;height:100px;overflow:scroll;';
+                document.body.appendChild(probe);
+                pdScrollbarWidthCache = probe.offsetWidth - probe.clientWidth;
+                probe.remove();
+            }
+            return pdScrollbarWidthCache;
+        }
+
+        function pdCountryAttach(table) {
+            const state = { visible: PD_COUNTRY_STEP, built: false, sortKey: '', controls: null };
+
+            const sortKeyOf = (sorters) => JSON.stringify((sorters || []).map(s => [s.field, s.dir]));
+
+            // PD-COUNTRY-HEIGHT start: viewport grows with disclosed rows, capped; internal scroll beyond the cap
+            // PD-FIT-ALL start: window always fits min(100, shown) rows, including the default 25 (no scrolling up to 100)
+            const applyHeight = () => {
+                const el = table.element;
+                // .csv-viewer-table has max-height: 400px, which would clip the grown table; lift it for this table only
+                el.style.maxHeight = 'none';
+                // PD-FIT-WIDTH: .csv-viewer-table also has overflow: auto; sub-pixel header/footer heights made the box
+                // itself show an extra scrollbar on the right. Tabulator scrolls inside its own table area, so clip here.
+                el.style.overflow = 'hidden';
+                const h = (node) => node ? node.getBoundingClientRect().height : 0;
+                const holder = el.querySelector('.tabulator-tableholder');
+                const measureTarget = () => {
+                    const row = el.querySelector('.tabulator-row');
+                    const rowHeight = row ? h(row) : 24;
+                    const scrollbar = holder ? Math.max(0, holder.offsetHeight - holder.clientHeight) : 0;
+                    const shown = Math.min(state.visible, table.getDataCount("active"));
+                    // Viewport fits min(100, shown) rows; rows beyond 100 use the internal scrollbar
+                    const viewportRows = Math.min(PD_COUNTRY_MAX_VIEWPORT_ROWS, shown);
+                    return Math.ceil(h(el.querySelector('.tabulator-header')) + viewportRows * rowHeight +
+                        h(el.querySelector('.tabulator-footer')) + scrollbar + 4);
+                };
+                const target = measureTarget();
+                if (target !== el.offsetHeight) table.setHeight(target);
+                // PD-FIT-WIDTH start: when the columns are narrower than the panel, shrink the window to the
+                // columns so Tabulator's grey background does not show on the right. Wider tables are unchanged
+                // (they keep the full panel width and their horizontal scrollbar).
+                const fitWidth = () => {
+                    const tblEl = el.querySelector('.tabulator-table');
+                    if (!tblEl) return;
+                    // A vertical scrollbar is only needed above 100 shown rows (measured width; 0 for overlay scrollbars)
+                    const shownRows = Math.min(state.visible, table.getDataCount("active"));
+                    const vbar = shownRows > PD_COUNTRY_MAX_VIEWPORT_ROWS ? pdScrollbarWidth() : 0;
+                    // Border widths from CSS (offsetWidth - clientWidth would also count a transient scrollbar on this
+                    // overflow:auto element while it resizes)
+                    const cs = getComputedStyle(el);
+                    const border = (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.borderRightWidth) || 0);
+                    const need = Math.ceil(tblEl.offsetWidth + vbar + border);
+                    const panel = el.parentElement ? el.parentElement.clientWidth : Infinity;
+                    el.style.maxWidth = need < panel ? need + 'px' : '';
+                };
+                fitWidth();
+                // PD-FIT-WIDTH end
+                // Re-measure once at the new height (a temporary scrollbar while resizing can overstate it)
+                const settled = measureTarget();
+                if (settled !== el.offsetHeight) table.setHeight(settled);
+                fitWidth(); // PD-FIT-WIDTH: again once the height (and vertical scrollbar) has settled
+            };
+            // PD-FIT-ALL end
+            // PD-COUNTRY-HEIGHT end
+
+            const setVisible = (count) => {
+                state.visible = Math.max(PD_COUNTRY_STEP, count);
+                table.setPageSize(state.visible); // also returns to page 1
+                applyHeight(); // PD-COUNTRY-HEIGHT
+                updateControls();
+            };
+
+            const updateControls = () => {
+                if (!state.controls) return;
+                const total = table.getDataCount("active");
+                const shown = Math.min(state.visible, total);
+                state.controls.querySelector('.pd-more').style.display = shown < total ? '' : 'none';
+                state.controls.querySelector('.pd-all').style.display = shown < total ? '' : 'none';
+                state.controls.querySelector('.pd-less').style.display = state.visible > PD_COUNTRY_STEP ? '' : 'none';
+                state.controls.querySelector('.pd-count').textContent = `Showing ${shown} of ${total}`;
+            };
+
+            table.on("tableBuilt", () => {
+                state.built = true;
+                state.sortKey = sortKeyOf(table.getSorters());
+                state.controls = table.element.querySelector('.pd-country-controls');
+                if (!state.controls) return;
+                state.controls.querySelector('.pd-more').addEventListener('click', () => {
+                    setVisible(Math.min(state.visible + PD_COUNTRY_STEP, table.getDataCount("active")));
+                });
+                state.controls.querySelector('.pd-all').addEventListener('click', () => {
+                    setVisible(table.getDataCount("active"));
+                });
+                state.controls.querySelector('.pd-less').addEventListener('click', () => {
+                    setVisible(PD_COUNTRY_STEP);
+                });
+                updateControls();
+                // PD-FIT-ALL: size the initial 25-row window to fit its rows (after the first render completes)
+                Promise.resolve().then(applyHeight);
+            });
+
+            // Tabulator sorts the full dataset before paging. When the sort column or
+            // direction changes, show the first 25 rows of the new order.
+            table.on("dataSorted", (sorters) => {
+                if (!state.built) return;
+                const key = sortKeyOf(sorters);
+                if (key === state.sortKey) return;
+                state.sortKey = key;
+                // dataSorted fires mid-refresh; apply after the current refresh completes
+                Promise.resolve().then(() => setVisible(PD_COUNTRY_STEP));
+            });
+
+            // Header filters change the available row count; refresh the button state only
+            table.on("dataFiltered", () => {
+                if (state.built) Promise.resolve().then(() => { applyHeight(); updateControls(); }); // PD-COUNTRY-HEIGHT
+            });
+        }
+        // PD-COUNTRY-SOURCES end
+
         function parseCSVForViewer(csvText) {
             const lines = csvText.trim().split('\n');
             if (lines.length < 2) return [];
@@ -3716,7 +4172,7 @@
                 }));
                 
                 // Create Tabulator table
-                new Tabulator(`#${tableId}`, {
+                const jsonTableOptions = {
                     data: tableData,
                     columns: columns,
                     layout: "fitData",
@@ -3729,8 +4185,37 @@
                     tooltips: true,
                     headerFilterPlaceholder: "Filter...",
                     headerFilter: true
-                });
-                
+                };
+                // PD-US-STATES start: US State Data Sources (US States view only) use the same disclosure as Country Data Sources
+                const pdUsState = currentDataSource === 'us' && container.closest('.data-path.useeio-file') !== null;
+                // PD-FIT-WIDTH: also when the US state list is still shown under another view (e.g. India when its CSV fails)
+                const pdUsStateList = container.closest('#dataSourcesPaths.pd-us-sources .data-path.useeio-file') !== null;
+                if (pdUsState || pdUsStateList) pdCountryApplyOptions(jsonTableOptions); // PD-FIT-WIDTH: || pdUsStateList
+                // PD-US-STATES end
+                // PD-SECTORS-HSCROLL: US state sectors.json preview only - size columns to their content (max 400px)
+                // instead of a fixed 120px, so the table is wider than the box and gets a horizontal scrollbar
+                if ((pdUsState || pdUsStateList) && jsonPath.endsWith('sectors.json')) {
+                    columns.forEach(col => { delete col.width; col.maxInitialWidth = 400; });
+                }
+                // PD-COMBINED start: Combined view state Data Sources use the same preview disclosure (25, More 25)
+                // PD-BEA: state file rows from the Combined list also when that list is still shown under another view (e.g. BEA)
+                const pdCombinedState = !pdUsState && !pdUsStateList &&
+                    container.closest('.data-path.useeio-file') !== null;
+                if (pdCombinedState) {
+                    pdCountryApplyOptions(jsonTableOptions);
+                    if (jsonPath.endsWith('sectors.json')) {
+                        columns.forEach(col => { delete col.width; col.maxInitialWidth = 400; });
+                    }
+                }
+                // PD-COMBINED end
+                const jsonTable = new Tabulator(`#${tableId}`, jsonTableOptions);
+                // PD-US-STATES start
+                if (pdUsState || pdUsStateList) pdCountryAttach(jsonTable); // PD-FIT-WIDTH: || pdUsStateList
+                // PD-US-STATES end
+                // PD-COMBINED start
+                if (pdCombinedState) pdCountryAttach(jsonTable);
+                // PD-COMBINED end
+
             } catch (error) {
                 console.error('Error loading JSON:', error);
                 container.innerHTML = `<div style="text-align: center; padding: 20px; color: #dc3545;">Error loading JSON: ${error.message}</div>`;

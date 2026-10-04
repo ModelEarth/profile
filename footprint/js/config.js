@@ -113,7 +113,10 @@ function applyCachedPreferences() {
   let numberFormatSelect = document.getElementById("number-format-select");
   if (numberFormatSelect && numberFormatSelect.options.length > 0) {
     const cachedFormat = getDropdownPreference('numberFormat', 'simple');
-    numberFormatSelect.value = cachedFormat;
+    // Skip formats this page's dropdown doesn't offer (e.g. "enotation" saved on another page)
+    if (Array.from(numberFormatSelect.options).some(o => o.value === cachedFormat)) {
+      numberFormatSelect.value = cachedFormat;
+    }
   }
 
   // Set impact filter preference (only on sector_profile.html)
