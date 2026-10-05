@@ -34,7 +34,9 @@ function documentReady(callback) {
 }
 
 let tableData = [];
+let mainRun = 0;
 async function main() {
+  const run = ++mainRun;
   try {
     console.log("Starting main() via window.onload");
     
@@ -93,7 +95,10 @@ async function main() {
     } catch (error) {
       console.warn('Could not load CO2e data from Excel file:', error);
     }
-    
+
+    // A newer hash change started another run; let it render instead
+    if (run !== mainRun) return;
+
     tableData = sectors.map(sector => {
       const output = q.get(sector.index, 0);
       const jobs = output * impacts.get(jobsIndicator.index, sector.index);
@@ -172,6 +177,9 @@ async function main() {
     
   } catch (error) {
     console.error("Error in main():", error.stack);
+    const loadingMessage = document.getElementById('loadingMessage');
+    loadingMessage.innerHTML = '<div style="color: red;">Error loading data. Please try again.</div>';
+    loadingMessage.style.display = 'block';
   }
 }
 
@@ -179,7 +187,9 @@ window.onload = function() {
   main();
 };
 
-var table
+var table;
+var tableBuilt = false;
+var pendingColumns = null;
 function displayTable(locale, formatType) {
   let hash = getHash();
   //You can also pass #index=0 from commodities.html to sector_profile.html
@@ -352,13 +362,33 @@ function displayTable(locale, formatType) {
     });
   }
 
-  table = new Tabulator("#table", {
-    height: 500,
-    data: tableData,
-    layout: "fitColumns",
-    columns: columns
-  });
-  
+  // Wait for main() to load data so an empty table is never rendered
+  if (!tableData.length) return;
+
+  // Create the Tabulator instance once, then update it in place to avoid a blank flash
+  if (!table) {
+    table = new Tabulator("#table", {
+      height: 500,
+      data: tableData,
+      layout: "fitColumns",
+      columns: columns
+    });
+    table.on("tableBuilt", function() {
+      tableBuilt = true;
+      document.getElementById('loadingMessage').style.display = 'none';
+      if (pendingColumns) {
+        table.setColumns(pendingColumns);
+        table.replaceData(tableData);
+        pendingColumns = null;
+      }
+    });
+  } else if (!tableBuilt) {
+    pendingColumns = columns;
+  } else {
+    table.setColumns(columns);
+    table.replaceData(tableData);
+  }
+
   // Add print/download icons to commodities page
   if (typeof PrintDownloadWidget !== 'undefined') {
     const options = {
@@ -480,6 +510,13 @@ function syncCvStylePrintDownloadIcons() {
     border-color: #555;
     box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
   }
+  /* Same loading message style as index.html */
+  .loading {
+    text-align: center;
+    padding: 20px;
+    font-style: italic;
+    color: #666;
+  }
   .summary-card {
     padding: 15px;
     background: #f8f9fa;
@@ -510,6 +547,7 @@ function syncCvStylePrintDownloadIcons() {
 
   <div id="totals" style="margin:10px 0; font-size:1.1em;"></div>
 
+  <div id="loadingMessage" class="loading" style="clear:both">Loading data...</div>
   <div id="table" style="clear:both"></div>
 
   <div id="notes" style="clear:both; margin-top:20px;">
