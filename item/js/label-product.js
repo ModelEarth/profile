@@ -976,7 +976,8 @@ function renderCategoryBreadcrumb(data) {
     const catValue = categoryLabel.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
     const countryParam = hash && hash.country ? `&country=${hash.country}` : "";
     const titleContent = `
-        <a href="#layout=product${countryParam}&cat=${catValue}" class="product-title breadcrumb-link">${categoryLabel}</a><br>
+        <a href="#layout=product${countryParam}&cat=${catValue}" class="product-title breadcrumb-link">${categoryLabel}</a>${hasSupportingIndustries(data) ? `<i class="material-icons si-category-icon" role="img"
+            aria-label="Industry supply data available" title="Industry supply data available: click a state under Geolocations to view its top ${SUPPORTING_INDUSTRIES_COUNT} supplying industries">bar_chart</i>` : ""}<br>
         ${productName ? `<span class="product-title current" style="font-size: 1.3em; font-weight: 500;">${productName}</span>` : ""}
     `;
 
@@ -1393,12 +1394,55 @@ function renderMissingImpacts(data) {
 // Geolocations
 // ============================================
 
+// YAML field paths and the role their locations play, in display order.
+// The most specific path wins, so plant_or_group.owned_by (the company that owns
+// the plant) is labeled separately from the plant's own address. Nested objects
+// such as reviewer.org and verifier.org inherit their section's role.
+const GEO_ROLE_FIELDS = [
+    ["plant_or_group", "Production Facility"],
+    ["plant_or_group.owned_by", "Manufacturer"],
+    ["manufacturer", "Manufacturer"],
+    ["program_operator", "Program Operator"],
+    ["reviewer", "Reviewer"],
+    ["verifier", "Verifier"]
+];
+
+// Locations found outside the fields above (e.g. developer, digitization_qa)
+// are kept under this heading rather than guessed.
+const GEO_ROLE_UNSPECIFIED = "Other Locations";
+
+function geoRoleForPath(pathKeys) {
+    const path = pathKeys.join(".").toLowerCase();
+    let match = null;
+    GEO_ROLE_FIELDS.forEach(([field, role]) => {
+        if ((path === field || path.startsWith(field + ".")) && (!match || field.length > match.field.length)) {
+            match = { field, role };
+        }
+    });
+    return match ? match.role : GEO_ROLE_UNSPECIFIED;
+}
+
 // Recursively scans the parsed YAML for keys that look like city/state
 // fields (city, city_name, state, state_name, province, ...) rather than
 // relying on a fixed schema, since EPD/product YAML shapes vary widely.
 function detectGeolocations(data) {
     const cities = new Set();
     const states = new Set();
+    // value -> Set of role labels, from the YAML field path the value was found in
+    const cityRoles = new Map();
+    const stateRoles = new Map();
+    // "role|state" pairs found beside a US country field, or with no country field.
+    // A state found only beside another country (e.g. MI for Milan) is not a US state.
+    const usStateRoles = new Set();
+    function addRole(roleMap, value, role) {
+        if (!roleMap.has(value)) roleMap.set(value, new Set());
+        roleMap.get(value).add(role);
+    }
+    function isUSCountry(obj) {
+        const countryKey = Object.keys(obj).find(k => ["country", "country_code", "countrycode"].includes(k.toLowerCase()));
+        if (!countryKey || typeof obj[countryKey] !== "string" || !obj[countryKey].trim()) return true;
+        return ["US", "USA", "UNITED STATES", "UNITED STATES OF AMERICA"].includes(obj[countryKey].trim().toUpperCase());
+    }
     const cityKeyPattern = /(^|_)cities?(_|$)/;
     const stateKeyPattern = /(^|_)(states?|provinces?)(_|$)/;
 
@@ -1407,9 +1451,9 @@ function detectGeolocations(data) {
     const cityKeyAliases = new Set(["locality", "localities", "town", "municipality", "admin_district2"]);
     const stateKeyAliases = new Set(["admin_district"]);
 
-    function scan(value) {
+    function scan(value, pathKeys) {
         if (Array.isArray(value)) {
-            value.forEach(scan);
+            value.forEach(item => scan(item, pathKeys));
             return;
         }
         if (!value || typeof value !== "object") return;
@@ -1422,55 +1466,542 @@ function detectGeolocations(data) {
                 const cleaned = cleanText(fieldValue);
                 if (cleaned && (cityKeyPattern.test(keyLower) || cityKeyAliases.has(keyLower))) {
                     cities.add(cleaned);
+                    addRole(cityRoles, cleaned, geoRoleForPath(pathKeys));
                 } else if (cleaned && (stateKeyPattern.test(keyLower) || stateKeyAliases.has(keyLower))) {
+                    const role = geoRoleForPath(pathKeys);
                     states.add(cleaned);
+                    addRole(stateRoles, cleaned, role);
+                    if (isUSCountry(value)) usStateRoles.add(role + "|" + cleaned);
                 }
             }
 
             if (fieldValue && typeof fieldValue === "object") {
-                scan(fieldValue);
+                scan(fieldValue, pathKeys.concat(key));
             }
         });
     }
 
-    scan(data);
+    scan(data, []);
+
+    // A plant group without a plant address still lists its plants' locations in
+    // plant_geography (e.g. ["US-AR", "US-CA", "CA-AB"]). Its US states are used as
+    // Production Facility states only when no plant address supplied one.
+    const hasProductionState = Array.from(stateRoles.values()).some(roles => roles.has("Production Facility"));
+    if (!hasProductionState) {
+        plantGeographyStates(data).forEach(state => {
+            states.add(state);
+            addRole(stateRoles, state, "Production Facility");
+            usStateRoles.add("Production Facility|" + state);
+        });
+    }
 
     return {
         cities: Array.from(cities).sort(),
-        states: Array.from(states).sort()
+        states: Array.from(states).sort(),
+        cityRoles,
+        stateRoles,
+        usStateRoles
     };
+}
+
+// US state codes from a plant group's plant_geography. A list holding a UN M49 region
+// code (e.g. "001" World) describes a market scope rather than plant locations, so it
+// yields none. Country codes and non-US subdivisions are skipped.
+function plantGeographyStates(data) {
+    const plant = data.plant_or_group;
+    if (!plant || plant.type !== "PlantGroup" || !Array.isArray(data.plant_geography)) return [];
+    const codes = data.plant_geography.filter(code => typeof code === "string").map(code => code.trim());
+    if (codes.some(code => /^\d{3}$/.test(code))) return [];
+    return Array.from(new Set(codes.filter(code => /^US-[A-Z]{2}$/.test(code)).map(code => code.slice(3))));
 }
 
 function renderGeolocations(data) {
     const div = document.createElement("div");
     div.className = "geolocations";
 
-    const { cities, states } = detectGeolocations(data);
+    const { cities, states, cityRoles, stateRoles } = detectGeolocations(data);
 
     if (cities.length === 0 && states.length === 0) {
         div.style.display = "none";
         return div;
     }
 
-    div.innerHTML = `
-        <div class="section-header">
-            <h4>Geolocations</h4>
-        </div>
-        ${cities.length > 0 ? `
+    const geoLists = (cityList, stateList) => `
+        ${cityList.length > 0 ? `
             <div class="geo-list cities">
                 <span class="list-label">Cities:</span>
-                ${cities.map(city => `<span class="geo-tag city">${city}</span>`).join('')}
+                ${cityList.map(city => `<span class="geo-tag city">${city}</span>`).join('')}
             </div>
         ` : ''}
-        ${states.length > 0 ? `
+        ${stateList.length > 0 ? `
             <div class="geo-list states">
                 <span class="list-label">States:</span>
-                ${states.map(state => `<span class="geo-tag state">${state}</span>`).join('')}
+                ${stateList.map(state => `<span class="geo-tag state">${state}</span>`).join('')}
             </div>
         ` : ''}
     `;
 
+    div.innerHTML = `
+        <div class="section-header">
+            <h4>Geolocations</h4>
+        </div>
+        ${renderGeoRoleGroups(cities, states, cityRoles, stateRoles, geoLists)}
+    `;
+
     return div;
+}
+
+// Groups locations under a heading per role (Production Facility, Program operator, ...).
+// A location with several roles appears under each; roles absent from the YAML are skipped.
+function renderGeoRoleGroups(cities, states, cityRoles, stateRoles, geoLists) {
+    const hasRole = (roleMap, value, role) => roleMap.has(value) && roleMap.get(value).has(role);
+    const roleOrder = Array.from(new Set(GEO_ROLE_FIELDS.map(([, role]) => role).concat(GEO_ROLE_UNSPECIFIED)));
+
+    const groups = roleOrder.map(role => ({
+        role,
+        cities: cities.filter(city => hasRole(cityRoles, city, role)),
+        states: states.filter(state => hasRole(stateRoles, state, role))
+    }));
+
+    return groups
+        .filter(group => group.cities.length > 0 || group.states.length > 0)
+        .map(group => `
+            <div class="geo-role-group">
+                <div class="geo-role-heading">${group.role}</div>
+                ${geoLists(group.cities, group.states)}
+            </div>
+        `).join('');
+}
+
+// ============================================
+// Top 10 Industries Supplying Production
+// ============================================
+
+// YAML category.name -> USEEIO summary sector of the industry that manufactures it.
+// Each entry lists the 2012 NAICS codes of that manufacturing activity; every code
+// maps to the same summary sector in io/naics/sectorcrosswalk.csv.
+// Categories whose products span several summary sectors are resolved per product by
+// SUPPORTING_INDUSTRIES_PRODUCT_RULES below. Unknown, OtherFlooring and
+// ManufacturingInputs have no defined industry, so their chart stays hidden.
+const SUPPORTING_INDUSTRIES_SECTORS = {
+    Carpet: { sector: "313TT", naics: ["314110"] },
+    Aggregates: { sector: "212", naics: ["212312", "212319", "212321"] },
+    Asphalt: { sector: "324", naics: ["324121"] },
+    BituminousRoofing: { sector: "324", naics: ["324122"] },
+    PaintByArea: { sector: "325", naics: ["325510"] },
+    PaintByMass: { sector: "325", naics: ["325510"] },
+    ResilientFlooring: { sector: "326", naics: ["326199", "326299"] },
+    WallBase: { sector: "326", naics: ["326199", "326299"] },
+    SinglePlyTPO: { sector: "326", naics: ["326113"] },
+    MassTimber: { sector: "321", naics: ["321213"] },
+    SheathingPanels: { sector: "321", naics: ["321212", "321219"] },
+    Brick: { sector: "327", naics: ["327120"] },
+    CeramicTile: { sector: "327", naics: ["327120"] },
+    FlatGlassPanes: { sector: "327", naics: ["327211"] },
+    ProcessedNonInsulatingGlassPanes: { sector: "327", naics: ["327215"] },
+    InsulatingGlazingUnits: { sector: "327", naics: ["327215"] },
+    Cement: { sector: "327", naics: ["327310"] },
+    MasonryCement: { sector: "327", naics: ["327310"] },
+    OilPatch: { sector: "327", naics: ["327310"] },
+    Concrete: { sector: "327", naics: ["327320", "327331", "327332", "327390"] },
+    ReadyMix: { sector: "327", naics: ["327320"] },
+    Shotcrete: { sector: "327", naics: ["327320"] },
+    ConcretePaving: { sector: "327", naics: ["327320"] },
+    FlowableFill: { sector: "327", naics: ["327320"] },
+    CementGrout: { sector: "327", naics: ["327390", "327999"] },
+    PrecastConcrete: { sector: "327", naics: ["327390"] },
+    StructuralPrecast: { sector: "327", naics: ["327390"] },
+    CMU: { sector: "327", naics: ["327331"] },
+    AutoclavedAeratedConcrete: { sector: "327", naics: ["327331"] },
+    Gypsum: { sector: "327", naics: ["327420"] },
+    GypsumSheathingBoard: { sector: "327", naics: ["327420"] },
+    CastDecksAndUnderlayment: { sector: "327", naics: ["327390", "327420"] },
+    Aluminium: { sector: "331", naics: ["331313", "331314", "331315"] },
+    AluminiumExtrusions: { sector: "331", naics: ["331318"] },
+    CoilSteel: { sector: "331", naics: ["331110"] },
+    HotRolledSections: { sector: "331", naics: ["331110"] },
+    PlateSteel: { sector: "331", naics: ["331110"] },
+    RebarSteel: { sector: "331", naics: ["331110"] },
+    MBQSteel: { sector: "331", naics: ["331110"] },
+    HollowSections: { sector: "331", naics: ["331110", "331210"] },
+    AluminiumSuspensionAssembly: { sector: "332", naics: ["332323"] },
+    SteelSuspensionAssembly: { sector: "332", naics: ["332323"] },
+    CurtainWalls: { sector: "332", naics: ["332323"] },
+    MiscMetalFabrication: { sector: "332", naics: ["332312", "332323"] },
+    MetalDoorAndFrames: { sector: "332", naics: ["332321"] },
+    DoorsHardware: { sector: "332", naics: ["332510"] },
+    HvacRTUs: { sector: "333", naics: ["333415"] },
+    LightingFixtures: { sector: "335", naics: ["335121", "335122"] },
+    OutdoorLighting: { sector: "335", naics: ["335122", "335129"] }
+};
+
+// Mixed categories: the first rule whose pattern matches the product's material wins.
+// "name" rules test the product name; "text" rules test the name plus description, used
+// where the name is a brand. A product no rule matches stays hidden, e.g. "PVC-coated
+// conduit" without its base metal, brand-only insulation names, or Countertops and
+// PowerCabling, whose material spans sectors. NAICS codes map to the sector in
+// io/naics/sectorcrosswalk.csv.
+const GLASS_MINERAL_WOOL = /fiber ?glass|fiberglas|glass wool|mineral wool|mineral fiber|stone wool|rock wool/i;
+const SUPPORTING_INDUSTRIES_PRODUCT_RULES = {
+    ElectricalConduit: [
+        { name: /PVC Extruded/i, sector: "326", naics: ["326122"] },
+        { name: /Aluminum Conduit/i, sector: "331", naics: ["331318"] }
+    ],
+    InsulatedWallPanels: [{ text: /Insulated Metal|\bIMP\b|\bsteel\b/i, sector: "332", naics: ["332311"] }],
+    InsulatedRoofPanels: [{ text: /Insulated Metal|\bIMP\b|\bsteel\b/i, sector: "332", naics: ["332311"] }],
+    BlanketInsulation: [{ text: GLASS_MINERAL_WOOL, sector: "327", naics: ["327993"] }],
+    BlownInsulation: [{ text: GLASS_MINERAL_WOOL, sector: "327", naics: ["327993"] }],
+    MechanicalInsulation: [{ text: GLASS_MINERAL_WOOL, sector: "327", naics: ["327993"] }],
+    AcousticalCeilings: [{ text: GLASS_MINERAL_WOOL, sector: "327", naics: ["327993"] }],
+    CeilingPanel: [{ text: GLASS_MINERAL_WOOL, sector: "327", naics: ["327993"] }],
+    BoardInsulation: [
+        { text: GLASS_MINERAL_WOOL, sector: "327", naics: ["327993"] },
+        { text: /polystyrene/i, sector: "326", naics: ["326140"] }
+    ],
+    AppliedFireproofing: [{ text: /gypsum|cement/i, sector: "327", naics: ["327310", "327420"] }],
+    RoofPanels: [
+        { text: /modified asphalt|asphalt roofing/i, sector: "324", naics: ["324122"] },
+        { text: /\bsteel\b/i, sector: "332", naics: ["332322"] }
+    ],
+    ZincSiding: [{ name: /Roll Formed Steel/i, sector: "332", naics: ["332322"] }],
+    DeckingSteel: [{ name: /steel.*deck|deck.*steel/i, sector: "332", naics: ["332311", "332322"] }],
+    Steel: [{ name: /steel.*deck|deck.*steel/i, sector: "332", naics: ["332311", "332322"] }],
+    ColdFormedFraming: [{ text: /\bsteel\b/i, sector: "332", naics: ["332322"] }],
+    StructuralSteel: [
+        { name: /Frame Components/i, sector: "332", naics: ["332311"] },
+        { name: /Merchant Bar|AHSS|Plate/i, sector: "331", naics: ["331110"] }
+    ],
+    BackingAndUnderlay: [{ name: /Concrete/i, sector: "327", naics: ["327390"] }]
+};
+const SUPPORTING_INDUSTRIES_COUNT = 10;
+// Same published 2020 state models that profile/footprint loads (js/config.js)
+const USEEIO_STATE_MODEL_ENDPOINT = "https://raw.githubusercontent.com/ModelEarth/useeio-json/main/models/2020";
+// States with a {ST}EEIOv1.0-s-20 model at that endpoint (all 50; DC has none)
+const USEEIO_STATE_MODELS = new Set(("AK AL AR AZ CA CO CT DE FL GA HI IA ID IL IN KS KY LA MA MD " +
+    "ME MI MN MO MS MT NC ND NE NH NJ NM NV NY OH OK OR PA RI SC SD TN TX UT VA VT WA WI WV WY").split(" "));
+
+// What each Geolocations role says about a state: only a Production Facility is where
+// the product is made. Other roles show that state's industry for comparison.
+const SUPPORTING_INDUSTRIES_ROLES = {
+    "Production Facility": { kind: "manufacturing", note: "Manufacturing location: where this product is produced." },
+    "Manufacturer": { kind: "administrative", note: "Manufacturer address (administrative): not necessarily where this product is made." },
+    "Program Operator": { kind: "administrative", note: "EPD program operator (administrative): not a manufacturing location." },
+    "Reviewer": { kind: "verification", note: "EPD reviewer (verification): not a manufacturing location." },
+    "Verifier": { kind: "verification", note: "EPD verifier (verification): not a manufacturing location." },
+    "Other Locations": { kind: "other", note: "Other location listed in the EPD: not identified as a manufacturing location." }
+};
+
+// Appends the Geolocations panel. Every US state badge with a state model, under any
+// role, opens one shared Top 10 Industries panel directly below that badge's row.
+function appendGeolocationsWithIndustries(column, data) {
+    const geoDiv = renderGeolocations(data);
+    column.appendChild(geoDiv);
+    const industries = renderSupportingIndustries(data);
+    if (!industries) return;
+    industries.element.classList.add("supporting-industries-inline");
+
+    const allTags = [];
+    geoDiv.querySelectorAll(".geo-role-group").forEach(group => {
+        const role = group.querySelector(".geo-role-heading").textContent;
+        const eligible = industries.statesByRole.get(role) || [];
+        const statesRow = group.querySelector(".geo-list.states");
+        if (!statesRow || eligible.length === 0) return;
+        const tags = Array.from(statesRow.querySelectorAll(".geo-tag.state"))
+            .filter(tag => eligible.includes(tag.textContent));
+        tags.forEach(tag => {
+            const state = tag.textContent;
+            tag.classList.add("geo-tag-action");
+            if (role !== "Production Facility") tag.classList.add("si-nonproduction");
+            tag.setAttribute("role", "button");
+            tag.setAttribute("tabindex", "0");
+            tag.setAttribute("aria-pressed", "false");
+            tag.title = `Show top ${SUPPORTING_INDUSTRIES_COUNT} industries supplying the ${industries.sectorCode} industry in ${state} (${role})`;
+            const toggle = () => {
+                // A state whose model fails to load hides the panel and clears the pressed tag
+                const shown = industries.toggle(state, role, statesRow, () => tag.setAttribute("aria-pressed", "false"));
+                allTags.forEach(other => other.setAttribute("aria-pressed", String(shown && other === tag)));
+            };
+            tag.addEventListener("click", toggle);
+            tag.addEventListener("keydown", event => {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    toggle();
+                }
+            });
+            allTags.push(tag);
+        });
+        if (tags.length > 0) {
+            const hint = document.createElement("span");
+            hint.className = "si-hint";
+            hint.textContent = `Click the state to view its top ${SUPPORTING_INDUSTRIES_COUNT} supplying industries`;
+            statesRow.appendChild(hint);
+        }
+    });
+}
+
+// The verified sector for the product: its category's mapping, or for a mixed category
+// the first per-product rule matching its material. Null when neither applies.
+function supportingIndustriesMapping(data) {
+    const categoryName = data.category && typeof data.category.name === "string" ? data.category.name : "";
+    const has = (table) => Object.prototype.hasOwnProperty.call(table, categoryName);
+    if (has(SUPPORTING_INDUSTRIES_SECTORS)) return SUPPORTING_INDUSTRIES_SECTORS[categoryName];
+    if (!has(SUPPORTING_INDUSTRIES_PRODUCT_RULES)) return null;
+    const name = typeof data.name === "string" ? data.name : "";
+    const text = name + " " + (typeof data.description === "string" ? data.description : "");
+    const rule = SUPPORTING_INDUSTRIES_PRODUCT_RULES[categoryName]
+        .find(r => (r.name ? r.name.test(name) : r.text.test(text)));
+    return rule ? { sector: rule.sector, naics: rule.naics } : null;
+}
+
+// True when the Top 10 chart can open for this product: a mapped sector and at least
+// one Geolocations state with a model.
+function hasSupportingIndustries(data) {
+    return !!supportingIndustriesMapping(data) && supportingIndustriesStates(data).length > 0;
+}
+
+// role -> US states with a USEEIO state model, from the same detection the Geolocations
+// panel uses. A state found only beside a non-US country field is left out.
+function supportingIndustriesStatesByRole(data) {
+    const { states, stateRoles, usStateRoles } = detectGeolocations(data);
+    const byRole = new Map();
+    states.forEach(state => {
+        if (!USEEIO_STATE_MODELS.has(state)) return;
+        stateRoles.get(state).forEach(role => {
+            if (!usStateRoles.has(role + "|" + state)) return;
+            if (!byRole.has(role)) byRole.set(role, []);
+            byRole.get(role).push(state);
+        });
+    });
+    return byRole;
+}
+
+// Every distinct eligible state, across all roles.
+function supportingIndustriesStates(data) {
+    const all = new Set();
+    supportingIndustriesStatesByRole(data).forEach(states => states.forEach(state => all.add(state)));
+    return Array.from(all).sort();
+}
+
+// Returns null when the product has no verified sector or no eligible state; otherwise
+// one hidden panel, the eligible states by role, and toggle(state, role, anchorRow,
+// onUnavailable), which shows that state's ranking below anchorRow (or hides the panel
+// when the same badge is clicked again). Rankings are cached per state, so a state
+// repeated under several roles is calculated once.
+function renderSupportingIndustries(data) {
+    const mapping = supportingIndustriesMapping(data);
+    if (!mapping) return null;
+    const sectorCode = mapping.sector;
+
+    const statesByRole = supportingIndustriesStatesByRole(data);
+    if (statesByRole.size === 0) return null;
+
+    const manufacturer = cleanText((data.manufacturer && data.manufacturer.name) || "") || "this manufacturer";
+    const div = document.createElement("div");
+    div.className = "supporting-industries";
+    div.style.display = "none";
+    div.innerHTML = `
+        <div class="section-header">
+            <h4>Top ${SUPPORTING_INDUSTRIES_COUNT} Industries Supplying Production</h4>
+        </div>
+        <div class="si-role"></div>
+        <div class="supporting-industries-state"></div>
+        <p class="supporting-industries-note">Ranks the estimated direct materials and services supplied to the
+        state's broader industry (all producers in the sector, not only this product), from the 2020 USEEIO
+        state model. These are not the actual suppliers of ${manufacturer}${manufacturer.endsWith(".") ? "" : "."}</p>
+    `;
+    const roleDiv = div.querySelector(".si-role");
+    const stateDiv = div.querySelector(".supporting-industries-state");
+    let shownKey = null;
+
+    function toggle(state, role, anchorRow, onUnavailable) {
+        const key = role + "|" + state;
+        if (shownKey === key) {
+            shownKey = null;
+            div.style.display = "none";
+            return false;
+        }
+        shownKey = key;
+        anchorRow.after(div);
+        div.style.display = "";
+        const info = SUPPORTING_INDUSTRIES_ROLES[role] || SUPPORTING_INDUSTRIES_ROLES["Other Locations"];
+        roleDiv.className = "si-role si-role-" + info.kind;
+        roleDiv.innerHTML = `<span class="si-role-tag">${role} &middot; ${state}</span> ${info.note}`;
+        stateDiv.innerHTML = `<div class="supporting-industries-status">Loading ${state} state model...</div>`;
+        loadSupportingIndustries(state, sectorCode)
+            .then(result => { if (shownKey === key) stateDiv.innerHTML = supportingIndustriesHTML(result); })
+            .catch(error => {
+                console.warn("Top industries: could not load state model for " + state, error);
+                if (shownKey === key) {
+                    shownKey = null;
+                    div.style.display = "none";
+                    if (onUnavailable) onUnavailable();
+                }
+            });
+        return true;
+    }
+
+    return { element: div, sectorCode, statesByRole, toggle };
+}
+
+// Resolves a path in profile/footprint relative to this script (profile/item/js/).
+function footprintUrl(path) {
+    const thisScript = document.querySelector('script[src*="label-product.js"]');
+    return new URL("../../footprint/" + path, thisScript ? thisScript.src : window.location.href).href;
+}
+
+// Loads profile/footprint/js/useeio.js (the footprint pages' model loader) once.
+function loadUseeioLibrary() {
+    if (window.useeio && window.useeio.modelOf) return Promise.resolve(window.useeio);
+    const url = footprintUrl("js/useeio.js");
+    return new Promise((resolve, reject) => {
+        if (typeof loadScript !== "function") {
+            reject(new Error("loadScript is not available"));
+            return;
+        }
+        loadScript(url, () => window.useeio && window.useeio.modelOf
+            ? resolve(window.useeio)
+            : reject(new Error("useeio.js did not load")));
+    });
+}
+
+// One calculation per state and sector, reused when a state tag is clicked again.
+const supportingIndustriesCache = new Map();
+function loadSupportingIndustries(state, sectorCode) {
+    const key = state + "/" + sectorCode;
+    if (!supportingIndustriesCache.has(key)) {
+        const request = calculateSupportingIndustries(state, sectorCode);
+        request.catch(() => supportingIndustriesCache.delete(key)); // allow a retry after a failed load
+        supportingIndustriesCache.set(key, request);
+    }
+    return supportingIndustriesCache.get(key);
+}
+
+// Ranks the direct inputs into {sector}/US-{state} from the state model's
+// commodity-by-commodity matrices. A[i][j] is the input of commodity i per $1 of
+// output j, so the column times output q[j] gives annual purchases in dollars.
+// Foreign imports (A - A_d) are carried on the state's own rows.
+async function calculateSupportingIndustries(state, sectorCode) {
+    const useeio = await loadUseeioLibrary();
+    const model = useeio.modelOf({
+        endpoint: USEEIO_STATE_MODEL_ENDPOINT,
+        model: state + "EEIOv1.0-s-20",
+        asJsonFiles: true
+    });
+    const [sectors, A, A_d, q] = await Promise.all([
+        model.sectors(), model.matrix("A"), model.matrix("A_d"), model.matrix("q")
+    ]);
+    const stateLocation = "US-" + state;
+    const target = sectors.find(s => s.code === sectorCode && s.location === stateLocation);
+    if (!target) throw new Error("Sector " + sectorCode + "/" + stateLocation + " not in model");
+
+    const j = target.index;
+    const output = q.get(j, 0);
+    const positive = value => Math.max(0, value || 0);
+    const industries = new Map();
+    let totalInputs = 0;
+    sectors.forEach(s => {
+        const i = s.index;
+        if (!industries.has(s.code)) {
+            industries.set(s.code, { code: s.code, name: s.name, state: 0, restOfUS: 0, foreign: 0 });
+        }
+        const row = industries.get(s.code);
+        if (s.location === stateLocation) {
+            row.state += positive(A_d.get(i, j)) * output;
+            row.foreign += positive(A.get(i, j) - A_d.get(i, j)) * output;
+        } else {
+            row.restOfUS += positive(A.get(i, j)) * output;
+        }
+    });
+    industries.forEach(row => {
+        row.total = row.state + row.restOfUS + row.foreign;
+        totalInputs += row.total;
+    });
+    // Only industries with purchases are ranked, so a zero-value sector never gets a rank
+    const ranked = Array.from(industries.values())
+        .filter(row => row.total > 0)
+        .sort((a, b) => b.total - a.total);
+    const top = ranked.slice(0, SUPPORTING_INDUSTRIES_COUNT);
+    // The product's own summary sector: highlighted when in the top rows, otherwise shown
+    // below them with its actual rank (0 when it has no purchases, so it stays unranked).
+    // Rows are summary sectors, so a top row with this code already covers the product's
+    // more detailed NAICS industry.
+    const ownRank = ranked.findIndex(row => row.code === sectorCode) + 1;
+    const ownIndustry = ownRank > 0 && ownRank <= top.length ? null : industries.get(sectorCode) || null;
+
+    return { state, sectorCode, sectorName: target.name, output, totalInputs, top, ranked: ranked.length, ownRank, ownIndustry };
+}
+
+function formatUsdShort(value) {
+    if (value < 500) return "$0";
+    if (value >= 1e9) return "$" + (value / 1e9).toFixed(1) + "B";
+    if (value >= 1e6) return "$" + Math.round(value / 1e6).toLocaleString() + "M";
+    return "$" + Math.round(value / 1e3).toLocaleString() + "K";
+}
+
+function supportingIndustriesHTML(result) {
+    const { state, sectorCode, sectorName, output, totalInputs, top, ranked, ownRank, ownIndustry } = result;
+    const stateName = (typeof getStateNameFromID === "function" && getStateNameFromID(state)) || state;
+    if (!(output > 0) || top.length === 0) {
+        return `<div class="supporting-industries-status">The 2020 model estimates no ${sectorName} (${sectorCode})
+            output in ${stateName}, so there are no supplying industries to rank.</div>`;
+    }
+    const topShare = totalInputs > 0 ? Math.round(100 * top.reduce((sum, row) => sum + row.total, 0) / totalInputs) : 0;
+    const maxTotal = top.length ? top[0].total : 1;
+    const pct = (part, whole) => (whole > 0 ? (100 * part / whole) : 0).toFixed(1);
+    const reportUrl = footprintUrl("sector_profile.html") +
+        `#demand=${encodeURIComponent(sectorCode)}/US-${state}&state=${state}`;
+    // Star and hover box that mark the product's own manufacturing industry
+    const ownStar = `<span class="si-own-star" role="img" aria-label="Product's manufacturing industry"
+        title="Product's manufacturing industry">&#9733;</span>`;
+    const ownTip = `
+        <div class="si-row-tip" role="tooltip">
+            <strong>${sectorName} (${sectorCode}) in ${stateName}</strong><br>
+            ${formatUsdShort(output)} annual output, the estimated value of everything this industry
+            produced in ${stateName} in 2020. Its direct purchases of materials and services total
+            ${formatUsdShort(totalInputs)}; the top ${top.length} supplying industries account for ${topShare}% of them.
+        </div>`;
+
+    return `
+        <div class="supporting-industries-legend">
+            <span><i class="si-swatch si-state"></i>${stateName}</span>
+            <span><i class="si-swatch si-rous"></i>Rest of US</span>
+            <span><i class="si-swatch si-foreign"></i>Foreign imports</span>
+        </div>
+        <div class="supporting-industries-context si-legend-caption">
+            Bar length compares each industry's total. Colors show where that supply comes from:
+            produced within ${stateName}, shipped from other US states, or imported from abroad.
+        </div>
+        <ol class="supporting-industries-list">
+            ${top.map(row => `
+                <li${row.code === sectorCode ? ` class="si-own-row" tabindex="0"` : ""}>
+                    ${row.code === sectorCode ? ownTip : ""}
+                    <div class="si-row-head">
+                        <span class="si-name" title="${row.code}">${row.name}${row.code === sectorCode ? ownStar : ""}</span>
+                        <span class="si-value">${formatUsdShort(row.total)}</span>
+                    </div>
+                    <div class="si-bar" style="width:${pct(row.total, maxTotal)}%"
+                         title="${stateName} ${formatUsdShort(row.state)} · Rest of US ${formatUsdShort(row.restOfUS)} · Foreign ${formatUsdShort(row.foreign)}">
+                        <span class="si-state" style="width:${pct(row.state, row.total)}%"></span><span class="si-rous" style="width:${pct(row.restOfUS, row.total)}%"></span><span class="si-foreign" style="width:${pct(row.foreign, row.total)}%"></span>
+                    </div>
+                    <div class="si-split">${stateName} ${formatUsdShort(row.state)} · Rest of US ${formatUsdShort(row.restOfUS)} · Foreign ${formatUsdShort(row.foreign)}</div>
+                </li>
+            `).join('')}
+        </ol>
+        ${ownIndustry ? `
+            <div class="si-own-industry si-own-row" tabindex="0">
+                ${ownTip}
+                <div class="si-own-label">${ownRank > 0
+                    ? `Product's manufacturing industry: ranked #${ownRank} of ${ranked} supplying industries`
+                    : `Product's manufacturing industry: not ranked (no direct purchases from it in the 2020 model)`}</div>
+                <div class="si-row-head">
+                    <span class="si-name" title="${ownIndustry.code}">${ownRank > 0 ? `<span class="si-rank">#${ownRank}</span>` : ""}${ownIndustry.name} (${ownIndustry.code})${ownStar}</span>
+                    ${ownRank > 0 ? `<span class="si-value">${formatUsdShort(ownIndustry.total)}</span>` : ""}
+                </div>
+                ${ownRank > 0 ? `<div class="si-split">${pct(ownIndustry.total, totalInputs)}% of direct inputs · ${stateName} ${formatUsdShort(ownIndustry.state)} · Rest of US ${formatUsdShort(ownIndustry.restOfUS)} · Foreign ${formatUsdShort(ownIndustry.foreign)}</div>` : ""}
+            </div>
+        ` : ''}
+        <a class="supporting-industries-link" href="${reportUrl}" target="_blank" rel="noopener">${sectorName} footprint report for ${stateName} &rarr;</a>
+    `;
 }
 
 // ============================================
@@ -2264,7 +2795,7 @@ function renderProductDetailsPanel(data) {
     leftCol.className = "details-column";
     leftCol.appendChild(renderCarbonStorageSection(data));
     leftCol.appendChild(renderMissingImpacts(data)); // Environmental Impact Coverage after Carbon Storage
-    leftCol.appendChild(renderGeolocations(data));
+    appendGeolocationsWithIndustries(leftCol, data);
     leftCol.appendChild(renderMaterialComposition(data));
 
     const rightCol = document.createElement("div");
@@ -2307,7 +2838,7 @@ function renderProductDetailsPanelWithCalculators(data, profile) {
     leftCol.appendChild(renderTransportationPanel(data));
     leftCol.appendChild(renderCarbonStorageSection(data));
     leftCol.appendChild(renderMissingImpacts(data)); // Environmental Impact Coverage after Carbon Storage
-    leftCol.appendChild(renderGeolocations(data));
+    appendGeolocationsWithIndustries(leftCol, data);
     leftCol.appendChild(renderMaterialComposition(data));
 
     // RIGHT COLUMN: Impact Calculator, Locations, Certifications
