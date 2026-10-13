@@ -3657,6 +3657,293 @@ input[type=number]::-webkit-outer-spin-button {
   color: #5b21b6;
 }
 
+/* Geolocations grouped by role (Manufacturing, Verifier, ...) */
+.geo-role-group {
+  margin-top: 12px;
+}
+
+.geo-role-group + .geo-role-group {
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.geo-role-heading {
+  font-size: 0.85em;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 6px;
+}
+
+.dark .geo-role-group + .geo-role-group {
+  border-top-color: #334155;
+}
+
+.dark .geo-role-heading {
+  color: #e2e8f0;
+}
+
+/* Production Facility state tags that open Top 10 Industries Supplying Production */
+.geo-tag-action {
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.geo-tag-action:hover,
+.geo-tag-action:focus-visible {
+  border-color: #7c3aed;
+  outline: none;
+}
+.geo-tag-action[aria-pressed="true"] {
+  background: #7c3aed;
+  color: white;
+}
+.dark .geo-tag-action[aria-pressed="true"] {
+  background: #8b5cf6;
+  color: white;
+}
+
+/* Top 10 Industries Supplying Production */
+.supporting-industries {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+}
+/* Opened inside Geolocations, below the Production Facility states row */
+.supporting-industries-inline {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.supporting-industries-inline .section-header h4 {
+  font-size: 0.9em;
+}
+.dark .supporting-industries.supporting-industries-inline {
+  background: #0f172a;
+}
+.supporting-industries-state + .supporting-industries-state {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
+}
+.supporting-industries-context,
+.supporting-industries-status {
+  font-size: 0.8em;
+  color: #64748b;
+}
+.supporting-industries-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 8px 0;
+  font-size: 0.75em;
+  color: #475569;
+}
+.si-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+.si-state { background: #7c3aed; }
+.si-rous { background: #38bdf8; }
+.si-foreign { background: #f59e0b; }
+.supporting-industries-list {
+  list-style: decimal;
+  margin: 0;
+  padding-left: 20px;
+}
+.supporting-industries-list li {
+  margin-bottom: 8px;
+  font-size: 0.85em;
+  color: #334155;
+}
+.si-row-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.si-value {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.si-bar {
+  display: flex;
+  height: 6px;
+  margin: 3px 0 2px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: #e2e8f0;
+}
+.si-bar span {
+  height: 100%;
+}
+.si-split {
+  font-size: 0.85em;
+  color: #64748b;
+}
+/* Subtle chart icon beside the category when the Top 10 chart is available */
+.si-category-icon {
+  font-size: 16px;
+  margin-left: 4px;
+  vertical-align: -3px;
+  color: #94a3b8;
+  cursor: help;
+}
+/* Clickable states outside Production Facility (administrative / verification) */
+.geo-tag-action.si-nonproduction[aria-pressed="true"] {
+  background: #475569;
+  color: white;
+}
+.dark .geo-tag-action.si-nonproduction[aria-pressed="true"] {
+  background: #64748b;
+  color: white;
+}
+/* Which kind of location the open chart is for */
+.si-role {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border-left: 3px solid #94a3b8;
+  background: #f1f5f9;
+  font-size: 0.75em;
+  color: #475569;
+}
+.si-role.si-role-manufacturing {
+  border-left-color: #7c3aed;
+  background: #f5f3ff;
+}
+.si-role-tag {
+  font-weight: 600;
+  margin-right: 4px;
+}
+.dark .si-role {
+  background: #1e293b;
+  color: #cbd5e1;
+}
+.dark .si-role.si-role-manufacturing {
+  background: #2e1065;
+}
+.si-rank {
+  font-weight: 600;
+  margin-right: 6px;
+}
+/* Instruction beside the clickable states */
+.si-hint {
+  margin-left: 6px;
+  font-size: 0.75em;
+  font-style: italic;
+  color: #64748b;
+}
+.si-legend-caption {
+  margin: -4px 0 8px;
+  font-size: 0.75em;
+}
+/* Star and side hover box on the product's own manufacturing industry */
+.si-own-row {
+  position: relative;
+  outline: none;
+}
+.si-own-star {
+  font-size: 14px;
+  line-height: 1;
+  margin-left: 4px;
+  color: #f59e0b;
+}
+.si-row-tip {
+  display: none;
+  position: absolute;
+  left: calc(100% + 16px);
+  top: -6px;
+  width: 260px;
+  z-index: 30;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: white;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.15);
+  font-size: 0.85em;
+  line-height: 1.45;
+  color: #334155;
+}
+.si-own-row:hover .si-row-tip,
+.si-own-row:focus-visible .si-row-tip {
+  display: block;
+}
+.si-own-row:focus-visible {
+  box-shadow: 0 0 0 2px #7c3aed;
+  border-radius: 4px;
+}
+/* Product's own industry, shown apart from the ranked list when it's outside the top 10 */
+.si-own-industry {
+  margin: 4px 0 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  font-size: 0.85em;
+  color: #334155;
+}
+.si-own-label {
+  font-size: 0.85em;
+  color: #64748b;
+  margin-bottom: 2px;
+}
+.supporting-industries-link {
+  display: inline-block;
+  font-size: 0.8em;
+  color: #3b82f6;
+}
+.supporting-industries-note {
+  margin: 8px 0 0;
+  font-size: 0.75em;
+  font-style: italic;
+  color: #64748b;
+}
+.dark .supporting-industries {
+  background: #1e293b;
+  border-color: #334155;
+}
+.dark .supporting-industries-state + .supporting-industries-state {
+  border-top-color: #334155;
+}
+.dark .supporting-industries-list li {
+  color: #e2e8f0;
+}
+.dark .supporting-industries-legend {
+  color: #cbd5e1;
+}
+.dark .si-bar {
+  background: #334155;
+}
+.dark .supporting-industries-context,
+.dark .supporting-industries-status,
+.dark .si-split,
+.dark .supporting-industries-note {
+  color: #94a3b8;
+}
+.dark .supporting-industries-link {
+  color: #60a5fa;
+}
+.dark .si-own-industry {
+  background: #1e293b;
+  color: #e2e8f0;
+}
+.dark .si-own-label {
+  color: #94a3b8;
+}
+.dark .si-category-icon {
+  color: #64748b;
+}
+.dark .si-hint {
+  color: #94a3b8;
+}
+.dark .si-row-tip {
+  background: #1e293b;
+  color: #e2e8f0;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
 /* Location Owner */
 .location-owner {
   font-size: 0.85em;
