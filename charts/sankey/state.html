@@ -123,6 +123,10 @@ if (typeof window.local_app === "undefined") {
   #trade-viz-links {
     margin-bottom: 0.75em;
   }
+  /* .content sets line-height: 1.5em (22.5px), which made the 12px buttons taller than on the other trade pages */
+  #trade-viz-links .trade-viz-link {
+    line-height: 1.5;
+  }
   #sankey-controls {
     display: flex;
     flex-wrap: wrap;

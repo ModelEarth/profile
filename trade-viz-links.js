@@ -9,7 +9,9 @@
     const TRADE_VIZ_LINKS = [
         { id: "us-states-link", label: "US States", path: "trade/map/state.html" },
         { id: "international-map-link", label: "International map", path: "trade/map/index.html" },
-        { id: "state-sankey-link", label: "State Sankey", path: "charts/sankey/state.html" }
+        { id: "state-sankey-link", label: "State Sankey", path: "charts/sankey/state.html" },
+        // exiobase is a sibling repo of profile in the webroot
+        { id: "trade-data-link", label: "Trade Data", path: "../exiobase/tradeflow/" }
     ];
 
     function addStyles() {
