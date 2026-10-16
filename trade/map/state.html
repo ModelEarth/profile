@@ -16,7 +16,6 @@
         const isGitHubPages = /\.github\.io$/i.test(hostname);
         const pathSegments = normalizedPath.split("/").filter(Boolean);
         const isLocalsiteProfileMirror = /\/localsite\/profile\//i.test(normalizedPath);
-        const localsiteMatch = normalizedPath.match(/^(.*?\/localsite)(?:\/|$)/i);
         const pageFolderIndex = pathSegments.findIndex(function (segment) {
             const normalized = String(segment || "").toLowerCase();
             return normalized === "state-trade-map";
@@ -30,13 +29,13 @@
         const inferredPagesRepo = isGitHubPages
             ? (pathSegments[0] || "")
             : "";
-        const localsiteBase = isFile
-            ? (isLocalsiteProfileMirror ? "../../.." : "../../../localsite")
-            : (localsiteMatch && isLocalhost
-                ? localsiteMatch[1]
-                : "https://cdn.jsdelivr.net/gh/ModelEarth/localsite@main");
+        // localsite repo next to this profile repo, by a relative path so it works with the webroot at the
+        // site root or within folders. The next script loads jsDelivr's copy when there isn't one,
+        // so the profile repo also works on its own.
+        const localsiteBase = isLocalsiteProfileMirror ? "../../.." : "../../../localsite";
 
         window.STATE_TRADE_LOCALSITE_BASE = localsiteBase;
+        window.STATE_TRADE_LOCALSITE_CDN = "https://cdn.jsdelivr.net/gh/ModelEarth/localsite@main";
         window.STATE_TRADE_ENV = {
             hostname: hostname,
             isFile: isFile,
@@ -56,6 +55,14 @@
     })();
     </script>
     <script>
+    // No adjacent localsite (localsite.js sets window.local_app): use jsDelivr's copy
+    if (typeof window.local_app === "undefined") {
+        window.STATE_TRADE_LOCALSITE_BASE = window.STATE_TRADE_LOCALSITE_CDN;
+        document.write('<link type="text/css" rel="stylesheet" href="' + window.STATE_TRADE_LOCALSITE_CDN + '/css/base.css" />');
+        document.write('<script type="text/javascript" src="' + window.STATE_TRADE_LOCALSITE_CDN + '/js/localsite.js?showheader=true&showsearch=true"><\/script>');
+    }
+    </script>
+    <script>
     window.addEventListener("load", function () {
         if (typeof loadMarkdown === "function") {
             loadMarkdown("README.md", "readmeDiv", "_parent");
@@ -63,6 +70,7 @@
     });
     </script>
     <script src="../../state-trade-data.js"></script>
+    <script src="../../trade-viz-links.js"></script>
 
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -115,12 +123,20 @@
             max-width: 290px;
             box-shadow: 0 2px 6px rgba(0,0,0,0.15);
         }
-        .industry-bar {
+        .industry-bar-stack {
             position: absolute;
             top: 10px;
             left: 322px;
             right: 12px;
             z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .industry-bar-stack > .trade-viz-links {
+            align-self: flex-start;
+        }
+        .industry-bar {
             display: flex;
             flex-wrap: wrap;
             align-items: center;
@@ -193,8 +209,7 @@
         .toolbar-select-wrap[hidden] {
             display: none;
         }
-        #clear-filters-btn,
-        .toolbar-link {
+        #clear-filters-btn {
             padding: 6px 12px;
             border: 1px solid #cbd5e1;
             border-radius: 8px;
@@ -206,13 +221,11 @@
             text-decoration: none;
             transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
         }
-        #clear-filters-btn:hover,
-        .toolbar-link:hover {
+        #clear-filters-btn:hover {
             background: #f1f5fb;
             border-color: #94a3b8;
         }
-        #clear-filters-btn:active,
-        .toolbar-link:active {
+        #clear-filters-btn:active {
             background: #e2e8f0;
         }
         #industry-bar-note {
@@ -514,7 +527,7 @@
         }
 
         @media (max-width: 960px) {
-            .industry-bar {
+            .industry-bar-stack {
                 top: 176px;
                 left: 10px;
                 right: 10px;
@@ -533,6 +546,8 @@
         </div>
     </div>
 
+    <div class="industry-bar-stack">
+    <div id="trade-viz-links"></div>
     <div class="industry-bar">
         <div class="industry-bar-controls">
             <label class="toolbar-select-wrap" for="view-mode-select">
@@ -570,11 +585,10 @@
                     <option value="ALL">All industries</option>
                 </select>
             </label>
-            <a id="international-map-link" class="toolbar-link" href="index.html">International map</a>
-            <a id="state-sankey-link" class="toolbar-link" href="../../charts/sankey/state.html">State Sankey</a>
             <button type="button" id="clear-filters-btn" title="Reset filters and clear stored selections">Clear</button>
         </div>
         <div id="industry-bar-note">State fill scales with partner activity for the selected state. Switch to By industry to isolate one sector, and use the partner list to hide specific inbound or outbound links.</div>
+    </div>
     </div>
 
     <div class="control-panel">
@@ -1128,6 +1142,7 @@ const partnerChart = echarts.init(document.getElementById("partner-chart"));
 const viewModeSelect = document.getElementById("view-mode-select");
 const stateSelect = document.getElementById("country-select");
 const selectedStateReportAction = document.getElementById("selected-state-report-action");
+renderTradeVizLinks(document.getElementById("trade-viz-links"));
 const stateSankeyLink = document.getElementById("state-sankey-link");
 const metricSelect = document.getElementById("metric-select");
 const directionSelect = document.getElementById("direction-select");
@@ -1139,8 +1154,8 @@ L.DomEvent.disableClickPropagation(document.querySelector(".control-panel"));
 L.DomEvent.disableScrollPropagation(document.querySelector(".control-panel"));
 L.DomEvent.disableClickPropagation(document.getElementById("map-legend"));
 L.DomEvent.disableScrollPropagation(document.getElementById("map-legend"));
-L.DomEvent.disableClickPropagation(document.querySelector(".industry-bar"));
-L.DomEvent.disableScrollPropagation(document.querySelector(".industry-bar"));
+L.DomEvent.disableClickPropagation(document.querySelector(".industry-bar-stack"));
+L.DomEvent.disableScrollPropagation(document.querySelector(".industry-bar-stack"));
 
 function showZoomToast(enabled) {
     zoomToast.textContent = enabled ? "Zoom On" : "Zoom Off";

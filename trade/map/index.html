@@ -9,25 +9,27 @@
 
     <script>
     (function () {
-        const hostname = window.location.hostname || "";
-        const isFile = window.location.protocol === "file:";
         const normalizedPath = (window.location.pathname || "").replace(/\\/g, "/");
-        const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
-        const isGitHubPages = /\.github\.io$/i.test(hostname);
-        const firstPathSegment = normalizedPath.split("/").filter(Boolean)[0] || "";
         const isLocalsiteProfileMirror = /\/localsite\/profile\//i.test(normalizedPath);
-        const servesLocalsiteAtRoot = isLocalhost || firstPathSegment.toLowerCase() === "localsite" || !isGitHubPages;
-        const localsiteBase = isFile
-            ? (isLocalsiteProfileMirror ? "../../.." : "../../../localsite")
-            : (servesLocalsiteAtRoot ? "/localsite" : "https://cdn.jsdelivr.net/gh/ModelEarth/localsite@main");
-        const stateMapUrl = "state.html";
+        // localsite repo next to this profile repo, by a relative path so it works with the webroot at the
+        // site root or within folders. The next script loads jsDelivr's copy when there isn't one,
+        // so the profile repo also works on its own.
+        const localsiteBase = isLocalsiteProfileMirror ? "../../.." : "../../../localsite";
 
         window.TRADE_MAP_LOCALSITE_BASE = localsiteBase;
-        window.TRADE_MAP_STATE_MAP_URL = stateMapUrl;
+        window.TRADE_MAP_LOCALSITE_CDN = "https://cdn.jsdelivr.net/gh/ModelEarth/localsite@main";
 
         document.write('<link type="text/css" rel="stylesheet" href="' + localsiteBase + '/css/base.css" />');
         document.write('<script type="text/javascript" src="' + localsiteBase + '/js/localsite.js?showheader=true&showsearch=true"><\/script>');
     })();
+    </script>
+    <script>
+    // No adjacent localsite (localsite.js sets window.local_app): use jsDelivr's copy
+    if (typeof window.local_app === "undefined") {
+        window.TRADE_MAP_LOCALSITE_BASE = window.TRADE_MAP_LOCALSITE_CDN;
+        document.write('<link type="text/css" rel="stylesheet" href="' + window.TRADE_MAP_LOCALSITE_CDN + '/css/base.css" />');
+        document.write('<script type="text/javascript" src="' + window.TRADE_MAP_LOCALSITE_CDN + '/js/localsite.js?showheader=true&showsearch=true"><\/script>');
+    }
     </script>
     <script>
     window.addEventListener("load", function() {
@@ -55,6 +57,7 @@
     document.write('<script src="' + window.TRADE_MAP_LOCALSITE_BASE + '/js/trade.js"><\/script>');
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+    <script src="../../trade-viz-links.js"></script>
     <style>
         body { margin: 0; font-family: sans-serif; }
 
@@ -188,12 +191,20 @@
             overflow: hidden;
             box-shadow: 0 10px 30px rgba(15,23,42,0.18);
         }
-        .industry-bar {
+        .industry-bar-stack {
             position: absolute;
             top: 10px;
             left: 312px;
             right: 12px;
             z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .industry-bar-stack > .trade-viz-links {
+            align-self: flex-start;
+        }
+        .industry-bar {
             display: flex;
             flex-wrap: wrap;
             align-items: center;
@@ -236,8 +247,7 @@
         #direction-select,
         #country-select,
         #industry-select,
-        #clear-filters-btn,
-        #state-map-link {
+        #clear-filters-btn {
             min-width: 170px;
             max-width: 100%;
             padding: 6px 8px;
@@ -248,20 +258,17 @@
             background: #fff;
             box-sizing: border-box;
         }
-        #clear-filters-btn,
-        #state-map-link {
+        #clear-filters-btn {
             min-width: auto;
             font-weight: 700;
             text-decoration: none;
             cursor: pointer;
         }
-        #clear-filters-btn:hover,
-        #state-map-link:hover {
+        #clear-filters-btn:hover {
             background: #f1f5fb;
             border-color: #94a3b8;
         }
-        .dark #clear-filters-btn,
-        .dark #state-map-link {
+        .dark #clear-filters-btn {
             background: var(--bg-tertiary);
             color: var(--text-primary);
             border-color: #777;
@@ -503,7 +510,7 @@
             text-decoration: underline;
         }
         @media (max-width: 960px) {
-            .industry-bar {
+            .industry-bar-stack {
                 top: 176px;
                 left: 10px;
                 right: 10px;
@@ -622,6 +629,8 @@
             </div>
         </div>
 
+        <div class="industry-bar-stack">
+        <div id="trade-viz-links"></div>
         <div class="industry-bar">
             <div class="industry-bar-title">Trade View</div>
             <div class="industry-bar-controls">
@@ -652,10 +661,10 @@
                         <option value="ALL">All exporting industries</option>
                     </select>
                 </label>
-                <a id="state-map-link" href="state.html" hidden>State map</a>
                 <button type="button" id="clear-filters-btn" title="Reset filters and clear stored selections">Clear</button>
             </div>
             <div id="industry-bar-note">Use By industry to isolate one exporting industry between countries. In that mode, color and arrowhead shape show direction, width shows quantity traded, and most lines stay solid for readability.</div>
+        </div>
         </div>
 
         <div class="control-panel">
@@ -939,8 +948,9 @@ L.DomEvent.disableClickPropagation(document.querySelector(".control-panel"));
 L.DomEvent.disableScrollPropagation(document.querySelector(".control-panel"));
 L.DomEvent.disableClickPropagation(document.getElementById("map-legend"));
 L.DomEvent.disableScrollPropagation(document.getElementById("map-legend"));
-L.DomEvent.disableClickPropagation(document.querySelector(".industry-bar"));
-L.DomEvent.disableScrollPropagation(document.querySelector(".industry-bar"));
+renderTradeVizLinks(document.getElementById("trade-viz-links"));
+L.DomEvent.disableClickPropagation(document.querySelector(".industry-bar-stack"));
+L.DomEvent.disableScrollPropagation(document.querySelector(".industry-bar-stack"));
 
 function showZoomToast(enabled) {
     zoomToast.textContent = enabled ? "Zoom On" : "Zoom Off";
@@ -1040,10 +1050,6 @@ const INDUSTRY_DIRECTION_OPTIONS = [
 // Tooltip
 // ---------------------------------------------------------------------------
 const tooltip = document.getElementById("map-tooltip");
-const stateMapLink = document.getElementById("state-map-link");
-if (stateMapLink && window.TRADE_MAP_STATE_MAP_URL) {
-    stateMapLink.href = window.TRADE_MAP_STATE_MAP_URL;
-}
 
 function readFilterCache() {
     try {
@@ -1131,11 +1137,6 @@ function currentFilterState(overrides) {
 
 function persistFilterState(overrides) {
     writeFilterState(currentFilterState(overrides));
-}
-
-function syncStateMapLink() {
-    if (!stateMapLink) return;
-    stateMapLink.hidden = normalizeCode(getSelectedCountryValue()) !== "US";
 }
 
 tooltip.addEventListener("mouseenter", function() {
@@ -1827,7 +1828,6 @@ function setSelectedCountryValue(countryCode) {
     const hasOption = Array.from(select.options).some(option => option.value === countryCode);
     if (!hasOption) return false;
     select.value = countryCode;
-    syncStateMapLink();
     return true;
 }
 
@@ -2594,7 +2594,6 @@ document.getElementById("clear-filters-btn").addEventListener("click", clearAllF
 
 document.getElementById("country-select").addEventListener("change", function() {
     syncCountryToHash(this.value);
-    syncStateMapLink();
     loadFlows(this.value, currentFlowDir);
 });
 

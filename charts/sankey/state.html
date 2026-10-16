@@ -12,7 +12,6 @@
   const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
   const isGitHubPages = /\.github\.io$/i.test(hostname);
   const pathSegments = normalizedPath.split("/").filter(Boolean);
-  const localsiteMatch = normalizedPath.match(/^(.*?\/localsite)(?:\/|$)/i);
   const pageFolderIndex = pathSegments.findIndex(function (segment) {
     return String(segment || "").toLowerCase() === "state-dashboard";
   });
@@ -25,13 +24,13 @@
   const inferredPagesRepo = isGitHubPages
     ? (pathSegments[0] || "")
     : "";
-  const localsiteBase = isFile
-    ? "../../../localsite"
-    : (localsiteMatch && isLocalhost
-      ? localsiteMatch[1]
-      : "https://cdn.jsdelivr.net/gh/ModelEarth/localsite@main");
+  // localsite repo next to this profile repo, by a relative path so it works with the webroot at the
+  // site root or within folders. The next script loads jsDelivr's copy when there isn't one,
+  // so the profile repo also works on its own.
+  const localsiteBase = "../../../localsite";
 
   window.TRADE_LOCALSITE_BASE = localsiteBase;
+  window.TRADE_LOCALSITE_CDN = "https://cdn.jsdelivr.net/gh/ModelEarth/localsite@main";
   window.TRADE_ENV = {
     hostname: hostname,
     isFile: isFile,
@@ -50,7 +49,16 @@
   document.write('<script type="text/javascript" src="' + localsiteBase + '/js/localsite.js?showheader=true&showsearch=true&showfilters=true"><\/script>');
 }());
 </script>
+<script>
+// No adjacent localsite (localsite.js sets window.local_app): use jsDelivr's copy
+if (typeof window.local_app === "undefined") {
+  window.TRADE_LOCALSITE_BASE = window.TRADE_LOCALSITE_CDN;
+  document.write('<link type="text/css" rel="stylesheet" href="' + window.TRADE_LOCALSITE_CDN + '/css/base.css" />');
+  document.write('<script type="text/javascript" src="' + window.TRADE_LOCALSITE_CDN + '/js/localsite.js?showheader=true&showsearch=true&showfilters=true"><\/script>');
+}
+</script>
 <script src="../../state-trade-data.js"></script>
+<script src="../../trade-viz-links.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
 <style>
   .content.contentpadding {
@@ -111,6 +119,9 @@
   }
   #state-help-panel p:last-child {
     margin-bottom: 0;
+  }
+  #trade-viz-links {
+    margin-bottom: 0.75em;
   }
   #sankey-controls {
     display: flex;
@@ -333,7 +344,7 @@
         <h2>US State Trade Flow Sankey</h2>
         <p>
           Domestic inter-state trade flows for the United States, using the current 2019 state-level trade, impact, code, and specialization CSVs.
-          View the <a href="index.html">international Sankey</a> or the <a id="state-map-link" href="../../trade/map/state.html">US state trade map</a>.
+          View the <a href="index.html">international Sankey</a>.
         </p>
       </div>
       <button id="state-help-button" type="button" aria-expanded="false" aria-controls="state-help-panel">About This View</button>
@@ -346,6 +357,7 @@
     <p><strong>Summary cards</strong> come from <code>state_industry_impacts.csv</code> for the selected state and industry. <strong>Specializations</strong> come from <code>state_specializations.csv</code>.</p>
   </div>
 
+  <div id="trade-viz-links"></div>
   <div id="sankey-controls">
     <label>
       State:
@@ -487,7 +499,8 @@ const partnerChart = echarts.init(document.getElementById("partner-chart"));
 
 const stateSelect = document.getElementById("state-select");
 const selectedStateReportAction = document.getElementById("selected-state-report-action");
-const stateMapLink = document.getElementById("state-map-link");
+renderTradeVizLinks(document.getElementById("trade-viz-links"));
+const usStatesLink = document.getElementById("us-states-link");
 const partnerStateWrap = document.getElementById("partner-state-wrap");
 const partnerStateLabel = document.getElementById("partner-state-label");
 const partnerStateSelect = document.getElementById("partner-state-select");
@@ -1146,7 +1159,7 @@ function syncControls(selection) {
   activeSelection = selection;
   syncStateOptions(selection.state);
   selectedStateReportAction.innerHTML = selection.state ? stateReportAction(selection.state) : "";
-  stateMapLink.href = stateMapUrl(selection);
+  usStatesLink.href = stateMapUrl(selection);
   syncFlowTypeOptions(selection.flowType, selection);
   selection.flowType = flowTypeSelect.value;
   syncIndustryOptions(selection.industry, selection);
