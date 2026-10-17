@@ -1102,9 +1102,11 @@ function setupIndicatorParts() {
   if (note) {
     // Full state name (getState from localsite.js), e.g. US-GA -> Georgia
     const regionName = r => (/^US-/.test(r.location || '') && typeof getState === 'function' && getState(r.location.slice(3))) || r.label;
+    // Rest of US reads as Interstate Suppliers or Interstate Buyers
+    const legendName = (r, part) => r.location === 'RoUS' ? (part === 'supplier' ? 'Interstate Suppliers' : 'Interstate Buyers') : regionName(r);
     const legend = part => {
       const items = regions.map((r, k) =>
-        `<span class="indicator-legend-item"><span class="indicator-swatch">${swatch(indicatorPartColors[part], [regionShades[k]])}</span>${regionName(r)}</span>`);
+        `<span class="indicator-legend-item"><span class="indicator-swatch">${swatch(indicatorPartColors[part], [regionShades[k]])}</span>${legendName(r, part)}</span>`);
       // Same order as the bars: Suppliers end with Rest of US first, Buyers start with the state
       return `<span class="indicator-legend-group">${(part === 'supplier' ? items.reverse() : items).join('')}</span>`;
     };
