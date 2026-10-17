@@ -57,9 +57,6 @@
 <div class="content contentpadding">
   <div style="margin-bottom: 10px; float:right"><select id="number-format-select"></select></div>
   <div style="margin-bottom: 10px; margin-right: 7px; float:right"><select id="locale-select"></select></div>
-  <div style="margin-bottom: 10px; margin-right: 7px; float:right;">
-    <label style="font-size:13px;white-space:nowrap"><select id="impact-filter-select"><option value="all">All Impacts</option><option value="negative">Negative Impacts</option><option value="positive">Positive Impacts</option></select></label>
-  </div>
   
   <div style="margin-bottom:10px">
     <a id="footprintLink" href="../state/" >US State Reports</a> - 
@@ -316,6 +313,8 @@ async function main() {
       direct: direct[i.index],
       total: total[i.index],
       directValue: directValues[i.index],
+      // National total the values are divided by, to turn them back into indicator units
+      normTotal: analysis.normalizationTotals ? analysis.normalizationTotals[i.index] : null,
       totalValue: totalValues[i.index],
       // Supplier = the supply chain without the industry itself (total minus direct)
       supplierValue: totalValues[i.index] - directValues[i.index],
@@ -489,9 +488,15 @@ function buildMatrixList(sectors, matrixA, outputQ, sectorIndex, direction, rank
     const coefficient = (direction === 'sellers'
       ? (matrixA.data[index] || [])[sectorIndex]
       : (matrixA.data[sectorIndex] || [])[index]) || 0;
-    if (Math.abs(coefficient) <= 0.0001) return; // Filter out very small values
     // Output of the buying sector: this sector for sellers, sector j for buyers
     const output = qAt(direction === 'sellers' ? sectorIndex : index);
+    // Filter out very small values. Rest of US buyers have large outputs, so their coefficients are
+    // about 100× smaller than in-state ones for the same dollars. Buyers are also kept when they spend
+    // over 0.01% of this industry's output, the same dollar threshold the sellers' coefficient sets.
+    const ownOutput = qAt(sectorIndex);
+    const bigSpend = direction === 'buyers' && output != null && ownOutput
+      && Math.abs(coefficient * output) > 0.0001 * ownOutput;
+    if (Math.abs(coefficient) <= 0.0001 && !bigSpend) return;
     const region = regions.find(r => r.location === s.location) || { key: 'r0', label: '' };
     const key = s.code || sectorNameSafe;
     if (!groups.has(key)) groups.set(key, { sector: sectorNameSafe, sectorCode: s.code, regions: [] });
@@ -559,6 +564,8 @@ function setupMatrixToggles(hasSpent) {
     const list = currentMatrixList();
     if (matrixTable) matrixTable.setData(list).then(() => matrixTable.setSort(matrixRank, 'desc'));
     renderMatrixTreemap(list);
+    // The impact chart's value columns switch between totals and per-dollar amounts
+    if (btn.dataset.rank) updateTables();
   });
 }
 
@@ -690,7 +697,8 @@ function renderMatrixTreemap(matrixData) {
     const style = getComputedStyle(el);
     const dark = document.body.classList.contains('dark');
     const shown = v => v != null ? treemapDollars(v) : '';
-    const amountText = item => item.spent != null ? treemapDollars(item.spent) : treemapAmount(item.coefficient);
+    // Tile amounts follow the ranking: total spent, or the per-dollar amount when Per $1 is chosen
+    const amountText = item => (matrixRank === 'spent' && item.spent != null) ? treemapDollars(item.spent) : treemapAmount(item.coefficient);
     // A region's share of its sector: by dollars when known, otherwise by coefficient
     const regionShare = (d, r) => {
       if (d.spent && r.spent != null) return Math.abs(r.spent / d.spent);
@@ -714,7 +722,7 @@ function renderMatrixTreemap(matrixData) {
         shares: parts.map(p => p.share),
         lines: [d.sector, ...regionLines],
         tip: `<b>${d.sector}</b><br/>${d.spent != null ? `Total spent: ${shown(d.spent)}<br/>` : ''}`
-          + (multiRegion ? parts.map(({ r }) => `${r.label}: ${amountText(r)} (${treemapAmount(r.coefficient)})`).join('<br/>') + '<br/>' : '')
+          + (multiRegion ? parts.map(({ r }) => `${r.label}: ${r.spent != null ? `${shown(r.spent)} (${treemapAmount(r.coefficient)})` : treemapAmount(r.coefficient)}`).join('<br/>') + '<br/>' : '')
           + `Per dollar: ${treemapAmount(d.coefficient)}<br/>Coefficient: ${formatCell(d.coefficient || 0, 'easy')}`
       };
     });
@@ -764,6 +772,18 @@ function renderMatrixTreemap(matrixData) {
             rich: { b: { fontWeight: 'bold', fontSize: 12, lineHeight: lineHeight, fill: tile.textColor } }
           }
         });
+      } else if (w >= 8 && h >= 10) {
+        // Too small for the lines: just the first letter of the sector name (the hover has the rest)
+        const letter = (String(tile.lines[0] || '').match(/[A-Za-z0-9]/) || [''])[0].toUpperCase();
+        if (letter) {
+          children.push({
+            type: 'text', silent: true,
+            style: {
+              text: letter, x: x0 + w / 2, y: y0 + h / 2, align: 'center', verticalAlign: 'middle',
+              fill: tile.textColor, fontWeight: 'bold', fontSize: Math.max(8, Math.min(12, w - 2, h - 2))
+            }
+          });
+        }
       }
       return { type: 'group', children: children };
     };
@@ -988,7 +1008,7 @@ let tableData = [];
 // Parts included in the indicator bar chart (checkboxes above it)
 let indicatorParts = { supplier: true, industry: true, buyers: false };
 let indicatorScaleMax = 1;
-let indicatorFlows = { supplierRegions: null, buyers: null, buyerRegions: null, regions: [] };
+let indicatorFlows = { supplierRegions: null, buyers: null, buyerRegions: null, regions: [], ownOutput: 0 };
 // Overlay opacity by region for Supplier and Buyers sections: none for the state, darker for Rest of US
 // (and later Rest of World)
 const indicatorOverlay = [0, 0.25, 0.45];
@@ -1002,7 +1022,7 @@ const indicatorPartColors = { supplier: '#7cc3ee', industry: '#9b6dd6', buyers: 
 //   A[sector, j], times its output q[j], over this industry's output q[sector]. A downstream share,
 //   not part of the model's standard (upstream) footprint.
 async function indicatorFlowImpacts(sector, totals) {
-  const result = { supplierRegions: null, buyers: null, buyerRegions: null, regions: [] };
+  const result = { supplierRegions: null, buyers: null, buyerRegions: null, regions: [], ownOutput: 0 };
   try {
     const sectors = await model.sectors();
     const regions = matrixRegionList(sectors);
@@ -1020,6 +1040,7 @@ async function indicatorFlowImpacts(sector, totals) {
     const supplierWeight = j => ((L.data[j] || [])[sector.index] || 0) - (j === sector.index ? 1 : 0);
     const qAt = j => (q && q.data[j]) ? q.data[j][0] : 0;
     const ownOutput = qAt(sector.index);
+    result.ownOutput = ownOutput; // The industry's total output in dollars, for totals in the impact chart
     const buyerWeight = j => ownOutput ? ((A.data[sector.index] || [])[j] || 0) * qAt(j) / ownOutput : 0;
     if (multiRegion) {
       result.supplierRegions = regions.map(r => ({ label: r.label, values: D.data.map((row, i) => sumOver(i, r.location, supplierWeight)) }));
@@ -1067,7 +1088,9 @@ function indicatorBar(row) {
     const sections = indicatorSections(row);
     const widths = sections.map(section => Math.max(0, section.value) / indicatorScaleMax * 100);
     const total = widths.reduce((t, w) => t + w, 0);
-    const tip = sections.map(section => `${section.label}: ${formatCell(section.value, 'easy')}`).join('\n');
+    // Hover in the indicator's unit per $1 (bar widths stay as shares of the US total)
+    const unitValue = value => row.normTotal != null ? value * row.normTotal : value;
+    const tip = sections.map(section => `${section.label}: ${formatCell(unitValue(section.value), 'easy')}${row.normTotal != null && row.unit ? ' ' + row.unit : ''}`).join('\n') + '\nPer $1 of output';
     if (total <= 0) return `<div style="height:16px" title="${tip}"></div>`;
     // outer wrapper is transparent so no gray rectangle shows beneath the bar
     return `<div style="height:16px" title="${tip}"><div style="display:flex;width:${Math.min(total, 100)}%;height:100%;border-radius:6px;overflow:hidden">`
@@ -1138,12 +1161,23 @@ function setupIndicatorParts() {
 function displayTable() {
   const formatType = getCurrentNumberFormat() || "simple";
   // Value column in the selected number format
+  // Rows hold per-dollar values divided by national totals. Value columns multiply by that national total
+  // to show the indicator's own unit per $1, and with Total Spent chosen above the treemap, also by the
+  // industry's total output to show the total for its whole output.
+  const showTotals = matrixRank === 'spent' && indicatorFlows.ownOutput > 0;
+  const shownValue = (row, val) => {
+    if (row.normTotal == null) return val;
+    return (val || 0) * row.normTotal * (showTotals ? indicatorFlows.ownOutput : 1);
+  };
   const valueColumn = (title, field) => ({
     title: title,
     field: field,
-    sorter: "number",
+    titleFormatter: () => `<span title="${showTotals
+      ? `Total for the industry's output of ${treemapDollars(indicatorFlows.ownOutput)}, in the indicator's unit`
+      : 'Per $1 of the industry\'s output, in the indicator\'s unit'}">${title}</span>`,
+    sorter: (a, b, aRow, bRow) => shownValue(aRow.getData(), a) - shownValue(bRow.getData(), b),
     formatter: function(cell) {
-      const val = cell.getValue();
+      const val = shownValue(cell.getRow().getData(), cell.getValue());
       if (formatType === "full") return formatCell(val, 'full');
       if (formatType === "scientific") {
         let scientificValue = Number(val).toExponential(3);
@@ -1160,13 +1194,15 @@ function displayTable() {
     { title: "Indicator", field: "indicator", widthGrow: 2 },
     // Stacked bar of the checked parts (Supplier, Industry, Buyers) on one shared scale
     { title: "Impacts", field: "partsBar", minWidth: 200, headerSortStartingDir: "desc",
+      titleFormatter: () => '<span title="Per $1 of output as a share of each indicator\'s US total, so indicators with different units can be compared">Impacts</span>',
       sorter: (a, b, aRow, bRow) => indicatorPartsValue(aRow.getData()) - indicatorPartsValue(bRow.getData()),
       formatter: cell => indicatorBar(cell.getRow().getData() || {})
     },
     valueColumn("Suppliers", "supplierValue"),
     valueColumn("Industry", "directValue"),
     ...(indicatorFlows.buyers ? [valueColumn("Buyers", "buyersValue")] : []),
-    Object.assign(valueColumn("Total", "totalValue"), { headerTooltip: "Suppliers + Industry: the model's total footprint" }),
+    // Header hover text via a title attribute: Tabulator 5.2.7's headerTooltip option throws on hover
+    Object.assign(valueColumn("Total", "totalValue"), { titleFormatter: () => `<span title="Suppliers + Industry: the model's total footprint${showTotals ? `, for the industry's output of ${treemapDollars(indicatorFlows.ownOutput)}` : ' per $1 of output'}">Total</span>` }),
     { title: "Unit", field: "unit", width: 100 }
   ];
 
@@ -1224,9 +1260,6 @@ function initializeDropdownsAndEvents() {
   if (typeof addImpactSetSelect === 'function') {
     impactSetControl = addImpactSetSelect('#impact-set-select', {
       onChange: setId => {
-        // A set already picks its indicators, so show both negative and positive impacts
-        const filter = document.getElementById('impact-filter-select');
-        if (setId && filter) filter.value = 'all';
         if (setId === 'energy' && getHash().state) {
           showNationalModel(setId);
           return;
@@ -1241,15 +1274,6 @@ function initializeDropdownsAndEvents() {
       updateTables();
     }
   }
-
-  // Impact filter dropdown (Negative / Positive / All)
-  const impactFilterSelect = document.getElementById('impact-filter-select');
-  if (impactFilterSelect) {
-    impactFilterSelect.addEventListener('change', function() {
-      filterTableData();
-      updateTables();
-    });
-  }
 }
 
 // Impact set dropdown control, from addImpactSetSelect in localsite/js/impact-sets.js
@@ -1261,47 +1285,10 @@ function currentImpactSet() {
   return (typeof getHash === 'function' && getHash().set) || '';
 }
 
-// Filter fullTableData into tableData according to the impact set and the impact filter selection
+// Filter fullTableData into tableData according to the impact set (All Impacts, Adverse, Air, ...)
 function filterTableData() {
-  filterTableDataByImpact();
-  if (typeof impactSetIncludes === 'function') {
-    const setId = currentImpactSet();
-    tableData = tableData.filter(d => impactSetIncludes(setId, d.code));
-  }
-}
-
-function filterTableDataByImpact() {
-  try {
-    const sel = (document.getElementById('impact-filter-select') || {}).value || 'negative';
-    if (!fullTableData || fullTableData.length === 0) {
-      tableData = [];
-      return;
-    }
-
-    if (sel === 'all') {
-      tableData = fullTableData.slice();
-      return;
-    }
-
-    // Determine positive vs negative by name heuristics. "Jobs" and "Value Added" are treated as positive impacts.
-    const positiveKeywords = [/jobs?/i, /value\s*added/i, /value-added/i, /employment/i, /wage/i, /income/i];
-
-    if (sel === 'positive') {
-      tableData = fullTableData.filter(d => {
-        const name = (d.indicator || '').toString();
-        return positiveKeywords.some(rx => rx.test(name));
-      });
-    } else {
-      // negative: exclude positiveKeywords
-      tableData = fullTableData.filter(d => {
-        const name = (d.indicator || '').toString();
-        return !positiveKeywords.some(rx => rx.test(name));
-      });
-    }
-  } catch (e) {
-    console.warn('filterTableData failed', e);
-    tableData = fullTableData.slice();
-  }
+  const setId = currentImpactSet();
+  tableData = (fullTableData || []).filter(d => typeof impactSetIncludes !== 'function' || impactSetIncludes(setId, d.code));
 }
 
 // Function to update all tables when format changes

@@ -53,7 +53,6 @@ function getModelByName(theModel) {
 
 // Browser cache functionality for dropdown preferences
 const CACHE_KEYS = {
-  impactFilter: 'footprint_impact_filter_preference',
   locale: 'footprint_locale_preference',
   numberFormat: 'footprint_number_format_preference'
 };
@@ -79,14 +78,6 @@ function getDropdownPreference(dropdownId, defaultValue) {
 
 // Add event listeners to save preferences when dropdowns change
 function attachDropdownListeners() {
-  // Impact filter dropdown (only on sector_profile.html)
-  const impactFilterSelect = document.getElementById("impact-filter-select");
-  if (impactFilterSelect) {
-    impactFilterSelect.addEventListener('change', function() {
-      saveDropdownPreference('impactFilter', this.value);
-    });
-  }
-
   // Locale dropdown
   const localeSelect = document.getElementById("locale-select");
   if (localeSelect) {
@@ -121,13 +112,6 @@ function applyCachedPreferences() {
     if (Array.from(numberFormatSelect.options).some(o => o.value === cachedFormat)) {
       numberFormatSelect.value = cachedFormat;
     }
-  }
-
-  // Set impact filter preference (only on sector_profile.html)
-  const impactFilterSelect = document.getElementById("impact-filter-select");
-  if (impactFilterSelect && impactFilterSelect.options.length > 0) {
-    const cachedImpactFilter = getDropdownPreference('impactFilter', 'all');
-    impactFilterSelect.value = cachedImpactFilter;
   }
 
   // Attach event listeners after setting values
