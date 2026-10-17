@@ -20,6 +20,14 @@ const model = useeio.modelOf({
   asJsonFiles: false,
 });
 */
+// Folder holding the model folders and sectorcrosswalk.csv. Declared before getModel() runs on the next lines.
+//const useeioJsonEndpoint = 'http://localhost:8887/useeio-json/models/2020';
+// To use a local copy, clone the useeio-json repo into the same webroot:
+//const useeioJsonEndpoint = '/useeio-json/models/2020';
+// CORS error:
+//const useeioJsonEndpoint = 'https://model.earth/useeio-json/main/models/2020';
+const useeioJsonEndpoint = 'https://raw.githubusercontent.com/ModelEarth/useeio-json/main/models/2020';
+
 let model = getModel();
 function getModelFolderName() {
     let hash = getUrlHash();
@@ -31,17 +39,13 @@ function getModelFolderName() {
     return theModel;
 }
 function getModel() {
-    let theModel = getModelFolderName()
+    return getModelByName(getModelFolderName());
+}
+
+// A model by folder name, e.g. USEEIOv2.0.1-411 (national) or GAEEIOv1.0-s-20 (Georgia)
+function getModelByName(theModel) {
     return useeio.modelOf({ // Calls the getJson() method set in webapi.ts
-      //endpoint: 'http://localhost:8887/useeio-json/models/2020',
-
-      // So clone the useeio-json repo into the same webroot.
-      endpoint: '/useeio-json/models/2020',
-
-      // CORS error
-      endpoint: 'https://model.earth/useeio-json/main/models/2020',
-      endpoint: 'https://raw.githubusercontent.com/ModelEarth/useeio-json/main/models/2020',
-      
+      endpoint: useeioJsonEndpoint,
       model: theModel,
       asJsonFiles: true,
     });

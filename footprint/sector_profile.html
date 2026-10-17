@@ -14,14 +14,50 @@
 
   <script type="text/javascript" src="/localsite/js/localsite.js?showheader=true&showsearch=true"></script>
   <script src="js/useeio.js"></script>
+<style>
+  #matrixTreemapTitle { font-size: 18px; font-weight: 600; margin-top: 16px; }
+  #matrixTable { margin-top: 16px; }
+  #matrixTreemap { width: 100%; height: 360px; background: #fff; border-radius: 8px; overflow: hidden; margin-top: 8px; }
+  .dark #matrixTreemap { background: var(--bg-card); }
+  #matrixTreemapTagline { font-size: 13px; color: #444; margin-top: 4px; }
+  .dark #matrixTreemapTagline { color: var(--text-muted); }
+  #indicatorToolbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin: 4px 0 10px; clear: both; }
+  /* Part colors, also used for the bar sections */
+  #indicatorParts label[data-part-label="supplier"] { --part: #7cc3ee; --part-text: #1f2937; }
+  #indicatorParts label[data-part-label="industry"] { --part: #9b6dd6; --part-text: #fff; }
+  #indicatorParts label[data-part-label="buyers"] { --part: #f27ab6; --part-text: #1f2937; }
+  #indicatorParts label { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 14px; background: color-mix(in srgb, var(--part) 18%, #fff); color: #333; cursor: pointer; user-select: none; }
+  #indicatorParts label + label { border-left: 1px solid #ccc; }
+  #indicatorParts label.active { background: var(--part); color: var(--part-text); }
+  #indicatorParts label.disabled { opacity: 0.5; cursor: default; }
+  #indicatorParts input { margin: 0; }
+  .indicator-swatch { display: inline-flex; width: 18px; height: 12px; border-radius: 3px; overflow: hidden; }
+  .indicator-swatch i { flex: 1; align-self: stretch; }
+  #indicatorRegionNote { font-size: 13px; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 22px; }
+  .indicator-legend-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+  .indicator-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+  .dark #indicatorParts label { background: color-mix(in srgb, var(--part) 18%, var(--bg-card, #222)); color: var(--text-main); }
+  .dark #indicatorParts label + label { border-left-color: var(--border-subtle); }
+  .dark #indicatorParts label.active { background: var(--part); color: var(--part-text); }
+  #matrixToolbar { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; }
+  .matrix-toggle { display: inline-flex; border: 1px solid #ccc; border-radius: 6px; overflow: hidden; }
+  .matrix-toggle button { border: 0; padding: 6px 14px; font-size: 14px; background: #fff; color: #333; cursor: pointer; }
+  .matrix-toggle button + button { border-left: 1px solid #ccc; }
+  .matrix-toggle button.active { background: #0366d6; color: #fff; }
+  .matrix-toggle button:disabled { opacity: 0.5; cursor: default; }
+  .dark .matrix-toggle { border-color: var(--border-subtle); }
+  .dark .matrix-toggle button { background: var(--bg-card); color: var(--text-main); }
+  .dark .matrix-toggle button + button { border-left-color: var(--border-subtle); }
+  .dark .matrix-toggle button.active { background: var(--accent, #3a8fd9); color: #fff; }
+</style>
 </head>
 
 <body>
 
 <div class="content contentpadding">
   <div style="margin-bottom: 10px; float:right"><select id="number-format-select"></select></div>
-  <div style="margin-bottom: 10px; float:right"><select id="locale-select"></select></div>
-  <div style="margin-bottom: 10px; float:right;">
+  <div style="margin-bottom: 10px; margin-right: 7px; float:right"><select id="locale-select"></select></div>
+  <div style="margin-bottom: 10px; margin-right: 7px; float:right;">
     <label style="font-size:13px;white-space:nowrap"><select id="impact-filter-select"><option value="all">All Impacts</option><option value="negative">Negative Impacts</option><option value="positive">Positive Impacts</option></select></label>
   </div>
   
@@ -32,7 +68,16 @@
   <div id="relocatedStateMenu"></div>
   
   <p id="info">Loading ...</p>
-  <div id="table" style="clear:both"></div>
+  <div id="indicatorToolbar" style="display:none">
+    <div id="indicatorParts" class="matrix-toggle" role="group" aria-label="Impacts to include">
+      <label data-part-label="supplier" title="The industry's whole supply chain, without the industry itself. Click to show only Suppliers; use the checkbox to add or remove it."><input type="checkbox" data-part="supplier">Suppliers</label>
+      <label data-part-label="industry" title="The industry's own operations (direct impacts). Click to show only Industry; use the checkbox to add or remove it."><input type="checkbox" data-part="industry">Industry</label>
+      <label data-part-label="buyers" title="A share of the buyers' own direct impacts, matching the share of their costs spent on this industry. Not part of the model's standard footprint. Click to show only Buyers; use the checkbox to add or remove it."><input type="checkbox" data-part="buyers">Buyers</label>
+    </div>
+    <div id="indicatorRegionNote"></div>
+    <select id="impact-set-select" style="margin-left:auto"></select>
+  </div>
+  <div id="indicatorBarChart" style="clear:both"></div>
 
   
   
@@ -40,9 +85,20 @@
   <div id="matrixSection" style="margin-top: 40px; display: none;">
     <h3>Technical Coefficient Matrix</h3>
     <p id="matrixInfo">Loading matrix data...</p>
+    <div id="matrixToolbar">
+      <div id="matrixDirection" class="matrix-toggle" role="group" aria-label="Show sellers or buyers">
+        <button type="button" data-direction="sellers" title="Sectors this industry buys from, with what it spends on each">Suppliers</button>
+        <button type="button" data-direction="buyers" title="Sectors that buy from this industry, with what each spends on it">Buyers</button>
+      </div>
+      <div id="matrixRank" class="matrix-toggle" role="group" aria-label="Rank and size by">
+        <button type="button" data-rank="spent" title="Rank the top 25 and size rectangles by total dollars spent">Total Spent</button>
+        <button type="button" data-rank="coefficient" title="Rank the top 25 and size rectangles by the amount per $1 of output">Per $1</button>
+      </div>
+    </div>
+    <div id="matrixTreemapTitle" style="display:none"></div>
+    <div id="matrixTreemapTagline" style="display:none">Rectangles sized by total spent; color indicates normalized magnitude (low → high).</div>
+    <div id="matrixTreemap" style="display:none"></div>
     <div id="matrixTable"></div>
-    <div id="matrixTreemap" style="height:360px;background:#fff;border-radius:8px;padding:8px;margin-top:12px;display:none"></div>
-    <div id="matrixTreemapTagline" style="font-size:13px;color:#444;margin-top:8px;display:none">Treemap: rectangles sized by absolute coefficient magnitude; color indicates normalized magnitude (low → high).</div>
   </div>
   
   <div id="dataSourcesSection" style="margin-top: 40px; display: none;">
@@ -56,14 +112,47 @@
 </div>
 
 <script src="js/config.js"></script>
+<script src="/localsite/js/impact-sets.js"></script>
 <script>
 loadMarkdown("sector_profile_info.md", "infoDiv", "_parent");
 document.addEventListener('hashChangeEvent', hashChangedUseeio, false);
 function hashChangedUseeio() {
   console.log("URL hash changed");
   model = getModel();
-  updateHash({"demand":""});
+  // Keep the demand when it belongs to the model now in the hash: US-GA or RoUS for state=GA, US for the national model
+  const hash = getHash();
+  const location = String(hash.demand || '').split('/')[1];
+  const locations = hash.state ? [`US-${hash.state.toUpperCase()}`, 'RoUS'] : ['US'];
+  if (!locations.includes(location)) updateHash({"demand":""});
   main();
+}
+
+// Energy indicators are only in the national model: drop the state from the hash and show the
+// national sector matching the current state sector (BEA Summary -> first BEA Detail in sectorcrosswalk.csv).
+// Uses fetch rather than model.sectorCrosswalk(), whose request adds a Content-Type header: GitHub refuses
+// that CORS preflight and the request never resolves.
+async function showNationalModel(setId) {
+  const hash = getHash();
+  let demand = '';
+  try {
+    const code = String(hash.demand || '').split('/')[0];
+    const response = await fetch(`${useeioJsonEndpoint}/sectorcrosswalk.csv`);
+    if (!response.ok) throw new Error(`sectorcrosswalk.csv ${response.status}`);
+    const rows = (await response.text()).trim().split(/\r?\n/).map(line => line.split(',').map(v => v.replace(/^"|"$/g, '')));
+    const header = rows.shift() || [];
+    const summaryCol = header.indexOf('BEA_Summary');
+    const detailCols = [header.indexOf('BEA_Detail'), header.indexOf('BEA_Detail_Waste_Disagg')].filter(i => i >= 0);
+    const nationalCodes = new Set((await getModelByName('USEEIOv2.0.1-411').sectors()).map(s => s.code));
+    for (const row of rows) {
+      if (row[summaryCol] !== code) continue;
+      const detail = detailCols.map(i => row[i]).find(c => nationalCodes.has(c));
+      if (detail) { demand = `${detail}/US`; break; }
+    }
+  } catch (e) {
+    console.warn('No national sector for this state sector', e);
+  }
+  // A blank demand shows a random national sector
+  goHash({ set: setId, demand: demand }, ['state', 'indicators']);
 }
 
 function norm100(nums) {
@@ -179,7 +268,7 @@ async function main() {
     const [code, location] = hash.demand.split('/');
     if (!location) {
       info.textContent = "No location value in demand: " + hash.demand;
-      document.getElementById('table').innerHTML = "";
+      document.getElementById('indicatorBarChart').innerHTML = "";
       return;
     } else if (location.includes('/')) {
       stateCode = location.split('/')[1];
@@ -192,7 +281,7 @@ async function main() {
     if (hash.state) {
       info.textContent = `No valid sector specified in the URL in ${hash.state} model.`;
     }
-    document.getElementById('table').innerHTML = "";
+    document.getElementById('indicatorBarChart').innerHTML = "";
     return;
   }
 
@@ -202,7 +291,7 @@ async function main() {
   });
   if (!demandId) {
     info.textContent = "Failed to load demand";
-    document.getElementById('table').innerHTML = "";
+    document.getElementById('indicatorBarChart').innerHTML = "";
     return;
   }
   
@@ -216,20 +305,36 @@ async function main() {
   const directValues = await analysis.getEnvironmentalProfile(true);
   const totalValues = await analysis.getEnvironmentalProfile(false);
   
+  // Supplier and buyer impacts, split by region in state models
+  indicatorFlows = await indicatorFlowImpacts(sector, analysis.normalizationTotals);
+  const regionValues = (regions, i) => regions ? regions.map(r => ({ label: r.label, value: r.values[i] })) : null;
+  
   fullTableData = indicators.map(i => {
     return {
       indicator: `${i.code} - ${i.name}`,
+      code: i.code,
       direct: direct[i.index],
       total: total[i.index],
       directValue: directValues[i.index],
       totalValue: totalValues[i.index],
+      // Supplier = the supply chain without the industry itself (total minus direct)
+      supplierValue: totalValues[i.index] - directValues[i.index],
+      supplierRegions: regionValues(indicatorFlows.supplierRegions, i.index),
+      buyersValue: indicatorFlows.buyers ? indicatorFlows.buyers[i.index] : null,
+      buyersRegions: regionValues(indicatorFlows.buyerRegions, i.index),
       directValueEasy: formatCell(directValues[i.index], 'easy'),
       totalValueEasy: formatCell(totalValues[i.index], 'easy'),
       unit: i.unit
     }
   });
+  // Sets with none of this model's indicators are disabled in the impact set dropdown
+  // Energy stays enabled: choosing it switches to the national model
+  if (impactSetControl) impactSetControl.setAvailable(fullTableData.map(d => d.code), ['energy']);
+  // One scale for every combination, so each part keeps its length when others are added
+  indicatorScaleMax = Math.max(...fullTableData.map(d =>
+    Math.max(0, d.supplierValue) + Math.max(0, d.directValue) + Math.max(0, d.buyersValue || 0)), 0) || 1;
 
-  info.innerHTML = `<h3 style="font-size:22px">${sector.name}</h3><span style='float:right'>Amounts might be per dollar spent.</span>Environmental profile based on ${demandId} for <b>${sector.id}</b>`;
+  info.innerHTML = `<h3 style="font-size:22px">${sector.name}</h3>Environmental profile based on ${demandId} for <b>${sector.id}</b>`;
   
   // Filter according to the selected impact filter and create the table
   filterTableData();
@@ -256,50 +361,65 @@ async function loadMatrixData(sector, analysis) {
     // Get matrix data from the model
     const sectors = await model.sectors();
     const matrixA = await model.matrix('A'); // Technical coefficient matrix
+    // Total output per sector (q, in dollars), used to turn coefficients into dollars spent
+    let outputQ = null;
+    try { outputQ = await model.matrix('q'); } catch (e) { console.warn('q vector not available, treemap shows per-dollar amounts', e); }
     
     console.log('Matrix A structure:', matrixA);
     console.log('Sector details:', sector);
     
-    // Get matrix data using direct access like the working version
-    let matrixData = [];
-    
-    if (matrixA && matrixA.data && matrixA.data.length > 0) {
-      // Get the row for the current sector
-      const sectorRow = matrixA.data[sector.index] || [];
-      console.log('Sector row data (first 5):', sectorRow.slice(0, 5));
-      
-      // Create data for the top contributing sectors
-      matrixData = sectors
-        .map((s, index) => {
-          // Ensure sector name is a usable string. Some models may have
-          // non-string or boolean values in the name field; fall back to
-          // the sector code or a generated label to avoid literal 'true'.
-          const sectorNameSafe = (typeof s.name === 'string' && s.name.trim().length > 0)
-            ? s.name.trim()
-            : (typeof s.code === 'string' && s.code.trim().length > 0 ? s.code.trim() : `Sector ${index}`);
-          return {
-            sector: sectorNameSafe,
-            coefficient: sectorRow[index] || 0,
-            sectorCode: s.code,
-            sectorId: s.id
-          };
-        })
-        .filter(item => Math.abs(item.coefficient) > 0.0001) // Filter out very small values
-        .sort((a, b) => Math.abs(b.coefficient) - Math.abs(a.coefficient))
-        .slice(0, 25); // Show top 25 contributors
-        
-      console.log('Matrix data sample:', matrixData.slice(0, 3));
+    // Columns of A are the buying sectors, rows are what they buy (each column sums to less than 1).
+    // Sellers: this sector's column, A[j, sector] × q[sector] = what this sector spends on j.
+    // Buyers: this sector's row, A[sector, j] × q[j] = what sector j spends on this sector.
+    // One top 25 list per direction and ranking, keyed like 'buyers-spent'
+    matrixLists = {};
+    if (!outputQ) matrixRank = 'coefficient'; // No totals without the q vector
+    // State models list each sector once per region (the state and Rest of US; Rest of World later)
+    matrixRegions = matrixRegionList(sectors);
+    for (const direction of ['sellers', 'buyers']) {
+      for (const rank of ['spent', 'coefficient']) {
+        matrixLists[`${direction}-${rank}`] = (matrixA && matrixA.data && matrixA.data.length > 0)
+          ? buildMatrixList(sectors, matrixA, outputQ, sector.index, direction, rank, matrixRegions) : [];
+      }
     }
+    console.log('Matrix data sample:', matrixLists['sellers-spent'].slice(0, 3), matrixLists['buyers-spent'].slice(0, 3));
+    const matrixData = currentMatrixList();
     
-    if (matrixData.length > 0) {
+    if (Object.values(matrixLists).some(list => list.length > 0)) {
         // Create Tabulator table for matrix data
         matrixTable = new Tabulator("#matrixTable", {
           data: matrixData,
           layout: "fitColumns",
+          placeholder: "No significant technical coefficients in this direction.",
           columns: [
             { title: "Sector Name", field: "sector", widthGrow: 3 },
             { title: "Code", field: "sectorCode", width: 80 },
-            { title: "Sector ID", field: "sectorId", width: 120 },
+            // One column per region when the model has more than one
+            ...(matrixRegions.length > 1 ? matrixRegions.map(region => ({
+              title: region.label,
+              field: `spent_${region.key}`,
+              formatter: cell => {
+                const row = cell.getRow().getData();
+                if (cell.getValue() != null) return treemapDollars(cell.getValue());
+                return row[`coef_${region.key}`] != null ? treemapAmount(row[`coef_${region.key}`]) : '';
+              },
+              sorter: "number",
+              width: 110
+            })) : []),
+            {
+              title: "Total Spent",
+              field: "spent",
+              formatter: cell => cell.getValue() == null ? '' : treemapDollars(cell.getValue()),
+              sorter: "number",
+              width: 120
+            },
+            {
+              title: "Per $1",
+              field: "coefficient",
+              formatter: cell => treemapAmount(cell.getValue()),
+              headerSort: false,
+              width: 120
+            },
             { 
               title: "Coefficient", 
               field: "coefficient", 
@@ -326,13 +446,14 @@ async function loadMatrixData(sector, analysis) {
             }
           ],
           initialSort: [
-            { column: "coefficient", dir: "desc" }
+            { column: matrixRank, dir: "desc" }
           ]
         });
       // Render a treemap visualization of the matrix contributions
       try {
         renderMatrixTreemap(matrixData);
       } catch (e) { console.warn('renderMatrixTreemap failed', e); }
+      setupMatrixToggles(!!outputQ);
     } else {
       matrixTableDiv.innerHTML = '<p>No significant technical coefficients found for this sector.</p>';
     }
@@ -345,25 +466,213 @@ async function loadMatrixData(sector, analysis) {
   }
 }
 
+// Regions in the order the model lists them, e.g. GA then Rest of US
+function matrixRegionList(sectors) {
+  const label = loc => loc === 'RoUS' ? 'Rest of US' : loc === 'RoW' ? 'Rest of World' : String(loc || '').replace(/^US-/, '');
+  const locations = [...new Set(sectors.map(s => s.location))];
+  return locations.map((location, i) => ({ key: `r${i}`, location: location, label: label(location) }));
+}
+
+// Top 25 sellers to (column) or buyers from (row) the sector in the A matrix, with dollars spent.
+// Each sector is one row combining its regions, with the amount for each region in row.regions.
+// rank 'spent' orders by total dollars spent, 'coefficient' by the amount per $1.
+function buildMatrixList(sectors, matrixA, outputQ, sectorIndex, direction, rank, regions) {
+  const qAt = i => (outputQ && outputQ.data[i]) ? outputQ.data[i][0] : null;
+  const groups = new Map();
+  sectors.forEach((s, index) => {
+    // Ensure sector name is a usable string. Some models may have
+    // non-string or boolean values in the name field; fall back to
+    // the sector code or a generated label to avoid literal 'true'.
+    const sectorNameSafe = (typeof s.name === 'string' && s.name.trim().length > 0)
+      ? s.name.trim()
+      : (typeof s.code === 'string' && s.code.trim().length > 0 ? s.code.trim() : `Sector ${index}`);
+    const coefficient = (direction === 'sellers'
+      ? (matrixA.data[index] || [])[sectorIndex]
+      : (matrixA.data[sectorIndex] || [])[index]) || 0;
+    if (Math.abs(coefficient) <= 0.0001) return; // Filter out very small values
+    // Output of the buying sector: this sector for sellers, sector j for buyers
+    const output = qAt(direction === 'sellers' ? sectorIndex : index);
+    const region = regions.find(r => r.location === s.location) || { key: 'r0', label: '' };
+    const key = s.code || sectorNameSafe;
+    if (!groups.has(key)) groups.set(key, { sector: sectorNameSafe, sectorCode: s.code, regions: [] });
+    groups.get(key).regions.push({
+      key: region.key,
+      label: region.label,
+      sectorId: s.id,
+      coefficient: coefficient,
+      output: output,
+      spent: output != null ? coefficient * output : null
+    });
+  });
+  return [...groups.values()]
+    .map(g => {
+      const hasSpent = g.regions.every(r => r.spent != null);
+      const spent = hasSpent ? g.regions.reduce((t, r) => t + r.spent, 0) : null;
+      let coefficient;
+      if (direction === 'sellers') {
+        // Per $1 of this industry's output, so the regions add up
+        coefficient = g.regions.reduce((t, r) => t + r.coefficient, 0);
+      } else {
+        // Buyers have different outputs: total spent over their combined output
+        const outputs = g.regions.reduce((t, r) => t + (r.output || 0), 0);
+        coefficient = (hasSpent && outputs) ? spent / outputs
+          : g.regions.reduce((t, r) => t + r.coefficient, 0) / g.regions.length;
+      }
+      const row = { sector: g.sector, sectorCode: g.sectorCode, coefficient: coefficient, spent: spent, regions: g.regions };
+      g.regions.forEach(r => { row[`spent_${r.key}`] = r.spent; row[`coef_${r.key}`] = r.coefficient; });
+      return row;
+    })
+    .sort((a, b) => Math.abs(rankValue(b, rank)) - Math.abs(rankValue(a, rank)))
+    .slice(0, 25); // Show top 25
+}
+
+// The value a matrix row is ranked and sized by, falling back to the coefficient when there is no total
+function rankValue(item, rank) {
+  return (rank === 'spent' && item.spent != null) ? item.spent : (item.coefficient || 0);
+}
+
+function currentMatrixList() {
+  return (matrixLists && matrixLists[`${matrixDirection}-${matrixRank}`]) || [];
+}
+
+// Sellers / Buyers toggle and, to its right, the Total Spent / Per $1 ranking toggle.
+// Both update the table and the treemap above it.
+function setupMatrixToggles(hasSpent) {
+  const toolbar = document.getElementById('matrixToolbar');
+  if (!toolbar) return;
+  const spentBtn = toolbar.querySelector('button[data-rank="spent"]');
+  if (spentBtn) spentBtn.disabled = !hasSpent;
+  const mark = () => toolbar.querySelectorAll('button').forEach(btn => {
+    const on = btn.dataset.direction ? btn.dataset.direction === matrixDirection : btn.dataset.rank === matrixRank;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  mark();
+  if (toolbar.dataset.ready) return;
+  toolbar.dataset.ready = '1';
+  toolbar.addEventListener('click', e => {
+    const btn = e.target.closest('button[data-direction], button[data-rank]');
+    if (!btn || btn.disabled || !matrixLists) return;
+    if (btn.dataset.direction) matrixDirection = btn.dataset.direction;
+    if (btn.dataset.rank) matrixRank = btn.dataset.rank;
+    mark();
+    const list = currentMatrixList();
+    if (matrixTable) matrixTable.setData(list).then(() => matrixTable.setSort(matrixRank, 'desc'));
+    renderMatrixTreemap(list);
+  });
+}
+
+// Six-step color scale from the active theme's --heatmap-0..5 (base.css and localsite/css/themes).
+// Dark mode uses --heatmap-dark-0..5 when a theme defines them, otherwise the light scale reversed,
+// so low values sit near the dark background and high values are brightest.
+function treemapHeatmapStops(el) {
+  const style = getComputedStyle(el);
+  const read = prefix => [0, 1, 2, 3, 4, 5].map(i => style.getPropertyValue(prefix + i).trim()).filter(Boolean);
+  const dark = document.body.classList.contains('dark');
+  if (dark) {
+    const darkStops = read('--heatmap-dark-');
+    if (darkStops.length === 6) return darkStops;
+  }
+  let stops = read('--heatmap-');
+  if (stops.length !== 6) stops = ['#ddf1f1', '#b8e6e6', '#7dd3d3', '#42c0c0', '#2a9a9a', '#1a6b6b']; // base.css defaults
+  return dark ? stops.slice().reverse() : stops;
+}
+
+// Dark text on light tiles, white text on dark tiles
+function treemapLabelColor(color) {
+  const [r, g, b] = echarts.color.parse(color) || [0, 0, 0];
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? '#1f2937' : '#fff';
+}
+
+// A coefficient is dollars of input per dollar of output, shown as cents per $1 (e.g. 0.0234 -> 2.34¢ per $1)
+function treemapAmount(coefficient) {
+  const cents = (coefficient || 0) * 100;
+  return `${parseFloat(cents.toPrecision(3))}¢ per $1`;
+}
+
+// Squarified treemap layout (Bruls et al.): rectangles in the order of values (sorted high to low),
+// with areas proportional to the values, filling width × height
+function treemapSquarify(values, width, height) {
+  const total = values.reduce((t, v) => t + v, 0);
+  const rects = values.map(() => ({ x: 0, y: 0, w: 0, h: 0 }));
+  if (!total || width <= 0 || height <= 0) return rects;
+  const areas = values.map(v => v * width * height / total);
+  let x = 0, y = 0, w = width, h = height, i = 0;
+  const worst = (row, side) => {
+    const sum = row.reduce((t, a) => t + a, 0);
+    return Math.max(side * side * Math.max(...row) / (sum * sum), (sum * sum) / (side * side * Math.min(...row)));
+  };
+  while (i < areas.length) {
+    if (areas[i] <= 0) { i++; continue; }
+    const side = Math.min(w, h);
+    const row = [areas[i]];
+    let j = i + 1;
+    while (j < areas.length && areas[j] > 0 && worst(row.concat(areas[j]), side) <= worst(row, side)) row.push(areas[j++]);
+    const sum = row.reduce((t, a) => t + a, 0);
+    let k = i;
+    if (w >= h) { // A column on the left
+      const cw = sum / h;
+      let cy = y;
+      row.forEach(a => { rects[k++] = { x: x, y: cy, w: cw, h: a / cw }; cy += a / cw; });
+      x += cw; w -= cw;
+    } else { // A row along the top
+      const rh = sum / w;
+      let cx = x;
+      row.forEach(a => { rects[k++] = { x: cx, y: y, w: a / rh, h: rh }; cx += a / rh; });
+      y += rh; h -= rh;
+    }
+    i = j;
+  }
+  return rects;
+}
+
+// Compact dollars: 1234567 -> $1.23M
+function treemapDollars(value) {
+  const abs = Math.abs(value || 0);
+  const sign = value < 0 ? '-' : '';
+  const units = [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']];
+  for (const [size, suffix] of units) {
+    if (abs >= size) return `${sign}$${parseFloat((abs / size).toPrecision(3))}${suffix}`;
+  }
+  return `${sign}$${Math.round(abs)}`;
+}
+
 function renderMatrixTreemap(matrixData) {
   try {
     const el = document.getElementById('matrixTreemap');
+    const titleEl = document.getElementById('matrixTreemapTitle');
     const taglineEl = document.getElementById('matrixTreemapTagline');
     if (!el) return;
+    matrixTreemapData = matrixData; // Re-rendered when dark mode or the theme changes
     if (!matrixData || matrixData.length === 0) {
       el.style.display = 'none';
+      if (titleEl) titleEl.style.display = 'none';
       if (taglineEl) taglineEl.style.display = 'none';
       if (matrixTreemapChart) { try{ matrixTreemapChart.dispose(); }catch(e){} matrixTreemapChart=null; }
       return;
     }
 
     el.style.display = 'block';
-    // Update tagline below treemap
+    // Industry name as the title above the treemap, followed by the tagline
     try {
+      const sectorName = (document.querySelector('#info h3') || {}).textContent || '';
+      if (titleEl) {
+        titleEl.textContent = sectorName;
+        titleEl.style.display = sectorName ? 'block' : 'none';
+      }
       if (taglineEl) {
-        const sectorName = (document.querySelector('#info h3') || {}).textContent || '';
         taglineEl.style.display = 'block';
-        taglineEl.textContent = `${sectorName} — Treemap of top ${matrixData.length} contributing sectors: rectangle area = |coefficient|; color = normalized magnitude (low → high).`;
+        const hasSpent = matrixData.some(d => d.spent != null);
+        const who = matrixDirection === 'sellers'
+          ? `Top ${matrixData.length} sectors selling to this industry`
+          : `Top ${matrixData.length} sectors buying from this industry`;
+        const amounts = !hasSpent ? 'Amounts are cents of input per $1 of output.'
+          : matrixDirection === 'sellers'
+            ? 'Amounts are what this industry spends on each (coefficient × its total output); hover for the amount per $1.'
+            : 'Amounts are what each sector spends on this industry (coefficient × that sector\'s total output); hover for the amount per $1.';
+        const area = (matrixRank === 'spent' && hasSpent) ? 'total spent' : 'amount per $1';
+        const split = matrixRegions.length > 1 ? ` Each sector is split into regional sections (${matrixRegions.map(r => r.label).join(', ')}), largest first; later sections are darker.` : '';
+        taglineEl.textContent = `${who}, ranked by ${area}: rectangle area = ${area}; color = normalized magnitude (low → high). ${amounts}${split}`;
       }
     } catch (e) { /* ignore tagline errors */ }
 
@@ -373,33 +682,107 @@ function renderMatrixTreemap(matrixData) {
     const chart = echarts.init(el);
     matrixTreemapChart = chart;
 
-    // Build nodes: each top contributor becomes a child node sized by abs(coefficient)
-    const sizes = matrixData.map(d => Math.abs(d.coefficient || 0));
-    const norm = norm100(sizes);
-    const children = matrixData.map((d, i) => ({
-      name: d.sector,
-      value: sizes[i] || 0,
-      coefficient: d.coefficient,
-      sectorCode: d.sectorCode,
-      sectorId: d.sectorId,
-      // color by normalized magnitude
-      itemStyle: { color: `hsl(${200 - Math.round((norm[i]||0) )}deg 65% ${Math.round(80 - (norm[i]||0)/1.5)}%)` }
-    }));
+    // One tile per sector, sized by the active ranking (total spent or amount per $1).
+    // Inside a tile each region is a section, largest first; later sections are darkened by a
+    // transparent overlay. The text is centered over the whole tile: the sector, then one line per region.
+    const multiRegion = matrixRegions.length > 1;
+    const stops = treemapHeatmapStops(el);
+    const style = getComputedStyle(el);
+    const dark = document.body.classList.contains('dark');
+    const shown = v => v != null ? treemapDollars(v) : '';
+    const amountText = item => item.spent != null ? treemapDollars(item.spent) : treemapAmount(item.coefficient);
+    // A region's share of its sector: by dollars when known, otherwise by coefficient
+    const regionShare = (d, r) => {
+      if (d.spent && r.spent != null) return Math.abs(r.spent / d.spent);
+      const total = d.regions.reduce((t, x) => t + Math.abs(x.coefficient), 0);
+      return total ? Math.abs(r.coefficient) / total : 0;
+    };
+    const values = matrixData.map(d => Math.abs(rankValue(d, matrixRank)));
+    const maxValue = Math.max(...values, 0) || 1;
+    // Overlay opacity for the second and third sections (dark tiles need more to show the step)
+    const overlayAlpha = dark ? [0.3, 0.5] : [0.15, 0.3];
+    const tiles = matrixData.map((d, i) => {
+      const color = echarts.color.lerp(Math.min(values[i] / maxValue, 1), stops);
+      const parts = d.regions
+        .map(r => ({ r: r, share: regionShare(d, r) }))
+        .sort((a, b) => b.share - a.share);
+      const regionLines = parts.map(({ r }) => multiRegion ? `${r.label} ${amountText(r)}` : amountText(r));
+      return {
+        value: values[i],
+        color: color,
+        textColor: treemapLabelColor(color),
+        shares: parts.map(p => p.share),
+        lines: [d.sector, ...regionLines],
+        tip: `<b>${d.sector}</b><br/>${d.spent != null ? `Total spent: ${shown(d.spent)}<br/>` : ''}`
+          + (multiRegion ? parts.map(({ r }) => `${r.label}: ${amountText(r)} (${treemapAmount(r.coefficient)})`).join('<br/>') + '<br/>' : '')
+          + `Per dollar: ${treemapAmount(d.coefficient)}<br/>Coefficient: ${formatCell(d.coefficient || 0, 'easy')}`
+      };
+    });
+
+    // Tile layout for the current chart size, recomputed on resize
+    let layoutKey = '', layout = [];
+    const tileLayout = (width, height) => {
+      const key = `${width}x${height}`;
+      if (key !== layoutKey) { layoutKey = key; layout = treemapSquarify(tiles.map(t => t.value), width, height); }
+      return layout;
+    };
+    const gap = 3; // Between tiles only, so tiles reach the container edges
+    const renderTile = (params, api) => {
+      const width = api.getWidth(), height = api.getHeight();
+      const box = tileLayout(width, height)[params.dataIndex];
+      const tile = tiles[params.dataIndex];
+      if (!box || !tile) return null;
+      const x0 = box.x + (box.x > 0.5 ? gap / 2 : 0);
+      const y0 = box.y + (box.y > 0.5 ? gap / 2 : 0);
+      const x1 = box.x + box.w - (box.x + box.w < width - 0.5 ? gap / 2 : 0);
+      const y1 = box.y + box.h - (box.y + box.h < height - 0.5 ? gap / 2 : 0);
+      const w = Math.max(x1 - x0, 0), h = Math.max(y1 - y0, 0);
+      const children = [{ type: 'rect', shape: { x: x0, y: y0, width: w, height: h }, style: { fill: tile.color } }];
+      // Region sections as vertical strips, left to right, largest first
+      let offset = 0;
+      tile.shares.forEach((share, k) => {
+        const size = share * w;
+        if (k > 0 && size > 0) {
+          children.push({
+            type: 'rect', silent: true,
+            shape: { x: x0 + offset, y: y0, width: size, height: h },
+            style: { fill: `rgba(0,0,0,${overlayAlpha[Math.min(k - 1, overlayAlpha.length - 1)]})` }
+          });
+        }
+        offset += size;
+      });
+      // As many centered lines as fit: sector, then each region
+      const lineHeight = 15;
+      const lineCount = Math.min(tile.lines.length, Math.floor((h - 4) / lineHeight));
+      if (lineCount > 0 && w > 24) {
+        children.push({
+          type: 'text', silent: true,
+          style: {
+            text: tile.lines.slice(0, lineCount).map((line, k) => k === 0 ? `{b|${line}}` : line).join('\n'),
+            x: x0 + w / 2, y: y0 + h / 2, align: 'center', verticalAlign: 'middle',
+            width: w - 8, overflow: 'truncate', fill: tile.textColor, fontSize: 12, lineHeight: lineHeight,
+            rich: { b: { fontWeight: 'bold', fontSize: 12, lineHeight: lineHeight, fill: tile.textColor } }
+          }
+        });
+      }
+      return { type: 'group', children: children };
+    };
 
     const option = {
+      backgroundColor: 'transparent',
       tooltip: {
-        formatter: params => {
-          const p = params.data || {};
-          return `${p.name}<br/>Coefficient: ${formatCell(p.coefficient || 0, 'easy')}`;
-        }
+        formatter: params => (tiles[params.dataIndex] || {}).tip || '',
+        ...(dark ? {
+          backgroundColor: style.getPropertyValue('--bg-card').trim() || '#2b2926',
+          borderColor: style.getPropertyValue('--border-subtle').trim() || '#555',
+          textStyle: { color: style.getPropertyValue('--text-main').trim() || '#e5e7eb' }
+        } : {})
       },
       series: [{
-        type: 'treemap',
-        roam: false,
-        nodeClick: false,
-        breadcrumb: { show: false },
-        label: { show: true, formatter: '{b}', ellipsis: true },
-        data: [{ name: 'contributors', children: children }]
+        type: 'custom',
+        coordinateSystem: 'none', // Tiles are laid out in pixels by treemapSquarify
+        renderItem: renderTile,
+        data: tiles.map((t, i) => [i])
       }]
     };
 
@@ -562,120 +945,242 @@ async function loadDataSources(sector) {
 
 // Store table references for updating
 var mainTable, matrixTable;
+// Matrix view: 'sellers' (this sector's inputs) or 'buyers' (sectors using its output)
+var matrixDirection = 'sellers';
+// Rank and size by 'spent' (total dollars) or 'coefficient' (amount per $1)
+var matrixRank = 'spent';
+var matrixLists = null;
+// Regions in the model, e.g. [{key: 'r0', location: 'US-GA', label: 'GA'}, {key: 'r1', location: 'RoUS', label: 'Rest of US'}]
+var matrixRegions = [];
 
 // Keep a global reference to the matrix treemap chart so we can dispose/resize reliably
 let matrixTreemapChart = null;
 // Keep a reference to the resize handler so we don't add many listeners
 let matrixTreemapResizeHandler = null;
+// Last treemap data, to redraw with new colors when dark mode or the theme changes
+let matrixTreemapData = null;
+
+// localsite.js sets "dark" and the theme class (maestro, georgia...) on body
+(function watchTreemapLook() {
+  const lookKey = () => (document.body.classList.contains('dark') ? 'dark' : 'light') + ' '
+    + (typeof localStylelookThemes !== 'undefined' ? localStylelookThemes.filter(t => document.body.classList.contains(t)).join(' ') : '');
+  const redraw = () => {
+    const el = document.getElementById('matrixTreemap');
+    if (matrixTreemapData && el && el.style.display !== 'none') renderMatrixTreemap(matrixTreemapData);
+  };
+  let lastKey = null;
+  const observer = new MutationObserver(() => {
+    const key = lookKey();
+    if (key === lastKey) return;
+    lastKey = key;
+    redraw();
+    // A theme stylesheet loads on demand, so redraw again once its --heatmap colors arrive
+    const themeLink = document.getElementById('stylelookThemeStylesheet');
+    if (themeLink) themeLink.addEventListener('load', redraw, { once: true });
+  });
+  const start = () => { lastKey = lookKey(); observer.observe(document.body, { attributes: true, attributeFilter: ['class'] }); };
+  if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
+})();
 
 // Global variables to store results data (keep full unfiltered data and the shown table data)
 let fullTableData = [];
 let tableData = [];
+// Parts included in the indicator bar chart (checkboxes above it)
+let indicatorParts = { supplier: true, industry: true, buyers: false };
+let indicatorScaleMax = 1;
+let indicatorFlows = { supplierRegions: null, buyers: null, buyerRegions: null, regions: [] };
+// Overlay opacity by region for Supplier and Buyers sections: none for the state, darker for Rest of US
+// (and later Rest of World)
+const indicatorOverlay = [0, 0.25, 0.45];
+// Bar and button colors per part: light blue, purple, pink
+const indicatorPartColors = { supplier: '#7cc3ee', industry: '#9b6dd6', buyers: '#f27ab6' };
+
+// Supplier and buyer impacts per $1 of the industry's output, normalized by the same totals as the profile.
+// Supplier: the supply chain part of N = D × L, D[i, j] × L[j, sector] over the sectors j in each region,
+//   leaving out the industry's own direct impacts (1 × D[i, sector]). Adds up to total minus direct.
+// Buyers: each buyer's direct impacts D[i, j] times the share of its costs spent on this industry,
+//   A[sector, j], times its output q[j], over this industry's output q[sector]. A downstream share,
+//   not part of the model's standard (upstream) footprint.
+async function indicatorFlowImpacts(sector, totals) {
+  const result = { supplierRegions: null, buyers: null, buyerRegions: null, regions: [] };
+  try {
+    const sectors = await model.sectors();
+    const regions = matrixRegionList(sectors);
+    result.regions = regions;
+    const multiRegion = regions.length > 1;
+    const [D, L, A] = await Promise.all([model.matrix('D'), multiRegion ? model.matrix('L') : null, model.matrix('A')]);
+    let q = null;
+    try { q = await model.matrix('q'); } catch (e) { console.warn('q vector not available, no Buyers impacts', e); }
+    const norm = (sum, i) => totals && totals[i] ? sum / totals[i] : 0;
+    const sumOver = (i, location, weight) => {
+      let sum = 0;
+      sectors.forEach(s => { if (location == null || s.location === location) sum += (D.data[i][s.index] || 0) * weight(s.index); });
+      return norm(sum, i);
+    };
+    const supplierWeight = j => ((L.data[j] || [])[sector.index] || 0) - (j === sector.index ? 1 : 0);
+    const qAt = j => (q && q.data[j]) ? q.data[j][0] : 0;
+    const ownOutput = qAt(sector.index);
+    const buyerWeight = j => ownOutput ? ((A.data[sector.index] || [])[j] || 0) * qAt(j) / ownOutput : 0;
+    if (multiRegion) {
+      result.supplierRegions = regions.map(r => ({ label: r.label, values: D.data.map((row, i) => sumOver(i, r.location, supplierWeight)) }));
+    }
+    if (q && ownOutput) {
+      result.buyers = D.data.map((row, i) => sumOver(i, null, buyerWeight));
+      if (multiRegion) result.buyerRegions = regions.map(r => ({ label: r.label, values: D.data.map((row, i) => sumOver(i, r.location, buyerWeight)) }));
+    }
+  } catch (e) {
+    console.warn('Supplier and buyer impacts not available', e);
+  }
+  return result;
+}
+
+function indicatorPartsValue(row) {
+  return (indicatorParts.supplier ? row.supplierValue || 0 : 0)
+    + (indicatorParts.industry ? row.directValue || 0 : 0)
+    + (indicatorParts.buyers ? row.buyersValue || 0 : 0);
+}
+
+function indicatorShade(alpha) {
+  return alpha ? `background-image:linear-gradient(rgba(0,0,0,${alpha}),rgba(0,0,0,${alpha}));` : '';
+}
+
+// Bar sections left to right: Supplier (Rest of US, then state), Industry, Buyers (state, then Rest of US).
+// Each part has its own color; Rest of US sections are darkened by an overlay, so they sit on the outside.
+function indicatorSections(row) {
+  const sections = [];
+  const regionAlpha = k => indicatorOverlay[Math.min(k, indicatorOverlay.length - 1)];
+  const { supplier, industry, buyers } = indicatorPartColors;
+  if (indicatorParts.supplier) {
+    if (row.supplierRegions) row.supplierRegions.map((r, k) => ({ label: `Suppliers in ${r.label}`, value: r.value, color: supplier, overlay: regionAlpha(k) })).reverse().forEach(x => sections.push(x));
+    else sections.push({ label: 'Suppliers', value: row.supplierValue || 0, color: supplier, overlay: 0 });
+  }
+  if (indicatorParts.industry) sections.push({ label: 'Industry', value: row.directValue || 0, color: industry, overlay: 0 });
+  if (indicatorParts.buyers && row.buyersValue != null) {
+    if (row.buyersRegions) row.buyersRegions.forEach((r, k) => sections.push({ label: `Buyers in ${r.label}`, value: r.value, color: buyers, overlay: regionAlpha(k) }));
+    else sections.push({ label: 'Buyers', value: row.buyersValue, color: buyers, overlay: 0 });
+  }
+  return sections;
+}
+
+function indicatorBar(row) {
+  try {
+    const sections = indicatorSections(row);
+    const widths = sections.map(section => Math.max(0, section.value) / indicatorScaleMax * 100);
+    const total = widths.reduce((t, w) => t + w, 0);
+    const tip = sections.map(section => `${section.label}: ${formatCell(section.value, 'easy')}`).join('\n');
+    if (total <= 0) return `<div style="height:16px" title="${tip}"></div>`;
+    // outer wrapper is transparent so no gray rectangle shows beneath the bar
+    return `<div style="height:16px" title="${tip}"><div style="display:flex;width:${Math.min(total, 100)}%;height:100%;border-radius:6px;overflow:hidden">`
+      + sections.map((section, k) => `<div style="flex:0 0 ${widths[k] / total * 100}%;background-color:${section.color};${indicatorShade(section.overlay)}"></div>`).join('')
+      + '</div></div>';
+  } catch (e) {
+    return '';
+  }
+}
+
+// Suppliers / Industry / Buyers buttons above the indicator bar chart, in their bar colors. Clicking a
+// button shows only that part; its checkbox adds or removes the part, to combine them. The legend after
+// the buttons shows the light (state) and dark (Rest of US) shades.
+function setupIndicatorParts() {
+  const toolbar = document.getElementById('indicatorToolbar');
+  if (!toolbar) return;
+  toolbar.style.display = '';
+  const regions = indicatorFlows.regions.length > 1 ? indicatorFlows.regions : [];
+  const regionShades = regions.length ? regions.map((r, k) => indicatorOverlay[Math.min(k, indicatorOverlay.length - 1)]) : [0];
+  const swatch = (color, shades) => shades.map(a => `<i style="background-color:${color};${indicatorShade(a)}"></i>`).join('');
+  const buyersAvailable = !!indicatorFlows.buyers;
+  if (!buyersAvailable) indicatorParts.buyers = false;
+  toolbar.querySelectorAll('input[data-part]').forEach(input => {
+    const part = input.dataset.part;
+    input.checked = !!indicatorParts[part];
+    input.disabled = part === 'buyers' && !buyersAvailable;
+    input.closest('label').classList.toggle('active', input.checked);
+    input.closest('label').classList.toggle('disabled', input.disabled);
+  });
+  // Which shade is which region: a legend for Suppliers and one for Buyers, each in its part color
+  const note = document.getElementById('indicatorRegionNote');
+  if (note) {
+    // Full state name (getState from localsite.js), e.g. US-GA -> Georgia
+    const regionName = r => (/^US-/.test(r.location || '') && typeof getState === 'function' && getState(r.location.slice(3))) || r.label;
+    const legend = part => {
+      const items = regions.map((r, k) =>
+        `<span class="indicator-legend-item"><span class="indicator-swatch">${swatch(indicatorPartColors[part], [regionShades[k]])}</span>${regionName(r)}</span>`);
+      // Same order as the bars: Suppliers end with Rest of US first, Buyers start with the state
+      return `<span class="indicator-legend-group">${(part === 'supplier' ? items.reverse() : items).join('')}</span>`;
+    };
+    note.innerHTML = ['supplier', 'buyers'].filter(part => indicatorParts[part]).map(legend).join('');
+  }
+  if (toolbar.dataset.ready) return;
+  toolbar.dataset.ready = '1';
+  toolbar.addEventListener('change', e => {
+    const input = e.target.closest('input[data-part]');
+    if (!input) return;
+    // Keep at least one part
+    const next = Object.assign({}, indicatorParts, { [input.dataset.part]: input.checked });
+    if (!next.supplier && !next.industry && !next.buyers) { input.checked = true; return; }
+    indicatorParts = next;
+    displayTable();
+  });
+  // Clicking the button (not its checkbox) shows only that part
+  toolbar.addEventListener('click', e => {
+    const label = e.target.closest('label[data-part-label]');
+    if (!label || e.target.matches('input')) return;
+    e.preventDefault(); // Stop the label from toggling its checkbox
+    const input = label.querySelector('input[data-part]');
+    if (!input || input.disabled) return;
+    indicatorParts = { supplier: false, industry: false, buyers: false, [input.dataset.part]: true };
+    displayTable();
+  });
+}
 
 function displayTable() {
   const formatType = getCurrentNumberFormat() || "simple";
+  // Value column in the selected number format
+  const valueColumn = (title, field) => ({
+    title: title,
+    field: field,
+    sorter: "number",
+    formatter: function(cell) {
+      const val = cell.getValue();
+      if (formatType === "full") return formatCell(val, 'full');
+      if (formatType === "scientific") {
+        let scientificValue = Number(val).toExponential(3);
+        let parts = scientificValue.split("e");
+        if (parts[1]) return `${parts[0]}&times;10<sup>${parts[1].replace('+', '')}</sup>`;
+        return scientificValue;
+      }
+      return formatCell(val, 'easy');
+    },
+    width: 120
+  });
   
   const columns = [
     { title: "Indicator", field: "indicator", widthGrow: 2 },
-    // Custom progress formatter: color by sign of underlying (un-normalized) value
-    { title: "Direct", field: "direct", sorter: "number", headerSortTristate: false, headerSortStartingDir: "desc", minWidth: 160,
-      formatter: function(cell){
-        try{
-          const val = Number(cell.getValue()) || 0;
-          const row = cell.getRow().getData() || {};
-          const pct = Math.max(0, Math.min(100, val));
-          // Determine whether this indicator is a positive benefit (jobs, value added, wages, income)
-          const name = (row.indicator || '').toString();
-          const positiveKeywords = [/jobs?/i, /value\s*added/i, /value-added/i, /employment/i, /wage/i, /income/i];
-          const isPositive = positiveKeywords.some(rx => rx.test(name));
-          const color = isPositive ? '#4caf50' : '#ff9800'; // green for positive, orange for negative impacts
-          // outer wrapper is transparent so no gray rectangle shows beneath the bar
-          return `<div style="height:16px"><div style="width:${pct}%;height:100%;background:${color};border-radius:6px;"></div></div>`;
-        }catch(e){
-          return '';
-        }
-      }
+    // Stacked bar of the checked parts (Supplier, Industry, Buyers) on one shared scale
+    { title: "Impacts", field: "partsBar", minWidth: 200, headerSortStartingDir: "desc",
+      sorter: (a, b, aRow, bRow) => indicatorPartsValue(aRow.getData()) - indicatorPartsValue(bRow.getData()),
+      formatter: cell => indicatorBar(cell.getRow().getData() || {})
     },
-    { title: "Total", field: "total", sorter: "number", minWidth: 160,
-      formatter: function(cell){
-        try{
-          const val = Number(cell.getValue()) || 0;
-          const row = cell.getRow().getData() || {};
-          const pct = Math.max(0, Math.min(100, val));
-          const name = (row.indicator || '').toString();
-          const positiveKeywords = [/jobs?/i, /value\s*added/i, /value-added/i, /employment/i, /wage/i, /income/i];
-          const isPositive = positiveKeywords.some(rx => rx.test(name));
-          const color = isPositive ? '#4caf50' : '#ff9800';
-          // outer wrapper is transparent so no gray rectangle shows beneath the bar
-          return `<div style="height:16px"><div style="width:${pct}%;height:100%;background:${color};border-radius:6px;"></div></div>`;
-        }catch(e){
-          return '';
-        }
-      }
-    },
-    {
-      title: "Direct",
-      field: formatType === "simple" ? "directValueEasy" : "directValue",
-      sorter: formatType === "simple" ? function(a, b, aRow, bRow) {
-        return aRow.getData().directValue - bRow.getData().directValue;
-      } : "number",
-      formatter: function(cell) {
-        const val = cell.getValue();
-        if (formatType === "simple") {
-          return val; // Already formatted by formatCell
-        } else if (formatType === "full") {
-          return formatCell(val, 'full');
-        } else if (formatType === "scientific") {
-          let scientificValue = Number(val).toExponential(3);
-          let parts = scientificValue.split("e");
-          let base = parts[0];
-          let exponent = parts[1];
-          if (exponent) {
-            return `${base}&times;10<sup>${exponent.replace('+', '')}</sup>`;
-          }
-          return scientificValue;
-        }
-        return val;
-      },
-      width: 120
-    },
-    {
-      title: "Total",
-      field: formatType === "simple" ? "totalValueEasy" : "totalValue",
-      sorter: formatType === "simple" ? function(a, b, aRow, bRow) {
-        return aRow.getData().totalValue - bRow.getData().totalValue;
-      } : "number",
-      formatter: function(cell) {
-        const val = cell.getValue();
-        if (formatType === "simple") {
-          return val; // Already formatted by formatCell
-        } else if (formatType === "full") {
-          return formatCell(val, 'full');
-        } else if (formatType === "scientific") {
-          let scientificValue = Number(val).toExponential(3);
-          let parts = scientificValue.split("e");
-          let base = parts[0];
-          let exponent = parts[1];
-          if (exponent) {
-            return `${base}&times;10<sup>${exponent.replace('+', '')}</sup>`;
-          }
-          return scientificValue;
-        }
-        return val;
-      },
-      width: 120
-    },
+    valueColumn("Suppliers", "supplierValue"),
+    valueColumn("Industry", "directValue"),
+    ...(indicatorFlows.buyers ? [valueColumn("Buyers", "buyersValue")] : []),
+    Object.assign(valueColumn("Total", "totalValue"), { headerTooltip: "Suppliers + Industry: the model's total footprint" }),
     { title: "Unit", field: "unit", width: 100 }
   ];
 
-  mainTable = new Tabulator("#table", {
+  mainTable = new Tabulator("#indicatorBarChart", {
     data: tableData,
     layout: "fitColumns",
+    // Energy has no state indicators: offer the national model instead
+    placeholder: (currentImpactSet() === 'energy' && getHash().state)
+      ? 'No state indicators for energy impacts in this model. <a href="#" onclick="showNationalModel(\'energy\'); return false;">View for US</a>'
+      : "No indicators in this impact set for this model.",
     columns: columns,
     initialSort: [
-      { column: "total", dir: "desc" },
+      { column: "partsBar", dir: "desc" },
     ]
   });
+  setupIndicatorParts();
 
   
 }
@@ -713,6 +1218,28 @@ function initializeDropdownsAndEvents() {
     });
   }
 
+  // Impact set dropdown (Air, Water, Land, Energy, Health, Prosperity) from localsite/js/impact-sets.js
+  if (typeof addImpactSetSelect === 'function') {
+    impactSetControl = addImpactSetSelect('#impact-set-select', {
+      onChange: setId => {
+        // A set already picks its indicators, so show both negative and positive impacts
+        const filter = document.getElementById('impact-filter-select');
+        if (setId && filter) filter.value = 'all';
+        if (setId === 'energy' && getHash().state) {
+          showNationalModel(setId);
+          return;
+        }
+        filterTableData();
+        updateTables();
+      }
+    });
+    if (impactSetControl && fullTableData.length) {
+      impactSetControl.setAvailable(fullTableData.map(d => d.code), ['energy']);
+      filterTableData();
+      updateTables();
+    }
+  }
+
   // Impact filter dropdown (Negative / Positive / All)
   const impactFilterSelect = document.getElementById('impact-filter-select');
   if (impactFilterSelect) {
@@ -723,8 +1250,25 @@ function initializeDropdownsAndEvents() {
   }
 }
 
-// Filter fullTableData into tableData according to the impact filter selection
+// Impact set dropdown control, from addImpactSetSelect in localsite/js/impact-sets.js
+let impactSetControl = null;
+
+// The chosen impact set: the dropdown once it is set up, otherwise the hash
+function currentImpactSet() {
+  if (impactSetControl) return impactSetControl.value();
+  return (typeof getHash === 'function' && getHash().set) || '';
+}
+
+// Filter fullTableData into tableData according to the impact set and the impact filter selection
 function filterTableData() {
+  filterTableDataByImpact();
+  if (typeof impactSetIncludes === 'function') {
+    const setId = currentImpactSet();
+    tableData = tableData.filter(d => impactSetIncludes(setId, d.code));
+  }
+}
+
+function filterTableDataByImpact() {
   try {
     const sel = (document.getElementById('impact-filter-select') || {}).value || 'negative';
     if (!fullTableData || fullTableData.length === 0) {
@@ -760,8 +1304,8 @@ function filterTableData() {
 
 // Function to update all tables when format changes
 function updateTables() {
-  // Recreate the main table with new format (like commodities.html)
-  if (tableData && tableData.length > 0) {
+  // Recreate the main table with new format (like commodities.html), even when a filter leaves no rows
+  if (fullTableData && fullTableData.length > 0) {
     displayTable();
   }
   // For matrix table, just redraw since it uses dynamic formatters
