@@ -39,6 +39,7 @@
   #indicatorRegionNote { font-size: 13px; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 22px; }
   .indicator-legend-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
   .indicator-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+  .indicator-legend-item .indicator-swatch + .indicator-swatch { margin-left: -2px; } /* State with both Suppliers and Buyers colors */
   .dark #indicatorParts label { background: color-mix(in srgb, var(--part) 18%, var(--bg-card, #222)); color: var(--text-main); }
   .dark #indicatorParts label + label { border-left-color: var(--border-subtle); }
   .dark #indicatorParts label.active { background: var(--part); color: var(--part-text); }
@@ -1144,13 +1145,25 @@ function setupIndicatorParts() {
     const regionName = r => (/^US-/.test(r.location || '') && typeof getState === 'function' && getState(r.location.slice(3))) || r.label;
     // Rest of US reads as Interstate Suppliers or Interstate Buyers
     const legendName = (r, part) => r.location === 'RoUS' ? (part === 'supplier' ? 'Interstate Suppliers' : 'Interstate Buyers') : regionName(r);
-    const legend = part => {
-      const items = regions.map((r, k) =>
-        `<span class="indicator-legend-item"><span class="indicator-swatch">${swatch(indicatorRegionStyle(part, k))}</span>${legendName(r, part)}</span>`);
-      // Same order as the bars: Suppliers end with Rest of US first, Buyers start with the state
-      return `<span class="indicator-legend-group">${(part === 'supplier' ? items.reverse() : items).join('')}</span>`;
+    const isState = r => /^US-/.test(r.location || '');
+    const swatches = (parts, k) => parts.map(part => `<span class="indicator-swatch">${swatch(indicatorRegionStyle(part, k))}</span>`).join('');
+    const item = (parts, r, k) => `<span class="indicator-legend-item">${swatches(parts, k)}${legendName(r, parts[0])}</span>`;
+    // Interstate items for a part, in bar order: Suppliers end with Rest of US first, Buyers start after the state
+    const interstate = part => {
+      const items = regions.map((r, k) => isState(r) ? '' : item([part], r, k)).filter(Boolean);
+      return items.length ? `<span class="indicator-legend-group">${(part === 'supplier' ? items.reverse() : items).join('')}</span>` : '';
     };
-    note.innerHTML = ['supplier', 'buyers'].filter(part => indicatorParts[part]).map(legend).join('');
+    // The state appears once, with a rect for each checked part in bar order: Suppliers, Industry (purple), Buyers
+    const stateIndex = regions.findIndex(isState);
+    const stateParts = ['supplier', 'industry', 'buyers'].filter(part => indicatorParts[part]);
+    let stateItem = '';
+    if (indicatorParts.industry && !indicatorParts.supplier && !indicatorParts.buyers) {
+      // Industry only: its own production, in the state (or the US for the national model)
+      stateItem = `<span class="indicator-legend-item">${swatches(['industry'], 0)}Production in ${stateIndex >= 0 ? regionName(regions[stateIndex]) : 'the US'}</span>`;
+    } else if (stateIndex >= 0 && stateParts.length) {
+      stateItem = `<span class="indicator-legend-item">${swatches(stateParts, stateIndex)}${regionName(regions[stateIndex])}</span>`;
+    }
+    note.innerHTML = (indicatorParts.supplier ? interstate('supplier') : '') + stateItem + (indicatorParts.buyers ? interstate('buyers') : '');
   }
   if (toolbar.dataset.ready) return;
   toolbar.dataset.ready = '1';
