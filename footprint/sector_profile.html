@@ -17,6 +17,15 @@
 <style>
   #matrixTreemapTitle { font-size: 18px; font-weight: 600; margin-top: 16px; }
   #matrixTable { margin-top: 16px; }
+  /* Impacts chart: rows choose the indicator for the treemap's Impact view */
+  #indicatorBarChart .tabulator-row { cursor: pointer; }
+  #indicatorBarChart .tabulator-row.impact-selected { box-shadow: inset 4px 0 0 #0366d6; background: rgba(3, 102, 214, 0.08); }
+  /* Triangle outside the table's left edge, pointing at the selected indicator, so the column text stays aligned */
+  #indicatorBarChartWrap { position: relative; clear: both; }
+  #impactPointer { display: none; position: absolute; left: -13px; width: 0; height: 0; transform: translateY(-50%); pointer-events: none;
+    border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-left: 9px solid #0366d6; }
+  .dark #impactPointer { border-left-color: var(--accent, #3a8fd9); }
+  .dark #indicatorBarChart .tabulator-row.impact-selected { box-shadow: inset 4px 0 0 var(--accent, #3a8fd9); background: rgba(58, 143, 217, 0.18); }
   #matrixTreemap { width: 100%; height: 360px; background: #fff; border-radius: 8px; overflow: hidden; margin-top: 8px; }
   .dark #matrixTreemap { background: var(--bg-card); }
   #matrixTreemapTagline { font-size: 13px; color: #444; margin-top: 4px; }
@@ -81,7 +90,10 @@
     <div id="indicatorRegionNote"></div>
     <select id="impact-set-select" style="margin-left:auto"></select>
   </div>
-  <div id="indicatorBarChart" style="clear:both"></div>
+  <div id="indicatorBarChartWrap">
+    <span id="impactPointer" aria-hidden="true"></span>
+    <div id="indicatorBarChart"></div>
+  </div>
 
   
   
@@ -95,6 +107,7 @@
       <div id="matrixRank" class="matrix-toggle" role="group" aria-label="Rank and size by">
         <button type="button" data-rank="spent" title="Rank the top 25 and size rectangles by total dollars spent">Total Spent</button>
         <button type="button" data-rank="coefficient" title="Rank the top 25 and size rectangles by the amount per $1 of output">Per $1</button>
+        <button type="button" data-rank="impact" title="Rank the top 25 and size rectangles by one indicator's impact. Click a row in the impacts chart above to choose the indicator.">Impact</button>
       </div>
     </div>
     <div id="matrixTreemapTitle" style="display:none"></div>
@@ -314,8 +327,10 @@ async function main() {
   
   fullTableData = indicators.map(i => {
     return {
-      indicator: `${i.code} - ${i.name}`,
+      indicator: `${i.name} (${i.code})`,
       code: i.code,
+      index: i.index, // Row in the D and N matrices, for the treemap's Impact view
+      name: i.name,
       direct: direct[i.index],
       total: total[i.index],
       directValue: directValues[i.index],
@@ -332,6 +347,10 @@ async function main() {
       unit: i.unit
     }
   });
+  // Indicator for the treemap's Impact view: the one chosen before (looked up again for this model), else GHG
+  const impactRow = fullTableData.find(d => matrixImpact && d.code === matrixImpact.code)
+    || fullTableData.find(d => d.code === 'GHG') || fullTableData[0];
+  matrixImpact = impactRow ? { code: impactRow.code, index: impactRow.index, name: impactRow.name, unit: impactRow.unit } : null;
   // Sets with none of this model's indicators are disabled in the impact set dropdown
   // Energy stays enabled: choosing it switches to the national model
   if (impactSetControl) impactSetControl.setAvailable(fullTableData.map(d => d.code), ['energy']);
@@ -390,6 +409,9 @@ async function loadMatrixData(sector, analysis) {
       }
     }
     console.log('Matrix data sample:', matrixLists['sellers-spent'].slice(0, 3), matrixLists['buyers-spent'].slice(0, 3));
+    matrixContext = { sectors: sectors, matrixA: matrixA, outputQ: outputQ, sectorIndex: sector.index };
+    if (!outputQ && matrixRank === 'impact') matrixRank = 'coefficient';
+    if (matrixRank === 'impact') await loadMatrixImpactLists();
     const matrixData = currentMatrixList();
     
     if (Object.values(matrixLists).some(list => list.length > 0)) {
@@ -398,60 +420,7 @@ async function loadMatrixData(sector, analysis) {
           data: matrixData,
           layout: "fitColumns",
           placeholder: "No significant technical coefficients in this direction.",
-          columns: [
-            { title: "Sector Name", field: "sector", widthGrow: 3 },
-            { title: "Code", field: "sectorCode", width: 80 },
-            // One column per region when the model has more than one
-            ...(matrixRegions.length > 1 ? matrixRegions.map(region => ({
-              title: region.label,
-              field: `spent_${region.key}`,
-              formatter: cell => {
-                const row = cell.getRow().getData();
-                if (cell.getValue() != null) return treemapDollars(cell.getValue());
-                return row[`coef_${region.key}`] != null ? treemapAmount(row[`coef_${region.key}`]) : '';
-              },
-              sorter: "number",
-              width: 110
-            })) : []),
-            {
-              title: "Total Spent",
-              field: "spent",
-              formatter: cell => cell.getValue() == null ? '' : treemapDollars(cell.getValue()),
-              sorter: "number",
-              width: 120
-            },
-            {
-              title: "Per $1",
-              field: "coefficient",
-              formatter: cell => treemapAmount(cell.getValue()),
-              headerSort: false,
-              width: 120
-            },
-            { 
-              title: "Coefficient", 
-              field: "coefficient", 
-              formatter: function(cell) {
-                const val = cell.getValue();
-                const formatType = getCurrentNumberFormat() || "simple";
-                if (typeof formatCell === 'function') {
-                  if (formatType === "simple") {
-                    return formatCell(val, 'easy');
-                  } else if (formatType === "full") {
-                    return formatCell(val, 'full');
-                  } else if (formatType === "scientific") {
-                    return formatCell(val, 'scientific');
-                  } else {
-                    return formatCell(val, 'easy');
-                  }
-                } else {
-                  // Fallback if formatCell is not available
-                  return val.toExponential(4);
-                }
-              },
-              sorter: "number",
-              width: 150
-            }
-          ],
+          columns: matrixTableColumns(),
           initialSort: [
             { column: matrixRank, dir: "desc" }
           ]
@@ -473,6 +442,84 @@ async function loadMatrixData(sector, analysis) {
   }
 }
 
+// Columns for the matrix table. Region columns show dollars spent, or the indicator's impact in the Impact view.
+function matrixTableColumns() {
+  const impactView = matrixRank === 'impact' && matrixImpact;
+  const numberCell = val => {
+    const formatType = getCurrentNumberFormat() || "simple";
+    if (formatType === "full") return formatCell(val, 'full');
+    if (formatType === "scientific") return formatCell(val, 'scientific');
+    return formatCell(val, 'easy');
+  };
+  return [
+    { title: "Sector Name", field: "sector", widthGrow: 3 },
+    { title: "Code", field: "sectorCode", width: 80 },
+    // One column per region when the model has more than one
+    ...(matrixRegions.length > 1 ? matrixRegions.map(region => impactView ? {
+      title: region.label,
+      field: `impact_${region.key}`,
+      titleFormatter: () => `<span title="${matrixImpact.name} in ${region.label} (${matrixImpact.unit})">${region.label}</span>`,
+      formatter: cell => cell.getValue() == null ? '' : treemapQuantity(cell.getValue()),
+      sorter: "number",
+      width: 110
+    } : {
+      title: region.label,
+      field: `spent_${region.key}`,
+      formatter: cell => {
+        const row = cell.getRow().getData();
+        if (cell.getValue() != null) return treemapDollars(cell.getValue());
+        return row[`coef_${region.key}`] != null ? treemapAmount(row[`coef_${region.key}`]) : '';
+      },
+      sorter: "number",
+      width: 110
+    }) : []),
+    ...(impactView ? [{
+      title: matrixImpact.code,
+      field: "impact",
+      titleFormatter: () => `<span title="${matrixImpact.name} (${matrixImpact.unit})">${matrixImpact.code}</span>`,
+      formatter: cell => cell.getValue() == null ? '' : treemapQuantity(cell.getValue(), matrixImpact.unit),
+      sorter: "number",
+      width: 150
+    }] : []),
+    {
+      title: "Total Spent",
+      field: "spent",
+      formatter: cell => cell.getValue() == null ? '' : treemapDollars(cell.getValue()),
+      sorter: "number",
+      width: 120
+    },
+    {
+      title: "Per $1",
+      field: "coefficient",
+      formatter: cell => treemapAmount(cell.getValue()),
+      headerSort: false,
+      width: 120
+    },
+    {
+      title: "Coefficient",
+      field: "coefficient",
+      formatter: cell => numberCell(cell.getValue()),
+      sorter: "number",
+      width: 150
+    }
+  ];
+}
+
+// Top 25 lists sized by the chosen indicator, for both directions. Suppliers: what this industry spends on
+// each sector × that sector's total impact per $1 (N), so the tiles add up to the Suppliers bar. Buyers: what
+// each sector spends on this industry × the buyer's direct impact per $1 (D), adding up to the Buyers bar.
+async function loadMatrixImpactLists() {
+  if (!matrixContext || !matrixImpact || !matrixLists) return;
+  const key = direction => `${direction}-impact-${matrixImpact.code}`;
+  if (matrixLists[key('sellers')]) return;
+  const { sectors, matrixA, outputQ, sectorIndex } = matrixContext;
+  const [D, N] = await Promise.all([model.matrix('D'), model.matrix('N')]);
+  for (const direction of ['sellers', 'buyers']) {
+    const factors = ((direction === 'sellers' ? N : D).data || [])[matrixImpact.index] || [];
+    matrixLists[key(direction)] = buildMatrixList(sectors, matrixA, outputQ, sectorIndex, direction, 'impact', matrixRegions, factors);
+  }
+}
+
 // Regions in the order the model lists them, e.g. GA then Rest of US
 function matrixRegionList(sectors) {
   const label = loc => loc === 'RoUS' ? 'Rest of US' : loc === 'RoW' ? 'Rest of World' : String(loc || '').replace(/^US-/, '');
@@ -483,7 +530,7 @@ function matrixRegionList(sectors) {
 // Top 25 sellers to (column) or buyers from (row) the sector in the A matrix, with dollars spent.
 // Each sector is one row combining its regions, with the amount for each region in row.regions.
 // rank 'spent' orders by total dollars spent, 'coefficient' by the amount per $1.
-function buildMatrixList(sectors, matrixA, outputQ, sectorIndex, direction, rank, regions) {
+function buildMatrixList(sectors, matrixA, outputQ, sectorIndex, direction, rank, regions, impactFactors) {
   const qAt = i => (outputQ && outputQ.data[i]) ? outputQ.data[i][0] : null;
   const groups = new Map();
   sectors.forEach((s, index) => {
@@ -504,7 +551,8 @@ function buildMatrixList(sectors, matrixA, outputQ, sectorIndex, direction, rank
     const ownOutput = qAt(sectorIndex);
     const bigSpend = direction === 'buyers' && output != null && ownOutput
       && Math.abs(coefficient * output) > 0.0001 * ownOutput;
-    if (Math.abs(coefficient) <= 0.0001 && !bigSpend) return;
+    // Ranked by impact, small purchases can still carry large impacts, so only zeros are left out
+    if (rank === 'impact' ? !coefficient : (Math.abs(coefficient) <= 0.0001 && !bigSpend)) return;
     const region = regions.find(r => r.location === s.location) || { key: 'r0', label: '' };
     const key = s.code || sectorNameSafe;
     if (!groups.has(key)) groups.set(key, { sector: sectorNameSafe, sectorCode: s.code, regions: [] });
@@ -514,7 +562,9 @@ function buildMatrixList(sectors, matrixA, outputQ, sectorIndex, direction, rank
       sectorId: s.id,
       coefficient: coefficient,
       output: output,
-      spent: output != null ? coefficient * output : null
+      spent: output != null ? coefficient * output : null,
+      // The chosen indicator's impact: dollars spent × impact per $1 (N for suppliers, D for buyers)
+      impact: (impactFactors && output != null) ? coefficient * output * (impactFactors[index] || 0) : null
     });
   });
   return [...groups.values()]
@@ -531,8 +581,9 @@ function buildMatrixList(sectors, matrixA, outputQ, sectorIndex, direction, rank
         coefficient = (hasSpent && outputs) ? spent / outputs
           : g.regions.reduce((t, r) => t + r.coefficient, 0) / g.regions.length;
       }
-      const row = { sector: g.sector, sectorCode: g.sectorCode, coefficient: coefficient, spent: spent, regions: g.regions };
-      g.regions.forEach(r => { row[`spent_${r.key}`] = r.spent; row[`coef_${r.key}`] = r.coefficient; });
+      const impact = g.regions.every(r => r.impact != null) ? g.regions.reduce((t, r) => t + r.impact, 0) : null;
+      const row = { sector: g.sector, sectorCode: g.sectorCode, coefficient: coefficient, spent: spent, impact: impact, regions: g.regions };
+      g.regions.forEach(r => { row[`spent_${r.key}`] = r.spent; row[`coef_${r.key}`] = r.coefficient; row[`impact_${r.key}`] = r.impact; });
       return row;
     })
     .sort((a, b) => Math.abs(rankValue(b, rank)) - Math.abs(rankValue(a, rank)))
@@ -541,40 +592,114 @@ function buildMatrixList(sectors, matrixA, outputQ, sectorIndex, direction, rank
 
 // The value a matrix row is ranked and sized by, falling back to the coefficient when there is no total
 function rankValue(item, rank) {
+  if (rank === 'impact') return item.impact || 0;
   return (rank === 'spent' && item.spent != null) ? item.spent : (item.coefficient || 0);
 }
 
 function currentMatrixList() {
-  return (matrixLists && matrixLists[`${matrixDirection}-${matrixRank}`]) || [];
+  const key = matrixRank === 'impact' ? `${matrixDirection}-impact-${matrixImpact && matrixImpact.code}` : `${matrixDirection}-${matrixRank}`;
+  return (matrixLists && matrixLists[key]) || [];
 }
 
-// Sellers / Buyers toggle and, to its right, the Total Spent / Per $1 ranking toggle.
+// Total Spent and Impact show totals for the industry's whole output; Per $1 shows per-dollar amounts
+function matrixShowsTotals() {
+  return matrixRank !== 'coefficient';
+}
+
+// Sellers / Buyers toggle and, to its right, the Total Spent / Per $1 / Impact ranking toggle.
 // Both update the table and the treemap above it.
 function setupMatrixToggles(hasSpent) {
   const toolbar = document.getElementById('matrixToolbar');
   if (!toolbar) return;
-  const spentBtn = toolbar.querySelector('button[data-rank="spent"]');
-  if (spentBtn) spentBtn.disabled = !hasSpent;
-  const mark = () => toolbar.querySelectorAll('button').forEach(btn => {
-    const on = btn.dataset.direction ? btn.dataset.direction === matrixDirection : btn.dataset.rank === matrixRank;
-    btn.classList.toggle('active', on);
-    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-  });
-  mark();
+  // Totals and impacts need the industries' total outputs (q)
+  toolbar.querySelectorAll('button[data-rank="spent"], button[data-rank="impact"]').forEach(btn => { btn.disabled = !hasSpent; });
+  markMatrixToggles();
   if (toolbar.dataset.ready) return;
   toolbar.dataset.ready = '1';
   toolbar.addEventListener('click', e => {
     const btn = e.target.closest('button[data-direction], button[data-rank]');
     if (!btn || btn.disabled || !matrixLists) return;
+    const totalsBefore = matrixShowsTotals();
     if (btn.dataset.direction) matrixDirection = btn.dataset.direction;
     if (btn.dataset.rank) matrixRank = btn.dataset.rank;
-    mark();
-    const list = currentMatrixList();
-    if (matrixTable) matrixTable.setData(list).then(() => matrixTable.setSort(matrixRank, 'desc'));
-    renderMatrixTreemap(list);
-    // The impact chart's value columns switch between totals and per-dollar amounts
-    if (btn.dataset.rank) updateTables();
+    showMatrixList(totalsBefore);
   });
+}
+
+// Active toggle buttons, with the chosen indicator on the Impact button, e.g. "Impact (GHG)"
+function markMatrixToggles() {
+  const toolbar = document.getElementById('matrixToolbar');
+  if (!toolbar) return;
+  toolbar.querySelectorAll('button').forEach(btn => {
+    const on = btn.dataset.direction ? btn.dataset.direction === matrixDirection : btn.dataset.rank === matrixRank;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  const impactBtn = toolbar.querySelector('button[data-rank="impact"]');
+  if (impactBtn) impactBtn.textContent = matrixImpact ? `Impact (${matrixImpact.code})` : 'Impact';
+}
+
+// Show the list for the current direction and ranking in the table and treemap. The impacts chart is redrawn
+// when its columns switch between totals and per-dollar amounts, otherwise only its selected row is marked.
+async function showMatrixList(totalsBefore) {
+  if (matrixRank === 'impact') {
+    try { await loadMatrixImpactLists(); } catch (e) { console.warn('Impact lists not available', e); }
+  }
+  markMatrixToggles();
+  const list = currentMatrixList();
+  if (matrixTable) {
+    matrixTable.setColumns(matrixTableColumns());
+    matrixTable.setData(list).then(() => matrixTable.setSort(matrixRank, 'desc'));
+  }
+  renderMatrixTreemap(list);
+  if (totalsBefore !== matrixShowsTotals()) updateTables();
+  else markImpactRow();
+}
+
+// Clicking a row in the impacts chart sizes the treemap by that indicator
+function selectMatrixImpact(row) {
+  if (!row || row.index == null || !matrixLists) return;
+  const btn = document.querySelector('#matrixToolbar button[data-rank="impact"]');
+  if (btn && btn.disabled) return;
+  const totalsBefore = matrixShowsTotals();
+  matrixImpact = { code: row.code, index: row.index, name: row.name, unit: row.unit };
+  matrixRank = 'impact';
+  showMatrixList(totalsBefore);
+}
+
+// Outline the impacts chart row whose indicator sizes the treemap
+function markImpactRow() {
+  if (!mainTable || typeof mainTable.getRows !== 'function') return;
+  mainTable.getRows().forEach(row => {
+    const el = row.getElement();
+    if (el) el.classList.toggle('impact-selected', matrixRank === 'impact' && !!matrixImpact && row.getData().code === matrixImpact.code);
+  });
+  positionImpactPointer();
+}
+
+// Move the triangle beside the selected row, or hide it when no row is selected (or the row is filtered out)
+function positionImpactPointer() {
+  const pointer = document.getElementById('impactPointer');
+  const wrap = document.getElementById('indicatorBarChartWrap');
+  if (!pointer || !wrap) return;
+  const rowEl = document.querySelector('#indicatorBarChart .tabulator-row.impact-selected');
+  if (!rowEl || !rowEl.offsetHeight) { pointer.style.display = 'none'; return; }
+  pointer.style.top = `${rowEl.getBoundingClientRect().top - wrap.getBoundingClientRect().top + rowEl.offsetHeight / 2}px`;
+  pointer.style.display = 'block';
+}
+window.addEventListener('resize', positionImpactPointer);
+
+// Compact quantity in an indicator's unit: 1234567 -> 1.23M (kg CO2 eq)
+function treemapQuantity(value, unit) {
+  const abs = Math.abs(value || 0);
+  const sign = value < 0 ? '-' : '';
+  const units = [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']];
+  let text = null;
+  for (const [size, suffix] of units) {
+    if (abs >= size) { text = `${sign}${parseFloat((abs / size).toPrecision(3))}${suffix}`; break; }
+  }
+  if (text === null) text = abs >= 1 ? `${sign}${parseFloat(abs.toPrecision(3))}` : formatCell(value, 'easy');
+  return unit ? `${text} ${unit}` : text;
 }
 
 // Six-step color scale from the active theme's --heatmap-0..5 (base.css and localsite/css/themes).
@@ -685,9 +810,14 @@ function renderMatrixTreemap(matrixData) {
           : matrixDirection === 'sellers'
             ? 'Amounts are what this industry spends on each (coefficient × its total output); hover for the amount per $1.'
             : 'Amounts are what each sector spends on this industry (coefficient × that sector\'s total output); hover for the amount per $1.';
-        const area = (matrixRank === 'spent' && hasSpent) ? 'total spent' : 'amount per $1';
+        const impactView = matrixRank === 'impact' && matrixImpact;
+        const area = impactView ? `${matrixImpact.name} (${matrixImpact.unit})`
+          : (matrixRank === 'spent' && hasSpent) ? 'total spent' : 'amount per $1';
         const split = matrixRegions.length > 1 ? ` Each sector is split into regional sections (${matrixRegions.map(r => r.label).join(', ')}), largest first; later sections are darker.` : '';
-        taglineEl.textContent = `${who}, ranked by ${area}: rectangle area = ${area}; color = normalized magnitude (low → high). ${amounts}${split}`;
+        const impactAmounts = matrixDirection === 'sellers'
+          ? 'Amounts are what this industry spends on each sector × that sector\'s whole supply chain impact per $1, adding up to the Suppliers bar above. Click a row in the impacts chart to choose the indicator.'
+          : 'Amounts are what each sector spends on this industry × that sector\'s own direct impact per $1, adding up to the Buyers bar above. Click a row in the impacts chart to choose the indicator.';
+        taglineEl.textContent = `${who}, ranked by ${area}: rectangle area = ${impactView ? 'impact' : area}; color = normalized magnitude (low → high). ${impactView ? impactAmounts : amounts}${split}`;
       }
     } catch (e) { /* ignore tagline errors */ }
 
@@ -706,9 +836,16 @@ function renderMatrixTreemap(matrixData) {
     const dark = document.body.classList.contains('dark');
     const shown = v => v != null ? treemapDollars(v) : '';
     // Tile amounts follow the ranking: total spent, or the per-dollar amount when Per $1 is chosen
-    const amountText = item => (matrixRank === 'spent' && item.spent != null) ? treemapDollars(item.spent) : treemapAmount(item.coefficient);
+    const impactView = matrixRank === 'impact' && matrixImpact;
+    // Impact amounts without the unit, which the tagline and hover give, so small tiles keep their numbers
+    const amountText = item => impactView ? (item.impact != null ? treemapQuantity(item.impact) : '')
+      : (matrixRank === 'spent' && item.spent != null) ? treemapDollars(item.spent) : treemapAmount(item.coefficient);
     // A region's share of its sector: by dollars when known, otherwise by coefficient
     const regionShare = (d, r) => {
+      if (impactView) {
+        const total = d.regions.reduce((t, x) => t + Math.abs(x.impact || 0), 0);
+        return total ? Math.abs(r.impact || 0) / total : 0;
+      }
       if (d.spent && r.spent != null) return Math.abs(r.spent / d.spent);
       const total = d.regions.reduce((t, x) => t + Math.abs(x.coefficient), 0);
       return total ? Math.abs(r.coefficient) / total : 0;
@@ -729,7 +866,10 @@ function renderMatrixTreemap(matrixData) {
         textColor: treemapLabelColor(color),
         shares: parts.map(p => p.share),
         lines: [d.sector, ...regionLines],
-        tip: `<b>${d.sector}</b><br/>${d.spent != null ? `Total spent: ${shown(d.spent)}<br/>` : ''}`
+        tip: `<b>${d.sector}</b><br/>`
+          + (impactView && d.impact != null ? `${matrixImpact.name}: ${treemapQuantity(d.impact, matrixImpact.unit)}<br/>`
+            + (multiRegion ? parts.map(({ r }) => `${r.label}: ${treemapQuantity(r.impact, matrixImpact.unit)}`).join('<br/>') + '<br/>' : '') : '')
+          + `${d.spent != null ? `Total spent: ${shown(d.spent)}<br/>` : ''}`
           + (multiRegion ? parts.map(({ r }) => `${r.label}: ${r.spent != null ? `${shown(r.spent)} (${treemapAmount(r.coefficient)})` : treemapAmount(r.coefficient)}`).join('<br/>') + '<br/>' : '')
           + `Per dollar: ${treemapAmount(d.coefficient)}<br/>Coefficient: ${formatCell(d.coefficient || 0, 'easy')}`
       };
@@ -799,6 +939,8 @@ function renderMatrixTreemap(matrixData) {
     const option = {
       backgroundColor: 'transparent',
       tooltip: {
+        // On the page body, so #matrixTreemap's overflow: hidden (for its rounded corners) doesn't crop it
+        appendToBody: true,
         formatter: params => (tiles[params.dataIndex] || {}).tip || '',
         ...(dark ? {
           backgroundColor: style.getPropertyValue('--bg-card').trim() || '#2b2926',
@@ -975,9 +1117,13 @@ async function loadDataSources(sector) {
 var mainTable, matrixTable;
 // Matrix view: 'sellers' (this sector's inputs) or 'buyers' (sectors using its output)
 var matrixDirection = 'sellers';
-// Rank and size by 'spent' (total dollars) or 'coefficient' (amount per $1)
+// Rank and size by 'spent' (total dollars), 'coefficient' (amount per $1) or 'impact' (one indicator)
 var matrixRank = 'spent';
 var matrixLists = null;
+// Indicator for the Impact ranking, chosen by clicking a row in the impacts chart: {code, index, name, unit}
+var matrixImpact = null;
+// Inputs kept from loadMatrixData for building the Impact lists on demand
+var matrixContext = null;
 // Regions in the model, e.g. [{key: 'r0', location: 'US-GA', label: 'GA'}, {key: 'r1', location: 'RoUS', label: 'Rest of US'}]
 var matrixRegions = [];
 
@@ -1198,7 +1344,7 @@ function displayTable() {
   // Rows hold per-dollar values divided by national totals. Value columns multiply by that national total
   // to show the indicator's own unit per $1, and with Total Spent chosen above the treemap, also by the
   // industry's total output to show the total for its whole output.
-  const showTotals = matrixRank === 'spent' && indicatorFlows.ownOutput > 0;
+  const showTotals = matrixShowsTotals() && indicatorFlows.ownOutput > 0;
   const shownValue = (row, val) => {
     if (row.normTotal == null) return val;
     return (val || 0) * row.normTotal * (showTotals ? indicatorFlows.ownOutput : 1);
@@ -1250,8 +1396,16 @@ function displayTable() {
     columns: columns,
     initialSort: [
       { column: "partsBar", dir: "desc" },
-    ]
+    ],
+    // Outline the row whose indicator sizes the treemap's Impact view
+    rowFormatter: row => {
+      row.getElement().classList.toggle('impact-selected', matrixRank === 'impact' && !!matrixImpact && row.getData().code === matrixImpact.code);
+    }
   });
+  // Clicking a row sizes the treemap below by that indicator
+  mainTable.on("rowClick", (e, row) => selectMatrixImpact(row.getData()));
+  // Rows move when the table renders, sorts or resizes
+  mainTable.on("renderComplete", positionImpactPointer);
   setupIndicatorParts();
 
   
