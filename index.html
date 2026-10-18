@@ -601,8 +601,16 @@
             font-size: 1.6em;
         }
         
-        .dropdown-item:hover {
-            background-color: #f8f9fa;
+        /* Blue hover with white text (the text and icon stay readable on the blue) */
+        .dropdown-item:hover,
+        .dropdown-item:focus-visible {
+            background-color: #0366d6;
+            color: #fff !important;
+        }
+        .dark .dropdown-item:hover,
+        .dark .dropdown-item:focus-visible {
+            background-color: #3a8fd9;
+            color: #fff !important;
         }
         
         .dropdown-item:first-child {
@@ -3129,6 +3137,29 @@
                     dropdownMenu.appendChild(tableAction);
                     dropdownMenu.appendChild(viewAction);
                     dropdownMenu.appendChild(downloadAction);
+
+                    // GitHub folder holding the file, and the repo's overview README.md
+                    const github = githubLinksForPath(pathInfo.path);
+                    if (github) {
+                        const divider = document.createElement('div');
+                        divider.className = 'dropdown-divider';
+                        dropdownMenu.appendChild(divider);
+                        [
+                            { href: github.folder, html: '<i class="ph ph-github-logo"></i> GitHub Folder' },
+                            { href: github.overview, html: '<i class="ph ph-file-text"></i> Overview (README.md)' }
+                        ].forEach(item => {
+                            const link = document.createElement('a');
+                            link.className = 'dropdown-item';
+                            link.href = item.href;
+                            link.target = '_blank';
+                            link.innerHTML = item.html;
+                            link.onclick = (e) => {
+                                e.stopPropagation();
+                                closeAllDropdowns();
+                            };
+                            dropdownMenu.appendChild(link);
+                        });
+                    }
                     
                     menuContainer.appendChild(menuTrigger);
                     menuContainer.appendChild(dropdownMenu);
@@ -3433,7 +3464,7 @@
                             frozen: true,
                             formatter: function(cell) {
                                 const data = cell.getRow().getData();
-                                return `<a href="#country=${data.country}" style="color: #2196f3; text-decoration: none;">${data.countryName}</a>`;
+                                return `<a href="trade/map/index.html#country=${data.country}&year=${getSelectedYear()}" style="color: #2196f3; text-decoration: none;">${data.countryName}</a>`;
                             }
                         }
                     ];
@@ -3487,7 +3518,7 @@
                             widthGrow: 2,
                             formatter: function(cell) {
                                 const data = cell.getRow().getData();
-                                return `<a href="#country=${data.country}" style="color: #2196f3; text-decoration: none;">${data.countryName}</a>`;
+                                return `<a href="trade/map/index.html#country=${data.country}&year=${getSelectedYear()}" style="color: #2196f3; text-decoration: none;">${data.countryName}</a>`;
                             }
                         },
                         {
@@ -3519,7 +3550,7 @@
                             if (data.type === 'state') {
                                 return `<a href="footprint/#state=${data.stateAbbr}" style="color: #2196f3; text-decoration: none;">${data.stateName}</a>`;
                             } else {
-                                return `<a href="#country=${data.country}" style="color: #2196f3; text-decoration: none;">${data.countryName}</a>`;
+                                return `<a href="trade/map/index.html#country=${data.country}&year=${getSelectedYear()}" style="color: #2196f3; text-decoration: none;">${data.countryName}</a>`;
                             }
                         }
                     },
@@ -3568,8 +3599,10 @@
                 paginationSizeSelector: [10, 25, 50, 100, 500],
                 movableColumns: true,
                 resizableRows: true,
+                // Economic Output, highest first. Its sorter compares the raw output values.
+                // (There's no "output" column, so the earlier column: "output" sort was ignored.)
                 initialSort: [
-                    {column: "output", dir: "desc"}
+                    {column: "outputFormatted", dir: "desc"}
                 ],
                 tooltips: true
             };
@@ -3994,6 +4027,26 @@
         // Set up hash change listener
         window.addEventListener('hashchange', handleHashChange);
         
+        // GitHub links for a data file: the folder holding it and the repo's README.md overview.
+        // Works for raw.githubusercontent.com paths and for local trade-data / useeio-json paths. Null when neither.
+        function githubLinksForPath(path) {
+            let owner, repo, branch, filePath;
+            const raw = String(path).match(/^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/(?:refs\/heads\/)?([^/]+)\/(.+)$/i);
+            if (raw) {
+                [, owner, repo, branch, filePath] = raw;
+            } else {
+                const local = String(path).match(/(?:^|\/)(trade-data|useeio-json)\/(.+)$/);
+                if (!local) return null;
+                [owner, repo, branch, filePath] = ['ModelEarth', local[1], 'main', local[2]];
+            }
+            const folder = filePath.includes('/') ? filePath.substring(0, filePath.lastIndexOf('/')) : '';
+            const repoUrl = `https://github.com/${owner}/${repo}`;
+            return {
+                folder: folder ? `${repoUrl}/tree/${branch}/${folder}` : repoUrl,
+                overview: `${repoUrl}/blob/${branch}/README.md`
+            };
+        }
+
         // Global functions for dropdown management
         function closeAllDropdowns() {
             document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
@@ -4125,6 +4178,8 @@
                     width: 120,
                     formatter: function(cell) {
                         const value = cell.getValue();
+                        // Years as 4 digits (2022, not 2.02K)
+                        if (/year/i.test(key)) return value;
                         // Format numbers
                         if (!isNaN(value) && value !== '' && value !== null) {
                             const num = parseFloat(value);
@@ -4386,6 +4441,8 @@
                     width: 120,
                     formatter: function(cell) {
                         const value = cell.getValue();
+                        // Years as 4 digits (2022, not 2.02K)
+                        if (/year/i.test(key)) return value;
                         // Format numbers
                         if (!isNaN(value) && value !== '' && value !== null) {
                             const num = parseFloat(value);

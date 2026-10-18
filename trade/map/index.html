@@ -2684,7 +2684,8 @@ TradeShared.init({
     years: _initYears,
     currencies: ["EUR"],
     initialState: {
-        year: _initYears[0],
+        // year=... in the hash (as in links from profile/), else the newest year
+        year: _initYears.includes(String(_initHash.year)) ? String(_initHash.year) : _initYears[0],
         metric: MAP_FACTOR_TO_METRIC[_initHash.factor || _initSaved.factor] || "amount",
         currency: _initCurrency,
         topn: parseInt(_initHash.inflows, 10) || parseInt(_initSaved.inflows, 10) || 15
