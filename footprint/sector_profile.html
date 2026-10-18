@@ -15,6 +15,9 @@
   <script type="text/javascript" src="/localsite/js/localsite.js?showheader=true&showsearch=true"></script>
   <script src="js/useeio.js"></script>
 <style>
+  /* With space-between, the dropdowns wrapped onto their own line sit at its left */
+  #profileTopBar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
+  #profileTopSelects { display: flex; flex-wrap: wrap; gap: 7px; }
   #matrixTreemapTitle { font-size: 18px; font-weight: 600; margin-top: 16px; }
   /* 4px more than Tabulator's 4px padding to the left of the first column (as in localsite/css/base-tabulator.css, which this page doesn't load) */
   .tabulator-row .tabulator-cell:first-child,
@@ -79,16 +82,31 @@
 <body>
 
 <div class="content contentpadding">
-  <div style="margin-bottom: 10px; float:right"><select id="number-format-select"></select></div>
-  <div style="margin-bottom: 10px; margin-right: 7px; float:right"><select id="locale-select"></select></div>
-  
-  <div style="margin-bottom:10px">
-    <a id="footprintLink" href="../state/" >US State Reports</a> - 
-    <a id="commoditiesLink" href="commodities.html">Commodities</a>
+  <!-- State menu first. The dropdowns sit at the right, or wrap below it at the left when narrow. -->
+  <div id="profileTopBar">
+    <!-- Own parent, since navigation.js shows and hides #relocatedStateMenu's parent -->
+    <div><div id="relocatedStateMenu"></div></div>
+    <div id="profileTopSelects">
+      <select id="locale-select"></select>
+      <select id="number-format-select"></select>
+    </div>
   </div>
-  <div id="relocatedStateMenu"></div>
+
+  <!-- Commodities report from js/commodities-report.js, also on commodities.html -->
+  <div id="commodityTable"></div>
   
   <p id="info">Loading ...</p>
+  <!-- Shown when no commodity is selected. The message inside is for localhost only. -->
+  <div id="allIndustriesMessage" style="display:none">
+  <div class="local" style="display:none; padding:12px 16px; border-radius:8px; margin-bottom:16px">
+    <b>All industries</b> - Impacts and the treemap currently require one selected commodity. Next steps for state-wide reports:
+    <ul style="margin:8px 0 0">
+      <li>Impacts: total each indicator for the state's industries with D &times; q (direct) and N &times; y (footprint of final demand), since adding each industry's supply chain would count shared suppliers more than once.</li>
+      <li>Treemap: size the state's industries by Output (q) or by the chosen indicator's direct impact (D &times; q).</li>
+      <li>Data sources: list the state model's files rather than one sector's.</li>
+    </ul>
+  </div>
+  </div>
   <div id="indicatorToolbar" style="display:none">
     <div id="indicatorParts" class="matrix-toggle" role="group" aria-label="Impacts to include">
       <label data-part-label="supplier" title="The industry's whole supply chain, without the industry itself. Click to show only Suppliers; use the checkbox to add or remove it."><input type="checkbox" data-part="supplier">Suppliers</label>
@@ -136,6 +154,7 @@
 </div>
 
 <script src="js/config.js"></script>
+<script src="js/commodities-report.js"></script>
 <script src="/localsite/js/impact-sets.js"></script>
 <script>
 loadMarkdown("sector_profile_info.md", "infoDiv", "_parent");
@@ -146,7 +165,8 @@ function hashChangedUseeio() {
   // Keep the demand when it belongs to the model now in the hash: US-GA or RoUS for state=GA, US for the national model
   const hash = getHash();
   const location = String(hash.demand || '').split('/')[1];
-  const locations = hash.state ? [`US-${hash.state.toUpperCase()}`, 'RoUS'] : ['US'];
+  // The model is the first state's when the hash lists several, e.g. state=TX,GA
+  const locations = getModelState() ? [`US-${getModelState()}`, 'RoUS'] : ['US'];
   if (!locations.includes(location)) updateHash({"demand":""});
   main();
 }
@@ -175,7 +195,7 @@ async function showNationalModel(setId) {
   } catch (e) {
     console.warn('No national sector for this state sector', e);
   }
-  // A blank demand shows a random national sector
+  // A blank demand shows the top national sector
   goHash({ set: setId, demand: demand }, ['state', 'indicators']);
 }
 
@@ -194,13 +214,64 @@ function norm100(nums) {
   return norm;
 }
 
-async function getRandomSector() {
-  const sectors = await model.sectors();
-  return sectors[Math.floor(Math.random() * sectors.length)];
+// The model's own commodities, without Rest of US (or Rest of World) in state models
+function isOwnRegion(sector) {
+  return sector.location !== 'RoUS' && sector.location !== 'RoW';
 }
 
+// The state's (or nation's) top commodity by Output, shown when no commodity is in the hash
+async function getTopSector() {
+  const sectors = (await model.sectors()).filter(isOwnRegion);
+  const q = await model.matrix('q');
+  return sectors.reduce((top, s) => q.get(s.index, 0) > q.get(top.index, 0) ? s : top, sectors[0]);
+}
+
+// The model the selected commodity was unclicked in. Until the model changes, no commodity is chosen
+// in its place, so the page shows the all-industries message instead.
+let deselectedModel = null;
+
+// Top commodities by Output for the current model, with the State Total and Rest of US below.
+// Clicking a row shows its profile; clicking the selected row again clears the selection.
+let commoditiesReport = null;
+function loadCommoditiesReport() {
+  if (!commoditiesReport) {
+    commoditiesReport = CommoditiesReport.create({
+      table: 'commodityTable',
+      rows: 5,
+      filter: isOwnRegion,
+      linkNames: false,
+      selected: () => getHash().demand || '',
+      onRowClick: (row, selected) => {
+        if (selected) {
+          deselectedModel = getModelFolderName();
+          goHash({}, ['demand']);
+        } else {
+          deselectedModel = null;
+          goHash({ demand: `${row.code}/${row.location}` });
+        }
+      }
+    });
+  }
+  commoditiesReport.load(); // Loads alongside the sector profile; reuses rows until the model changes
+}
+
+// With no commodity selected, hide the sector's impacts chart, treemap and data sources
+function showAllIndustries(show) {
+  document.getElementById('allIndustriesMessage').style.display = show ? '' : 'none';
+  if (!show) return;
+  document.getElementById('info').textContent = 'Click a commodity above to view its environmental profile.';
+  ['indicatorToolbar', 'matrixSection', 'dataSourcesSection'].forEach(id => { document.getElementById(id).style.display = 'none'; });
+  if (mainTable) { mainTable.destroy(); mainTable = null; }
+  document.getElementById('indicatorBarChart').innerHTML = '';
+  document.getElementById('impactPointer').style.display = 'none';
+}
+
+// A newer main() run, from a hash change, takes over from an earlier one still loading
+let mainRun = 0;
 async function main() {
+  const run = ++mainRun;
   let hash = getHash();
+  loadCommoditiesReport();
 
   /* TO DELETE
   try { console.log('[sector_profile] entering main, hash=', JSON.stringify(hash)); } catch (e) {}
@@ -239,11 +310,6 @@ async function main() {
   }
   */
 
-  if (hash.state) {
-    // Append to links at top of page.
-    document.getElementById('footprintLink').setAttribute('href', '../state/#state=' + hash.state);
-    document.getElementById('commoditiesLink').setAttribute('href', 'commodities.html#state=' + hash.state);
-  }
   const info = document.getElementById("info");
   
   // Parse URL parameters
@@ -253,15 +319,22 @@ async function main() {
   let sector;
   const sectors = await model.sectors();
 
-  // loading random sector profile report if no hash
+  // An unclicked commodity leaves no sector selected
+  showAllIndustries(!hash.demand && deselectedModel === getModelFolderName());
+  if (!hash.demand && deselectedModel === getModelFolderName()) return;
+  deselectedModel = null;
+
+  // loading the top commodity's profile report if no hash
   if (!hash.demand) {
-    sector = await getRandomSector();
-    // update URL with random sector's hash
+    sector = await getTopSector();
+    // update URL with top sector's hash
     // Only include location when it's a non-empty string (avoid appending booleans like 'true')
     const loc = (typeof sector.location === 'string' && sector.location) ? `/${sector.location}` : '';
     hash.demand = `${sector.code}${loc}`;
-    try { console.log('[sector_profile] no demand in hash; setting random demand ->', hash.demand); } catch (e) {}
+    try { console.log('[sector_profile] no demand in hash; setting top demand ->', hash.demand); } catch (e) {}
     updateHash({"demand":hash.demand});
+    // The commodities table may have drawn before the demand was set
+    if (commoditiesReport) commoditiesReport.markSelected();
   }
   
   // Handle demand parameter (new format)
@@ -303,7 +376,7 @@ async function main() {
   if (!sector) {
     info.textContent = "No valid sector specified in the URL.";
     if (hash.state) {
-      info.textContent = `No valid sector specified in the URL in ${hash.state} model.`;
+      info.textContent = `No valid sector specified in the URL in ${getModelState()} model.`;
     }
     document.getElementById('indicatorBarChart').innerHTML = "";
     return;
@@ -330,7 +403,9 @@ async function main() {
   const totalValues = await analysis.getEnvironmentalProfile(false);
   
   // Supplier and buyer impacts, split by region in state models
-  indicatorFlows = await indicatorFlowImpacts(sector, analysis.normalizationTotals);
+  const flows = await indicatorFlowImpacts(sector, analysis.normalizationTotals);
+  if (run !== mainRun) return;
+  indicatorFlows = flows;
   const regionValues = (regions, i) => regions ? regions.map(r => ({ label: r.label, value: r.values[i] })) : null;
   
   fullTableData = indicators.map(i => {
@@ -374,7 +449,7 @@ async function main() {
 
   // Load and display matrix and data sources
   await loadMatrixData(sector, analysis);
-  await loadDataSources(sector);
+  if (run === mainRun) await loadDataSources(sector);
 }
 
 async function loadMatrixData(sector, analysis) {
@@ -1595,13 +1670,15 @@ function filterTableData() {
 // Function to update all tables when format changes
 function updateTables() {
   // Recreate the main table with new format (like commodities.html), even when a filter leaves no rows
-  if (fullTableData && fullTableData.length > 0) {
+  // Not while no commodity is selected
+  if (fullTableData && fullTableData.length > 0 && getHash().demand) {
     displayTable();
   }
   // For matrix table, just redraw since it uses dynamic formatters
   if (matrixTable) {
     matrixTable.redraw();
   }
+  if (commoditiesReport) commoditiesReport.render();
 }
 
 // Initialize everything when page loads

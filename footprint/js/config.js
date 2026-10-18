@@ -29,11 +29,14 @@ const model = useeio.modelOf({
 const useeioJsonEndpoint = 'https://raw.githubusercontent.com/ModelEarth/useeio-json/main/models/2020';
 
 let model = getModel();
+// The state whose model is shown: the first in the hash, e.g. TX for state=TX,GA. Blank for the US model.
+function getModelState() {
+    return (getUrlHash().state || "").split(",")[0].trim().toUpperCase();
+}
 function getModelFolderName() {
-    let hash = getUrlHash();
     let theModel = "USEEIOv2.0.1-411";
-    if (hash.state) { // Prior to 2024 states were GA, ME, MN, OR, WA
-        let thestate = hash.state.split(",")[0].toUpperCase();
+    let thestate = getModelState();
+    if (thestate) { // Prior to 2024 states were GA, ME, MN, OR, WA
         theModel = thestate + "EEIOv1.0-s-20"
     }
     return theModel;

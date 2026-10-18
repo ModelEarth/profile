@@ -17,6 +17,7 @@
 <script type="text/javascript" src="/localsite/js/localsite.js?showheader=true&showsearch=true"></script>
 
 <script src="js/config.js"></script>
+<script src="js/commodities-report.js"></script>
 <script>
 document.addEventListener('hashChangeEvent', hashChangedUseeio, false);
 function hashChangedUseeio() {
@@ -33,17 +34,12 @@ function documentReady(callback) {
   }
 }
 
-let tableData = [];
-let mainRun = 0;
+// Totals lines, table and row limit buttons from js/commodities-report.js, also used on sector_profile.html
+let commoditiesReport = null;
 async function main() {
-  const run = ++mainRun;
   try {
     console.log("Starting main() via window.onload");
-    
-    // Compute the table data
-    const q = await model.matrix('q'); // Commodity
-    const sectors = await model.sectors();
-    
+
     const notesDiv = document.getElementById("notes");
     if (notesDiv) {
       let hash = getHash();
@@ -65,115 +61,15 @@ async function main() {
       notesDiv.innerHTML = notesContent;
     }
     
-    const indicators = await model.indicators();
-    const jobsIndicator = indicators.filter(i => i.code === 'JOBS')[0];
-    const ghgIndicator = indicators.filter(i => i.code === 'GHG' || i.code === 'GHGR')[0]; // Try both GHG codes
-    const impacts = await model.matrix('D'); // Indicator_Sector
-    
-    // Load CO2e data from Excel file
-    let co2eData = {};
-    try {
-      const response = await fetch('SupplyChainGHGEmissionFactorsv1.4.0-rc.1.xlsx');
-      const arrayBuffer = await response.arrayBuffer();
-      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
-      
-      // Find header row and relevant columns
-      const headerRow = jsonData.find(row => row.includes('Reference USEEIO Code') || row.includes('Supply Chain Emission Factors with Margins'));
-      const headerIndex = jsonData.indexOf(headerRow);
-      const useeioCodeIndex = headerRow.indexOf('Reference USEEIO Code');
-      const emissionFactorIndex = headerRow.indexOf('Supply Chain Emission Factors with Margins');
-      
-      // Process data rows
-      for (let i = headerIndex + 1; i < jsonData.length; i++) {
-        const row = jsonData[i];
-        if (row[useeioCodeIndex] && row[emissionFactorIndex]) {
-          co2eData[row[useeioCodeIndex]] = parseFloat(row[emissionFactorIndex]);
-        }
-      }
-    } catch (error) {
-      console.warn('Could not load CO2e data from Excel file:', error);
+    if (!commoditiesReport) {
+      commoditiesReport = CommoditiesReport.create({
+        table: 'table',
+        loading: 'loadingMessage',
+        rows: 0, // All commodities
+        onRender: addPrintDownloadIcons
+      });
     }
-
-    // A newer hash change started another run; let it render instead
-    if (run !== mainRun) return;
-
-    tableData = sectors.map(sector => {
-      const output = q.get(sector.index, 0);
-      const jobs = output * impacts.get(jobsIndicator.index, sector.index);
-      const ghg = ghgIndicator ? output * impacts.get(ghgIndicator.index, sector.index) : 0;
-      const co2e = co2eData[sector.code] || 0;
-      
-      return {
-        ...sector,
-        output: Math.round(output),
-        jobs: Math.round(jobs),
-        ghg: ghg,
-        co2e: co2e
-      };
-    });
-    
-    console.log("Table data loaded, length:", tableData.length);
-    tableData.forEach(item => {
-      item.jobsEasy = formatCell(item.jobs);
-      item.outputEasy = "$" + formatCell(item.output);
-      item.ghgEasy = formatCell(item.ghg);
-      item.co2eEasy = formatCell(item.co2e);
-    });
-    
-    // Compute totals only if a state is specified in the URL hash:
-    let hash = getHash();
-    let totalsDiv = document.getElementById("totals");
-    if (hash.state) {
-      let stateData = tableData.filter(row => row.location.includes(hash.state));
-      let rousData = tableData.filter(row => !row.location.includes(hash.state));
-      
-      console.log("State rows:", stateData.length, "RoUS rows:", rousData.length);
-      
-      const stateTotals = stateData.reduce((acc, row) => {
-        acc.output += row.output || 0;
-        acc.jobs += row.jobs || 0;
-        acc.ghg += row.ghg || 0;
-        acc.co2e += row.co2e || 0;
-        return acc;
-      }, { output: 0, jobs: 0, ghg: 0, co2e: 0 });
-
-      const rousTotals = rousData.reduce((acc, row) => {
-        acc.output += row.output || 0;
-        acc.jobs += row.jobs || 0;
-        acc.ghg += row.ghg || 0;
-        acc.co2e += row.co2e || 0;
-        return acc;
-      }, { output: 0, jobs: 0, ghg: 0, co2e: 0 });
-
-      console.log("Calculated totals:", { stateTotals, rousTotals });
-
-      if (totalsDiv) {
-        totalsDiv.innerHTML = 
-          `<strong>State Total:</strong> $${formatCell(stateTotals.output)}, ${formatCell(stateTotals.jobs)} jobs, <span style="white-space:nowrap">${formatCell(stateTotals.ghg)} Metric Tons (Mt) of Greenhouse Gases (GHG)</span>, <span style="white-space:nowrap">${formatCell(stateTotals.co2e)} Carbon Dioxide equivalent (CO2e)</span>.<br>` +
-          `<strong>Rest of US:</strong> $${formatCell(rousTotals.output)}, ${formatCell(rousTotals.jobs)} jobs, <span style="white-space:nowrap">${formatCell(rousTotals.ghg)} Metric Tons (Mt) of Greenhouse Gases (GHG)</span>, <span style="white-space:nowrap">${formatCell(rousTotals.co2e)} Carbon Dioxide equivalent (CO2e)</span>.`;
-      }
-    } else {
-      // Calculate US total when no state is selected
-      const usTotals = tableData.reduce((acc, row) => {
-        acc.output += row.output || 0;
-        acc.jobs += row.jobs || 0;
-        acc.ghg += row.ghg || 0;
-        acc.co2e += row.co2e || 0;
-        return acc;
-      }, { output: 0, jobs: 0, ghg: 0, co2e: 0 });
-
-      console.log("Calculated US totals:", usTotals);
-
-      if (totalsDiv) {
-        totalsDiv.innerHTML = 
-          `<strong>US Total:</strong> $${formatCell(usTotals.output)}, ${formatCell(usTotals.jobs)} jobs, <span style="white-space:nowrap">${formatCell(usTotals.ghg)} Metric Tons (Mt) of Greenhouse Gases (GHG)</span>, <span style="white-space:nowrap">${formatCell(usTotals.co2e)} Carbon Dioxide equivalent (CO2e)</span>.`;
-      }
-    }
-    
-    // Now initialize the main table with the tableData
-    displayTable(getCurrentLocale(), getCurrentNumberFormat());
+    await commoditiesReport.load();
     
   } catch (error) {
     console.error("Error in main():", error.stack);
@@ -187,209 +83,13 @@ window.onload = function() {
   main();
 };
 
-var table;
-var tableBuilt = false;
-var pendingColumns = null;
-function displayTable(locale, formatType) {
-  let hash = getHash();
-  //You can also pass #index=0 from commodities.html to sector_profile.html
-  //But we are not passing index as it may change over time
-  const columns = [
-    { 
-      title: "Commodity", 
-      field: "name", 
-      formatter: function(cell, formatterParams) {
-        const sector = cell.getRow().getData();
-        let stateCode = '';
-        // Not using since RoUS also needs state= in URL to get the state model.
-        //if (sector.location.includes('-')) {
-        //  stateCode = sector.location.split('-')[1];
-        //}
-        if (hash.state) {
-          stateCode = hash.state
-        }
-        const demandHash = `demand=${sector.code}/${sector.location}`;
-        const stateParam = stateCode ? `&state=${stateCode}` : '';
-        const indexHash = `index=${sector.index}`; // legacy support for old links
-        return `<a href="sector_profile.html#${demandHash}${stateParam}">${sector.name}</a>`;
-      }
-    },
-    { 
-      title: "Location", 
-      field: "location", 
-      hozAlign: "right", 
-      width: 100 
-    },
-    {
-      title: "Output",
-      field:
-        formatType === "simple"
-          ? "outputEasy"
-          : formatType === "full"
-          ? "output"
-          : formatType === "scientific"
-          ? "output"
-          : "N/A",
-      hozAlign: "right",
-      maxWidth: "115px",
-      formatter: function (cell, formatterParams) {
-        var value = cell.getValue();
+// Redraw the table in the selected locale and number format
+function displayTable() {
+  if (commoditiesReport) commoditiesReport.render();
+}
 
-        if (formatType === "full") {
-          return new Intl.NumberFormat(locale).format(value);
-        } else if (formatType === "scientific") {
-          let scientificValue = Number(value).toExponential(1);
-          let parts = scientificValue.split("e");
-          let base = parts[0];
-          let exponent = parseInt(parts[1]);
-          if (exponent === 0) {
-            return base;
-          }
-          return `${base}&times;10<sup>${exponent}</sup>`;
-        }
-        return value;
-      },
-      headerSortTristate: false,
-      headerSortStartingDir: "desc",
-      sorter:
-        formatType === "simple"
-          ? function (a, b, aRow, bRow, column, dir, sorterParams) {
-              let aOutput = aRow.getData().output;
-              let bOutput = bRow.getData().output;
-              return aOutput - bOutput;
-            }
-          : undefined,
-    },
-    {
-      title: "Jobs",
-      field: formatType === "simple" ? "jobsEasy" : "jobs",
-      hozAlign: "right", 
-      maxWidth: "100px",
-      formatter: function (cell, formatterParams) {
-        var value = cell.getValue();
-        if (formatType === "full") {
-          return new Intl.NumberFormat(locale).format(value);
-        } else if (formatType === "scientific") {
-          let scientificValue = Number(value).toExponential(1);
-          let parts = scientificValue.split("e");
-          let base = parts[0];
-          let exponent = parseInt(parts[1]);
-          if (exponent === 0) {
-            return base;
-          }
-          return `${base}&times;10<sup>${exponent}</sup>`;
-        }
-        return value;
-      },
-      headerSortTristate: false,
-      headerSortStartingDir: "desc",
-      sorter:
-        formatType === "simple"
-          ? function (a, b, aRow, bRow, column, dir, sorterParams) {
-              let aJobs = aRow.getData().jobs;
-              let bJobs = bRow.getData().jobs;
-              return aJobs - bJobs;
-            }
-          : undefined,
-    },
-    {
-      title: "GHG",
-      field: formatType === "simple" ? "ghgEasy" : "ghg",
-      hozAlign: "right", 
-      maxWidth: "120px",
-      formatter: function (cell, formatterParams) {
-        var value = cell.getValue();
-        if (formatType === "full") {
-          return new Intl.NumberFormat(locale).format(value);
-        } else if (formatType === "scientific") {
-          let scientificValue = Number(value).toExponential(1);
-          let parts = scientificValue.split("e");
-          let base = parts[0];
-          let exponent = parseInt(parts[1]);
-          if (exponent === 0) {
-            return base;
-          }
-          return `${base}&times;10<sup>${exponent}</sup>`;
-        }
-        return value;
-      },
-      headerSortTristate: false,
-      headerSortStartingDir: "desc",
-      sorter:
-        formatType === "simple"
-          ? function (a, b, aRow, bRow, column, dir, sorterParams) {
-              let aGhg = aRow.getData().ghg;
-              let bGhg = bRow.getData().ghg;
-              return aGhg - bGhg;
-            }
-          : undefined,
-    }
-  ];
-
-  // Add CO2e column only when viewing US data (no state specified)
-  if (!hash.state) {
-    columns.push({
-      title: "CO2e",
-      field: formatType === "simple" ? "co2eEasy" : "co2e", 
-      hozAlign: "right",
-      maxWidth: "110px",
-      formatter: function (cell, formatterParams) {
-        var value = cell.getValue();
-        if (formatType === "full") {
-          return new Intl.NumberFormat(locale).format(value);
-        } else if (formatType === "scientific") {
-          let scientificValue = Number(value).toExponential(1);
-          let parts = scientificValue.split("e");
-          let base = parts[0];
-          let exponent = parseInt(parts[1]);
-          if (exponent === 0) {
-            return base;
-          }
-          return `${base}&times;10<sup>${exponent}</sup>`;
-        }
-        return value;
-      },
-      headerSortTristate: false,
-      headerSortStartingDir: "desc",
-      sorter:
-        formatType === "simple"
-          ? function (a, b, aRow, bRow, column, dir, sorterParams) {
-              let aCo2e = aRow.getData().co2e;
-              let bCo2e = bRow.getData().co2e;
-              return aCo2e - bCo2e;
-            }
-          : undefined,
-    });
-  }
-
-  // Wait for main() to load data so an empty table is never rendered
-  if (!tableData.length) return;
-
-  // Create the Tabulator instance once, then update it in place to avoid a blank flash
-  if (!table) {
-    table = new Tabulator("#table", {
-      height: 500,
-      data: tableData,
-      layout: "fitColumns",
-      columns: columns
-    });
-    table.on("tableBuilt", function() {
-      tableBuilt = true;
-      document.getElementById('loadingMessage').style.display = 'none';
-      if (pendingColumns) {
-        table.setColumns(pendingColumns);
-        table.replaceData(tableData);
-        pendingColumns = null;
-      }
-    });
-  } else if (!tableBuilt) {
-    pendingColumns = columns;
-  } else {
-    table.setColumns(columns);
-    table.replaceData(tableData);
-  }
-
-  // Add print/download icons to commodities page
+// Add print/download icons to commodities page
+function addPrintDownloadIcons(tableData) {
   if (typeof PrintDownloadWidget !== 'undefined') {
     const options = {
       showMap: false,
@@ -404,11 +104,6 @@ function displayTable(locale, formatType) {
     );
     syncCvStylePrintDownloadIcons();
   }
-}
-
-// Update the table with the selected locale
-function updateTable(locale) {
-    displayTable(locale, getCurrentNumberFormat());
 }
 
 function syncCvStylePrintDownloadIcons() {
@@ -545,8 +240,6 @@ function syncCvStylePrintDownloadIcons() {
   </div>
   <div id="relocatedStateMenu"></div>
 
-  <div id="totals" style="margin:10px 0; font-size:1.1em;"></div>
-
   <div id="loadingMessage" class="loading" style="clear:both">Loading data...</div>
   <div id="table" style="clear:both"></div>
 
@@ -590,15 +283,15 @@ document.addEventListener('DOMContentLoaded', function() {
     localeSelect.addEventListener("change", function() {
         numberFormatToggle.value = "full";
         console.log("%cSwitched to full values so location-specific formatting is visible.", "color: green");
-        updateTable(this.value);
+        displayTable();
     });
 
     numberFormatToggle.addEventListener("change", function() {
-        displayTable(getCurrentLocale(), this.value);
+        displayTable();
     });
 
     // Trigger initial display with cached values
-    displayTable(getCurrentLocale(), getCurrentNumberFormat());
+    displayTable();
 });
 
 </script>
