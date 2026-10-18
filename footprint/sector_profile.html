@@ -16,7 +16,15 @@
   <script src="js/useeio.js"></script>
 <style>
   #matrixTreemapTitle { font-size: 18px; font-weight: 600; margin-top: 16px; }
+  /* 4px more than Tabulator's 4px padding to the left of the first column (as in localsite/css/base-tabulator.css, which this page doesn't load) */
+  .tabulator-row .tabulator-cell:first-child,
+  .tabulator .tabulator-header .tabulator-col:first-child .tabulator-col-content { padding-left: 8px; }
   #matrixTable { margin-top: 16px; }
+  #matrixTable .tabulator-cell.matrix-sector-cell { cursor: pointer; }
+  #matrixTable .tabulator-cell.matrix-sector-cell:hover { background: rgba(3,102,214,0.1); }
+  .dark #matrixTable .tabulator-cell.matrix-sector-cell:hover { background: #222; }
+  #indicatorBarChart .tabulator-row .tabulator-cell:first-child:hover { background: rgba(3,102,214,0.1); }
+  .dark #indicatorBarChart .tabulator-row .tabulator-cell:first-child:hover { background: #222; }
   /* Impacts chart: rows choose the indicator for the treemap's Impact view */
   #indicatorBarChart .tabulator-row { cursor: pointer; }
   #indicatorBarChart .tabulator-row.impact-selected { box-shadow: inset 4px 0 0 #0366d6; background: rgba(3, 102, 214, 0.08); }
@@ -26,7 +34,7 @@
     border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-left: 9px solid #0366d6; }
   .dark #impactPointer { border-left-color: var(--accent, #3a8fd9); }
   .dark #indicatorBarChart .tabulator-row.impact-selected { box-shadow: inset 4px 0 0 var(--accent, #3a8fd9); background: rgba(58, 143, 217, 0.18); }
-  #matrixTreemap { width: 100%; height: 360px; background: #fff; border-radius: 8px; overflow: hidden; margin-top: 8px; }
+  #matrixTreemap { width: 100%; height: 468px; background: #fff; border-radius: 8px; overflow: hidden; margin-top: 8px; }
   .dark #matrixTreemap { background: var(--bg-card); }
   #matrixTreemapTagline { font-size: 13px; color: #444; margin-top: 4px; }
   .dark #matrixTreemapTagline { color: var(--text-muted); }
@@ -442,6 +450,15 @@ async function loadMatrixData(sector, analysis) {
   }
 }
 
+// Switch the page to a sector from the matrix table, in the location of the current demand (US-GA, RoUS or US)
+function showMatrixSector(code) {
+  if (!code) return;
+  const hash = getHash();
+  const location = String(hash.demand || '').split('/')[1] || (hash.state ? `US-${hash.state.split(',')[0].toUpperCase()}` : 'US');
+  const demand = `${code}/${location}`;
+  if (demand !== hash.demand) goHash({ demand: demand });
+}
+
 // Columns for the matrix table. Region columns show dollars spent, or the indicator's impact in the Impact view.
 function matrixTableColumns() {
   const impactView = matrixRank === 'impact' && matrixImpact;
@@ -452,7 +469,18 @@ function matrixTableColumns() {
     return formatCell(val, 'easy');
   };
   return [
-    { title: "Sector Name", field: "sector", widthGrow: 3 },
+    {
+      title: "Sector Name",
+      field: "sector",
+      widthGrow: 5,
+      minWidth: 360,
+      cssClass: "matrix-sector-cell",
+      formatter: cell => {
+        const name = String(cell.getValue() || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        return `<span title="Show the ${name} profile">${name}</span>`;
+      },
+      cellClick: (e, cell) => showMatrixSector(cell.getRow().getData().sectorCode)
+    },
     { title: "Code", field: "sectorCode", width: 80 },
     // One column per region when the model has more than one
     ...(matrixRegions.length > 1 ? matrixRegions.map(region => impactView ? {
@@ -652,8 +680,16 @@ async function showMatrixList(totalsBefore) {
     matrixTable.setData(list).then(() => matrixTable.setSort(matrixRank, 'desc'));
   }
   renderMatrixTreemap(list);
-  if (totalsBefore !== matrixShowsTotals()) updateTables();
+  if (totalsBefore !== matrixShowsTotals()) afterTreemapAnimation(updateTables);
   else markImpactRow();
+}
+
+// Run fn once the treemap's transition has finished, so heavy work (rebuilding the impacts chart)
+// doesn't stall the animation
+function afterTreemapAnimation(fn) {
+  const anim = matrixTreemapAnim;
+  if (!anim || anim.cancelled || anim.progress >= 1) { fn(); return; }
+  anim.done.push(fn);
 }
 
 // Clicking a row in the impacts chart sizes the treemap by that indicator
@@ -821,10 +857,11 @@ function renderMatrixTreemap(matrixData) {
       }
     } catch (e) { /* ignore tagline errors */ }
 
-    // Dispose previous chart if present
-    if (matrixTreemapChart) { try { matrixTreemapChart.dispose(); } catch (e) { console.warn('dispose previous treemap failed', e); } matrixTreemapChart = null; }
     if (typeof echarts === 'undefined') { el.innerHTML = '<div style="color:#a00">ECharts not loaded</div>'; return; }
-    const chart = echarts.init(el);
+    // Reuse the chart so the tiles animate to their new sizes (see the tween below)
+    const reuse = !!matrixTreemapChart && !matrixTreemapChart.isDisposed() && matrixTreemapChart.getDom() === el;
+    if (!reuse && matrixTreemapChart) { try { matrixTreemapChart.dispose(); } catch (e) { console.warn('dispose previous treemap failed', e); } matrixTreemapChart = null; }
+    const chart = reuse ? matrixTreemapChart : echarts.init(el);
     matrixTreemapChart = chart;
 
     // One tile per sector, sized by the active ranking (total spent or amount per $1).
@@ -861,6 +898,8 @@ function renderMatrixTreemap(matrixData) {
         .sort((a, b) => b.share - a.share);
       const regionLines = parts.map(({ r }) => multiRegion ? `${r.label} ${amountText(r)}` : amountText(r));
       return {
+        key: String(d.sectorCode || d.sector), // Matches the same industry between views
+        sectorCode: d.sectorCode,
         value: values[i],
         color: color,
         textColor: treemapLabelColor(color),
@@ -872,6 +911,7 @@ function renderMatrixTreemap(matrixData) {
           + `${d.spent != null ? `Total spent: ${shown(d.spent)}<br/>` : ''}`
           + (multiRegion ? parts.map(({ r }) => `${r.label}: ${r.spent != null ? `${shown(r.spent)} (${treemapAmount(r.coefficient)})` : treemapAmount(r.coefficient)}`).join('<br/>') + '<br/>' : '')
           + `Per dollar: ${treemapAmount(d.coefficient)}<br/>Coefficient: ${formatCell(d.coefficient || 0, 'easy')}`
+          + `<br/><small>Click to show this sector's profile</small>`
       };
     });
 
@@ -882,42 +922,58 @@ function renderMatrixTreemap(matrixData) {
       if (key !== layoutKey) { layoutKey = key; layout = treemapSquarify(tiles.map(t => t.value), width, height); }
       return layout;
     };
+
+    // Transition, matched by industry: each industry glides from where it was drawn to its new tile,
+    // industries leaving the top 25 fade out in place and new ones fade in. Drawn frame by frame here
+    // rather than with ECharts' own transitions, which kept state between views and stopped animating.
+    const prev = reuse ? matrixTreemapDrawn : {};
+    matrixTreemapDrawn = {}; // Filled as tiles are drawn, so the next view starts from the current frame
+    // A click mid-transition starts the next one from the current frame, keeping work waiting for the end
+    const waiting = matrixTreemapAnim && !matrixTreemapAnim.cancelled ? matrixTreemapAnim.done.splice(0) : [];
+    if (matrixTreemapAnim) matrixTreemapAnim.cancelled = true;
+    const anim = { progress: Object.keys(prev).length ? 0 : 1, done: waiting };
+    matrixTreemapAnim = anim;
+    const tileKeys = new Set(tiles.map(t => t.key));
+    // Leaving industries first, so they sit beneath the tiles that grow over them
+    let items = Object.keys(prev).filter(key => !tileKeys.has(key)).map(key => ({ leave: prev[key] }))
+      .concat(tiles.map((t, i) => ({ tile: i })));
+    const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; // cubic in-out
+    const lerp = (a, b, t) => a + (b - a) * t;
+
     const gap = 3; // Between tiles only, so tiles reach the container edges
-    const renderTile = (params, api) => {
-      const width = api.getWidth(), height = api.getHeight();
-      const box = tileLayout(width, height)[params.dataIndex];
-      const tile = tiles[params.dataIndex];
-      if (!box || !tile) return null;
+    // One tile: the industry's rect, its region sections, then the centered text (none while leaving)
+    const drawTile = (box, shares, color, tile, opacity, width, height) => {
       const x0 = box.x + (box.x > 0.5 ? gap / 2 : 0);
       const y0 = box.y + (box.y > 0.5 ? gap / 2 : 0);
       const x1 = box.x + box.w - (box.x + box.w < width - 0.5 ? gap / 2 : 0);
       const y1 = box.y + box.h - (box.y + box.h < height - 0.5 ? gap / 2 : 0);
       const w = Math.max(x1 - x0, 0), h = Math.max(y1 - y0, 0);
-      const children = [{ type: 'rect', shape: { x: x0, y: y0, width: w, height: h }, style: { fill: tile.color } }];
+      const children = [{ type: 'rect', silent: !tile, shape: { x: x0, y: y0, width: w, height: h }, style: { fill: color, opacity: opacity } }];
       // Region sections as vertical strips, left to right, largest first
       let offset = 0;
-      tile.shares.forEach((share, k) => {
+      shares.forEach((share, k) => {
         const size = share * w;
         if (k > 0 && size > 0) {
           children.push({
             type: 'rect', silent: true,
             shape: { x: x0 + offset, y: y0, width: size, height: h },
-            style: { fill: `rgba(0,0,0,${overlayAlpha[Math.min(k - 1, overlayAlpha.length - 1)]})` }
+            style: { fill: `rgba(0,0,0,${overlayAlpha[Math.min(k - 1, overlayAlpha.length - 1)]})`, opacity: opacity }
           });
         }
         offset += size;
       });
-      // As many centered lines as fit: sector, then each region
-      const lineHeight = 15;
-      const lineCount = Math.min(tile.lines.length, Math.floor((h - 4) / lineHeight));
+      if (!tile) return { type: 'group', children: children };
+      // As many centered lines as fit: sector (larger title), then each region
+      const lineHeight = 15, titleSize = 15, titleLineHeight = 19;
+      const lineCount = h - 4 < titleLineHeight ? 0 : Math.min(tile.lines.length, 1 + Math.floor((h - 4 - titleLineHeight) / lineHeight));
       if (lineCount > 0 && w > 24) {
         children.push({
           type: 'text', silent: true,
           style: {
             text: tile.lines.slice(0, lineCount).map((line, k) => k === 0 ? `{b|${line}}` : line).join('\n'),
-            x: x0 + w / 2, y: y0 + h / 2, align: 'center', verticalAlign: 'middle',
+            x: x0 + w / 2, y: y0 + h / 2, align: 'center', verticalAlign: 'middle', opacity: opacity,
             width: w - 8, overflow: 'truncate', fill: tile.textColor, fontSize: 12, lineHeight: lineHeight,
-            rich: { b: { fontWeight: 'bold', fontSize: 12, lineHeight: lineHeight, fill: tile.textColor } }
+            rich: { b: { fontWeight: 'bold', fontSize: titleSize, lineHeight: titleLineHeight, fill: tile.textColor } }
           }
         });
       } else if (w >= 8 && h >= 10) {
@@ -927,8 +983,8 @@ function renderMatrixTreemap(matrixData) {
           children.push({
             type: 'text', silent: true,
             style: {
-              text: letter, x: x0 + w / 2, y: y0 + h / 2, align: 'center', verticalAlign: 'middle',
-              fill: tile.textColor, fontWeight: 'bold', fontSize: Math.max(8, Math.min(12, w - 2, h - 2))
+              text: letter, x: x0 + w / 2, y: y0 + h / 2, align: 'center', verticalAlign: 'middle', opacity: opacity,
+              fill: tile.textColor, fontWeight: 'bold', fontSize: Math.max(8, Math.min(14, w - 2, h - 2))
             }
           });
         }
@@ -936,12 +992,35 @@ function renderMatrixTreemap(matrixData) {
       return { type: 'group', children: children };
     };
 
+    const renderTile = (params, api) => {
+      const width = api.getWidth(), height = api.getHeight();
+      const item = items[params.dataIndex];
+      if (!item) return null;
+      const t = ease(anim.progress);
+      const toPixels = b => ({ x: b.x * width, y: b.y * height, w: b.w * width, h: b.h * height });
+      if (item.leave) return drawTile(toPixels(item.leave), item.leave.shares, item.leave.color, null, 1 - t, width, height);
+      const tile = tiles[item.tile];
+      const target = tileLayout(width, height)[item.tile];
+      if (!tile || !target) return null;
+      const from = t < 1 ? prev[tile.key] : null;
+      let box = target, color = tile.color, shares = tile.shares;
+      if (from) {
+        const a = toPixels(from);
+        box = { x: lerp(a.x, target.x, t), y: lerp(a.y, target.y, t), w: lerp(a.w, target.w, t), h: lerp(a.h, target.h, t) };
+        color = echarts.color.lerp(t, [from.color, tile.color]);
+        if (from.shares.length === tile.shares.length) shares = tile.shares.map((share, k) => lerp(from.shares[k], share, t));
+      }
+      matrixTreemapDrawn[tile.key] = { x: box.x / width, y: box.y / height, w: box.w / width, h: box.h / height, shares: shares, color: color };
+      // Industries new to the top 25 fade in at their tile
+      return drawTile(box, shares, color, tile, (from || anim.progress >= 1 || prev[tile.key]) ? 1 : t, width, height);
+    };
+
     const option = {
       backgroundColor: 'transparent',
       tooltip: {
         // On the page body, so #matrixTreemap's overflow: hidden (for its rounded corners) doesn't crop it
         appendToBody: true,
-        formatter: params => (tiles[params.dataIndex] || {}).tip || '',
+        formatter: params => { const item = items[params.dataIndex]; return (item && item.tile != null && tiles[item.tile].tip) || ''; },
         ...(dark ? {
           backgroundColor: style.getPropertyValue('--bg-card').trim() || '#2b2926',
           borderColor: style.getPropertyValue('--border-subtle').trim() || '#555',
@@ -951,10 +1030,40 @@ function renderMatrixTreemap(matrixData) {
       series: [{
         type: 'custom',
         coordinateSystem: 'none', // Tiles are laid out in pixels by treemapSquarify
+        animation: false, // The tween below animates the tiles
         renderItem: renderTile,
-        data: tiles.map((t, i) => [i])
+        data: items.map((item, i) => [i, 0])
       }]
     };
+
+    // Clicking a tile switches the page to that sector
+    chart.off('click');
+    chart.on('click', params => {
+      const item = items[params.dataIndex];
+      if (item && item.tile != null) showMatrixSector(tiles[item.tile].sectorCode);
+    });
+
+    // Already drawn: tween from the current tiles to the new ones, one setOption per animation frame
+    if (reuse) {
+      try { chart.setOption(option); } catch (err) { console.error('treemap update failed', err); }
+      if (anim.progress < 1) {
+        let frame = 0;
+        const step = now => {
+          if (anim.cancelled || chart.isDisposed()) return;
+          if (anim.start == null) anim.start = now;
+          anim.progress = Math.min(1, (now - anim.start) / 700);
+          if (anim.progress >= 1) items = items.filter(item => !item.leave); // Faded out
+          try { chart.setOption({ series: [{ data: items.map((item, i) => [i, ++frame]) }] }); } catch (err) { console.error('treemap frame failed', err); return; }
+          if (anim.progress < 1) requestAnimationFrame(step);
+          else anim.done.splice(0).forEach(fn => fn());
+        };
+        requestAnimationFrame(step);
+      } else {
+        anim.done.splice(0).forEach(fn => fn());
+      }
+      return;
+    }
+    anim.done.splice(0).forEach(fn => fn());
 
     // Show loading and compute options asynchronously to avoid blocking the UI
     try { chart.showLoading(); } catch (e) {}
@@ -1133,6 +1242,10 @@ let matrixTreemapChart = null;
 let matrixTreemapResizeHandler = null;
 // Last treemap data, to redraw with new colors when dark mode or the theme changes
 let matrixTreemapData = null;
+// Where each industry's tile was last drawn (fractions of the chart size, plus sections and color),
+// so the next view's transition starts from there; and the running transition
+let matrixTreemapDrawn = {};
+let matrixTreemapAnim = null;
 
 // localsite.js sets "dark" and the theme class (maestro, georgia...) on body
 (function watchTreemapLook() {
