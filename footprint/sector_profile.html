@@ -1006,7 +1006,7 @@ let matrixTreemapData = null;
 let fullTableData = [];
 let tableData = [];
 // Parts included in the indicator bar chart (checkboxes above it)
-let indicatorParts = { supplier: true, industry: true, buyers: false };
+let indicatorParts = { supplier: true, industry: true, buyers: true };
 let indicatorScaleMax = 1;
 let indicatorFlows = { supplierRegions: null, buyers: null, buyerRegions: null, regions: [], ownOutput: 0 };
 // Overlay opacity by region for Supplier and Buyers sections: none for the state, darker for Rest of US
@@ -1113,6 +1113,8 @@ function setupIndicatorParts() {
   const swatch = (color, shades) => shades.map(a => `<i style="background-color:${color};${indicatorShade(a)}"></i>`).join('');
   const buyersAvailable = !!indicatorFlows.buyers;
   if (!buyersAvailable) indicatorParts.buyers = false;
+  // Keep at least one part, e.g. after showing only Buyers then loading a model without them
+  if (!indicatorParts.supplier && !indicatorParts.industry && !indicatorParts.buyers) indicatorParts = { supplier: true, industry: true, buyers: false };
   toolbar.querySelectorAll('input[data-part]').forEach(input => {
     const part = input.dataset.part;
     input.checked = !!indicatorParts[part];
