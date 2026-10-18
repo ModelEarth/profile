@@ -29,6 +29,9 @@
   #indicatorParts label { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 14px; background: color-mix(in srgb, var(--part) 18%, #fff); color: #333; cursor: pointer; user-select: none; }
   #indicatorParts label + label { border-left: 1px solid #ccc; }
   #indicatorParts label.active { background: var(--part); color: var(--part-text); }
+  /* Checked Buyers uses the light pink tint; unchecked Buyers goes lighter so the two still differ */
+  #indicatorParts label[data-part-label="buyers"].active { background: color-mix(in srgb, var(--part) 18%, #fff); color: #333; }
+  #indicatorParts label[data-part-label="buyers"]:not(.active) { background: color-mix(in srgb, var(--part) 6%, #fff); }
   #indicatorParts label.disabled { opacity: 0.5; cursor: default; }
   #indicatorParts input { margin: 0; }
   .indicator-swatch { display: inline-flex; width: 18px; height: 12px; border-radius: 3px; overflow: hidden; }
@@ -39,6 +42,8 @@
   .dark #indicatorParts label { background: color-mix(in srgb, var(--part) 18%, var(--bg-card, #222)); color: var(--text-main); }
   .dark #indicatorParts label + label { border-left-color: var(--border-subtle); }
   .dark #indicatorParts label.active { background: var(--part); color: var(--part-text); }
+  .dark #indicatorParts label[data-part-label="buyers"].active { background: #fbd7e9; color: #333; }
+  .dark #indicatorParts label[data-part-label="buyers"]:not(.active) { background: color-mix(in srgb, var(--part) 6%, var(--bg-card, #222)); }
   #matrixToolbar { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; }
   .matrix-toggle { display: inline-flex; border: 1px solid #ccc; border-radius: 6px; overflow: hidden; }
   .matrix-toggle button { border: 0; padding: 6px 14px; font-size: 14px; background: #fff; color: #333; cursor: pointer; }
@@ -1013,7 +1018,19 @@ let indicatorFlows = { supplierRegions: null, buyers: null, buyerRegions: null, 
 // (and later Rest of World)
 const indicatorOverlay = [0, 0.25, 0.45];
 // Bar and button colors per part: light blue, purple, pink
-const indicatorPartColors = { supplier: '#7cc3ee', industry: '#9b6dd6', buyers: '#f27ab6' };
+const indicatorPartColors = { supplier: '#7cc3ee', industry: '#9b6dd6', buyers: '#fbd7e9' };
+// Parts with their own color per region instead of the overlay: Buyers in the state are light pink
+// (30% of #f27ab6 on white), Interstate Buyers a deeper pink (65%)
+const indicatorRegionColors = { buyers: ['#fbd7e9', '#f6a9cf'] };
+
+// Color and overlay for a part's kth region section (0 is the state, 1 is Rest of US)
+function indicatorRegionStyle(part, k) {
+  const colors = indicatorRegionColors[part];
+  if (!colors) return { color: indicatorPartColors[part], overlay: indicatorOverlay[Math.min(k, indicatorOverlay.length - 1)] };
+  // Past the listed colors (e.g. a later Rest of World), darken the last one with the overlay
+  const extra = Math.max(0, k - colors.length + 1);
+  return { color: colors[Math.min(k, colors.length - 1)], overlay: indicatorOverlay[Math.min(extra, indicatorOverlay.length - 1)] };
+}
 
 // Supplier and buyer impacts per $1 of the industry's output, normalized by the same totals as the profile.
 // Supplier: the supply chain part of N = D × L, D[i, j] × L[j, sector] over the sectors j in each region,
@@ -1069,15 +1086,14 @@ function indicatorShade(alpha) {
 // Each part has its own color; Rest of US sections are darkened by an overlay, so they sit on the outside.
 function indicatorSections(row) {
   const sections = [];
-  const regionAlpha = k => indicatorOverlay[Math.min(k, indicatorOverlay.length - 1)];
   const { supplier, industry, buyers } = indicatorPartColors;
   if (indicatorParts.supplier) {
-    if (row.supplierRegions) row.supplierRegions.map((r, k) => ({ label: `Suppliers in ${r.label}`, value: r.value, color: supplier, overlay: regionAlpha(k) })).reverse().forEach(x => sections.push(x));
+    if (row.supplierRegions) row.supplierRegions.map((r, k) => ({ label: `Suppliers in ${r.label}`, value: r.value, ...indicatorRegionStyle('supplier', k) })).reverse().forEach(x => sections.push(x));
     else sections.push({ label: 'Suppliers', value: row.supplierValue || 0, color: supplier, overlay: 0 });
   }
   if (indicatorParts.industry) sections.push({ label: 'Industry', value: row.directValue || 0, color: industry, overlay: 0 });
   if (indicatorParts.buyers && row.buyersValue != null) {
-    if (row.buyersRegions) row.buyersRegions.forEach((r, k) => sections.push({ label: `Buyers in ${r.label}`, value: r.value, color: buyers, overlay: regionAlpha(k) }));
+    if (row.buyersRegions) row.buyersRegions.forEach((r, k) => sections.push({ label: `Buyers in ${r.label}`, value: r.value, ...indicatorRegionStyle('buyers', k) }));
     else sections.push({ label: 'Buyers', value: row.buyersValue, color: buyers, overlay: 0 });
   }
   return sections;
@@ -1109,8 +1125,7 @@ function setupIndicatorParts() {
   if (!toolbar) return;
   toolbar.style.display = '';
   const regions = indicatorFlows.regions.length > 1 ? indicatorFlows.regions : [];
-  const regionShades = regions.length ? regions.map((r, k) => indicatorOverlay[Math.min(k, indicatorOverlay.length - 1)]) : [0];
-  const swatch = (color, shades) => shades.map(a => `<i style="background-color:${color};${indicatorShade(a)}"></i>`).join('');
+  const swatch = style => `<i style="background-color:${style.color};${indicatorShade(style.overlay)}"></i>`;
   const buyersAvailable = !!indicatorFlows.buyers;
   if (!buyersAvailable) indicatorParts.buyers = false;
   // Keep at least one part, e.g. after showing only Buyers then loading a model without them
@@ -1131,7 +1146,7 @@ function setupIndicatorParts() {
     const legendName = (r, part) => r.location === 'RoUS' ? (part === 'supplier' ? 'Interstate Suppliers' : 'Interstate Buyers') : regionName(r);
     const legend = part => {
       const items = regions.map((r, k) =>
-        `<span class="indicator-legend-item"><span class="indicator-swatch">${swatch(indicatorPartColors[part], [regionShades[k]])}</span>${legendName(r, part)}</span>`);
+        `<span class="indicator-legend-item"><span class="indicator-swatch">${swatch(indicatorRegionStyle(part, k))}</span>${legendName(r, part)}</span>`);
       // Same order as the bars: Suppliers end with Rest of US first, Buyers start with the state
       return `<span class="indicator-legend-group">${(part === 'supplier' ? items.reverse() : items).join('')}</span>`;
     };
