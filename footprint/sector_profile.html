@@ -22,6 +22,7 @@
   #matrixTreemapTagline { font-size: 13px; color: #444; margin-top: 4px; }
   .dark #matrixTreemapTagline { color: var(--text-muted); }
   #indicatorToolbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin: 4px 0 10px; clear: both; }
+  #indicatorParts { margin-right: 5px; }
   /* Part colors, also used for the bar sections */
   #indicatorParts label[data-part-label="supplier"] { --part: #7cc3ee; --part-text: #1f2937; }
   #indicatorParts label[data-part-label="industry"] { --part: #9b6dd6; --part-text: #fff; }
@@ -86,8 +87,6 @@
   
   <!-- Matrix and Data Sources Section -->
   <div id="matrixSection" style="margin-top: 40px; display: none;">
-    <h3>Technical Coefficient Matrix</h3>
-    <p id="matrixInfo">Loading matrix data...</p>
     <div id="matrixToolbar">
       <div id="matrixDirection" class="matrix-toggle" role="group" aria-label="Show sellers or buyers">
         <button type="button" data-direction="sellers" title="Sectors this industry buys from, with what it spends on each">Suppliers</button>
@@ -101,6 +100,7 @@
     <div id="matrixTreemapTitle" style="display:none"></div>
     <div id="matrixTreemapTagline" style="display:none">Rectangles sized by total spent; color indicates normalized magnitude (low → high).</div>
     <div id="matrixTreemap" style="display:none"></div>
+    <p id="matrixInfo" style="margin: 8px 0 0">Loading matrix data...</p>
     <div id="matrixTable"></div>
   </div>
   
@@ -358,10 +358,12 @@ async function loadMatrixData(sector, analysis) {
     
     // Get model information for data source URL
     const modelName = getModelFolderName();
-    const dataSourceUrl = `https://raw.githubusercontent.com/ModelEarth/useeio-json/main/models/2020/${modelName}/A.json`;
+    const dataSourceUrl = `https://github.com/ModelEarth/useeio-json/blob/main/models/2020/${modelName}/matrix/A.json`;
     
-    matrixInfo.innerHTML = `Technical coefficients for sector: <strong>${sector.name}</strong><br>
-      <small>Data source: <a href="${dataSourceUrl}" target="_blank">A Matrix (${modelName})</a></small>`;
+    // e.g. Georgia Coefficient A Matrix (GAEEIOv1.0-s-20), or US for the national model
+    const stateCode = (getUrlHash().state || '').split(',')[0].toUpperCase();
+    const placeName = stateCode ? ((typeof getState === 'function' && getState(stateCode)) || stateCode) : 'US';
+    matrixInfo.innerHTML = `<small>${placeName} Coefficient A Matrix (<a href="${dataSourceUrl}" target="_blank">${modelName}</a>)</small>`;
     
     // Get matrix data from the model
     const sectors = await model.sectors();
@@ -466,7 +468,7 @@ async function loadMatrixData(sector, analysis) {
     matrixSection.style.display = 'block';
   } catch (error) {
     console.error('Error loading matrix data:', error);
-    document.getElementById('matrixInfo').innerHTML = `Technical coefficients for sector: <strong>${sector.name}</strong><br><em>Error loading matrix data: ${error.message}</em>`;
+    document.getElementById('matrixInfo').innerHTML = `<em>Error loading matrix data: ${error.message}</em>`;
     document.getElementById('matrixSection').style.display = 'block';
   }
 }
@@ -1146,7 +1148,9 @@ function setupIndicatorParts() {
     // Rest of US reads as Interstate Suppliers or Interstate Buyers
     const legendName = (r, part) => r.location === 'RoUS' ? (part === 'supplier' ? 'Interstate Suppliers' : 'Interstate Buyers') : regionName(r);
     const isState = r => /^US-/.test(r.location || '');
-    const swatches = (parts, k) => parts.map(part => `<span class="indicator-swatch">${swatch(indicatorRegionStyle(part, k))}</span>`).join('');
+    // Each rect's hover shows its button name: Suppliers, Industry or Buyers
+    const partName = part => ((toolbar.querySelector(`label[data-part-label="${part}"]`) || {}).textContent || part).trim();
+    const swatches = (parts, k) => parts.map(part => `<span class="indicator-swatch" title="${partName(part)}">${swatch(indicatorRegionStyle(part, k))}</span>`).join('');
     const item = (parts, r, k) => `<span class="indicator-legend-item">${swatches(parts, k)}${legendName(r, parts[0])}</span>`;
     // Interstate items for a part, in bar order: Suppliers end with Rest of US first, Buyers start after the state
     const interstate = part => {
