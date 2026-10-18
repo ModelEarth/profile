@@ -8,7 +8,7 @@
 <a href="../../profile/trade/" id="profileTrade">Overview</a><span style="display:block"><a href="../../profile/prep/" id="profilePrep">Data Prep</a></span>
 
 <b>US States</b>
-<a href="../footprint/">Sector Profiles</a>
+<a href="../footprint/">State Profiles</a>
 <a href="../footprint/sector_supply_impacts.html">Sector Supply Charts</a>
 <a href="../footprint/states.html">State Impact Totals</a>
 <a href="../footprint/commodities.html">Commodities</a>

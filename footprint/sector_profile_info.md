@@ -1,4 +1,4 @@
-# Sector Profile Report Datasets
+# State Profile Report Datasets
 
 - **A Matrix**: Technical coefficients (inter-industry relationships)
 - **B Matrix**: Direct environmental coefficients 
