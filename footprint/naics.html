@@ -254,7 +254,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     // Check if the clicked element has the class 'bea-code'
                     if (e.target.classList.contains("bea-code")) {
                     const beaCode = e.target.textContent; // Get the BEA code
-                    window.location.href = `sector_profile.html#demand=${beaCode}/US`; // Redirect with query parameter
+                    window.location.href = `./#demand=${beaCode}/US`; // Redirect with query parameter
                   }
                 
                   if (e.target.classList.contains("sector-name")) {
@@ -262,7 +262,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                   const row = e.target.closest(".tabulator-row"); // Get the row element
                   const rowData = table.getRow(row).getData(); // Get the row data
                   const beaCode = rowData.BEA_detail.split("#")[0]; // Extract the BEA code
-                  window.location.href = `sector_profile.html#demand=${beaCode}/US`; // Redirect with BEA code
+                  window.location.href = `./#demand=${beaCode}/US`; // Redirect with BEA code
                 }
               });
 

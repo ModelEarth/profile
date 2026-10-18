@@ -121,9 +121,9 @@ function applyCachedPreferences() {
   attachDropdownListeners();
 }
 
-// Legacy function for sector_profile.html compatibility
+// Legacy function for profile/footprint/ compatibility
 function initializeDropdowns() {
-  // Only populate dropdowns if they're empty (for sector_profile.html)
+  // Only populate dropdowns if they're empty (for profile/footprint/)
   var localeSelect = document.getElementById("locale-select");
   if (localeSelect && localeSelect.options.length === 0) {
     var locales = ["en-US", "fr-FR", "de-DE", "es-ES", "it-IT", "ja-JP", "ko-KR", "zh-CN"];
@@ -244,11 +244,11 @@ function getUrlHash() {
   })(window.location.hash.substr(1).split('&'));
 }
 
-// Initialize dropdowns when DOM is ready (for sector_profile.html)
+// Initialize dropdowns when DOM is ready (for profile/footprint/)
 function initDropdownsOnDOMReady() {
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function() {
-      // Check if dropdowns exist and are empty (sector_profile.html case)
+      // Check if dropdowns exist and are empty (profile/footprint/ case)
       const localeSelect = document.getElementById("locale-select");
       const numberFormatSelect = document.getElementById("number-format-select");
       

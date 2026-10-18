@@ -34,7 +34,7 @@ function documentReady(callback) {
   }
 }
 
-// Totals lines, table and row limit buttons from js/commodities-report.js, also used on sector_profile.html
+// Totals lines, table and row limit buttons from js/commodities-report.js, also used on profile/footprint/
 let commoditiesReport = null;
 async function main() {
   try {
@@ -102,34 +102,26 @@ function addPrintDownloadIcons(tableData) {
       tableData,
       options
     );
-    syncCvStylePrintDownloadIcons();
-  }
-}
-
-function syncCvStylePrintDownloadIcons() {
-  const topControls = document.getElementById('topControls');
-  if (!topControls) return;
-
-  const iconButtons = topControls.querySelectorAll('.print-download-container .print-download-icon');
-  if (iconButtons[0] && iconButtons[0].dataset.cvStyled !== 'true') {
-    iconButtons[0].innerHTML = '<span class="material-icons icon-print">print</span>';
-    iconButtons[0].dataset.cvStyled = 'true';
-  }
-  if (iconButtons[1] && iconButtons[1].dataset.cvStyled !== 'true') {
-    iconButtons[1].innerHTML = '<span class="material-icons icon-download">download</span>';
-    iconButtons[1].dataset.cvStyled = 'true';
   }
 }
 
 </script>
 
 <style>
+  /* State menu first, controls to its right; when narrow the controls wrap to the left under it */
+  #commoditiesTopBar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
   #topControls {
-    float: right;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: flex-start;
     gap: 10px;
   }
   #topControls > div {
@@ -173,9 +165,6 @@ function syncCvStylePrintDownloadIcons() {
     line-height: 1;
     text-align: center;
     transform: translate(-50%, -50%);
-  }
-  #topControls .print-download-icon .icon-print {
-    transform: translate(calc(-50% - 0.5px), calc(-50% - 0.5px));
   }
   #topControls .print-download-popup {
     top: calc(100% + 8px);
@@ -230,15 +219,13 @@ function syncCvStylePrintDownloadIcons() {
 <!-- <select id="number-format-select"></select> -->
 <div class="contentpadding content-color">
 
-  <div id="topControls" style="float:right">
-    <div style="margin-bottom: 10px; float:right"><select id="number-format-select"></select></div>
-    <div style="margin-bottom: 10px; float:right"><select id="locale-select"></select></div>
+  <div id="commoditiesTopBar">
+    <div><div id="relocatedStateMenu"></div></div>
+    <div id="topControls">
+      <div><select id="number-format-select"></select></div>
+      <div><select id="locale-select"></select></div>
+    </div>
   </div>
-
-  <div style="margin-bottom:10px">
-    <a id="footprintLink" href="../state/" >US State Reports</a>
-  </div>
-  <div id="relocatedStateMenu"></div>
 
   <div id="loadingMessage" class="loading" style="clear:both">Loading data...</div>
   <div id="table" style="clear:both"></div>

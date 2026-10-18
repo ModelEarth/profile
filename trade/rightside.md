@@ -1,6 +1,6 @@
 ﻿<b>Overview</b>  
 <a href="../../io/about/">State Models</a>  
-<a href="../../profile/footprint/">IO Javascript</a>  
+<a href="../../profile/">IO Javascript</a>  
 <a href="../../io/charts/">IO Charts</a>  
 
 <b>Profile Dev</b>  

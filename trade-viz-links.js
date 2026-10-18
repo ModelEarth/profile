@@ -21,12 +21,17 @@
         style.textContent = [
             ".trade-viz-links { display: flex; flex-wrap: wrap; gap: 8px; }",
             // Text colors are !important so the site's link colors (such as .content a:link in localsite base.css) don't turn the buttons blue
-            ".trade-viz-link { padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 12px; font-weight: 600;",
+            // line-height: .content in localsite base.css sets 1.5em (22.5px), which made the buttons taller on pages using it
+            ".trade-viz-link { padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 12px; font-weight: 600; line-height: 1.5;",
             "  color: #22314c !important; background: #fff; cursor: pointer; text-decoration: none !important;",
             "  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease; }",
             ".trade-viz-link:hover { background: #f1f5fb; border-color: #94a3b8; }",
             ".trade-viz-link:active { background: #e2e8f0; }",
-            ".trade-viz-link.is-current { background: #22314c; border-color: #22314c; color: #fff !important; cursor: default; }"
+            ".trade-viz-link.is-current { background: #22314c; border-color: #22314c; color: #fff !important; cursor: default; }",
+            ".dark .trade-viz-link { background: #333; border-color: #555; color: #ddd !important; }",
+            ".dark .trade-viz-link:hover { background: #444; border-color: #777; }",
+            ".dark .trade-viz-link:active { background: #222; }",
+            ".dark .trade-viz-link.is-current { background: #ddd; border-color: #ddd; color: #222 !important; }"
         ].join("\n");
         document.head.appendChild(style);
     }

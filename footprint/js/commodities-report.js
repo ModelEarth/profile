@@ -1,4 +1,4 @@
-// Commodities report shared by commodities.html and sector_profile.html: the commodity table, and below it
+// Commodities report shared by commodities.html and profile/footprint/: the commodity table, and below it
 // the State Total and Rest of US outputs (or US Total) with details, left of round buttons for how many
 // rows to show, ranked by Output.
 // Requires Tabulator, js/useeio.js, js/config.js (model, getModelState) and formatCell() from localsite.js.
@@ -156,7 +156,7 @@ const CommoditiesReport = (function() {
 
   // linkNames false shows names as text, for pages where clicking the row selects the commodity
   function tableColumns(locale, formatType, state, linkNames) {
-    //You can also pass #index=0 from commodities.html to sector_profile.html
+    //You can also pass #index=0 from commodities.html to profile/footprint/
     //But we are not passing index as it may change over time
     const columns = [
       {
@@ -169,7 +169,7 @@ const CommoditiesReport = (function() {
           // All of the hash's states, e.g. TX,GA, so the next page keeps them.
           const demandHash = `demand=${sector.code}/${sector.location}`;
           const stateParam = state ? `&state=${getHash().state}` : '';
-          return `<a href="sector_profile.html#${demandHash}${stateParam}">${sector.name}</a>`;
+          return `<a href="./#${demandHash}${stateParam}">${sector.name}</a>`;
         }
       },
       {
@@ -208,6 +208,9 @@ const CommoditiesReport = (function() {
       .dark .commodity-row-limits button.active { background: var(--accent, #3a8fd9); border-color: var(--accent, #3a8fd9); color: #fff; }
       .commodity-table-wrap { position: relative; }
       .commodity-table-wrap .tabulator-row { cursor: pointer; }
+      /* Row hover on the cells, since base.css gives cells their own background in dark mode. Not on the selected row, so its left bar stays visible. */
+      .commodity-table-wrap .tabulator-row:not(.commodity-selected):hover .tabulator-cell { background-color: #e3f0fb; }
+      .dark .commodity-table-wrap .tabulator-row:not(.commodity-selected):hover .tabulator-cell { background-color: #22384d; }
       .commodity-table-wrap .tabulator-row.commodity-selected { box-shadow: inset 4px 0 0 #0366d6; background: rgba(3, 102, 214, 0.08); }
       .dark .commodity-table-wrap .tabulator-row.commodity-selected { box-shadow: inset 4px 0 0 var(--accent, #3a8fd9); background: rgba(58, 143, 217, 0.18); }
       /* Triangle outside the table's left edge, pointing at the selected commodity */

@@ -9,8 +9,8 @@ We're using UN Comtrade [Exiobase](https://exiobase.eu) trade factors and US Bur
 Pitch in to help us refine and optimize our interactive reports:  
 
 - [Data Schema](../../exiobase/tradeflow/) 
-- [Country Trade Data](../footprint/)  
-- [US States - Summary Totals](../footprint/#state=all)  
+- [Country Trade Data](../)  
+- [US States - Summary Totals](../#usstates=all)  
 - [Trade Data Dashboard](https://model.earth/trade-data/)<!-- bea-dashboard/ -->  
 - [US State Trade Sankey](../charts/sankey/state.html)  
 - [US State Trade Map](map/state.html)  
@@ -44,7 +44,7 @@ trade_factor
 trade_factor_lg - For local processing (too large to send to github)
 
 **Redundant** (For reports but not needed in SQL)
-[trade_impact](../footprint/)  
+[trade_impact](../)  
 trade_resource
 trade_material  
 trade_employment

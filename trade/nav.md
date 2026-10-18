@@ -1,13 +1,14 @@
 <b>Overview</b>
-<a href="../footprint/#country=all">Countries</a>
-<a href="../footprint/#state=all">US States</a>
-<a href="../footprint/#country=all&state=all">Combo Report</a>
+<a href="../">Open Footprint</a>
+<a href="../#usstates=all">US States</a>
+<a href="../#countries=all">Countries</a>
+<a href="../#countries=all&usstates=all">Combo Report</a>
 
 <b>International</b>
 <a href="../../profile/trade/" id="profileTrade">Overview</a><span style="display:block"><a href="../../profile/prep/" id="profilePrep">Data Prep</a></span>
 
 <b>US States</b>
-<a href="../footprint/sector_profile.html">Sector Profiles</a>
+<a href="../footprint/">Sector Profiles</a>
 <a href="../footprint/sector_supply_impacts.html">Sector Supply Charts</a>
 <a href="../footprint/states.html">State Impact Totals</a>
 <a href="../footprint/commodities.html">Commodities</a>

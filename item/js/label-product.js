@@ -1948,7 +1948,7 @@ function supportingIndustriesHTML(result) {
     const topShare = totalInputs > 0 ? Math.round(100 * top.reduce((sum, row) => sum + row.total, 0) / totalInputs) : 0;
     const maxTotal = top.length ? top[0].total : 1;
     const pct = (part, whole) => (whole > 0 ? (100 * part / whole) : 0).toFixed(1);
-    const reportUrl = footprintUrl("sector_profile.html") +
+    const reportUrl = footprintUrl("") +
         `#demand=${encodeURIComponent(sectorCode)}/US-${state}&state=${state}`;
     // Star and hover box that mark the product's own manufacturing industry
     const ownStar = `<span class="si-own-star" role="img" aria-label="Product's manufacturing industry"
