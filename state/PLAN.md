@@ -63,8 +63,9 @@ These are handled in `applyIO()` in naics.js, without editing the built bundle:
 
 Hidden:
 - `#iogridHolder` (inflow-outflow grid)
-- `#impact` (heatmap mosaic)
 - `#indicators` dropdown
+
+Impact Levels (`#impact`, the heatmap mosaic) stays, with the state model's 16 indicators.
 
 The bubble chart already hides for states.
 

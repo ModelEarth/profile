@@ -1,7 +1,8 @@
 // Energy view for localsite/info: set=energy, from EPA eGRID 2024 electricity data.
 // With a state: the USEEIO state models have no energy indicators (ENRG, NNRG, RNRG), so this view replaces
-// the USEEIO charts (body.stateEnergyView hides them) with the state's summary cards, resource mix,
+// the inflow-outflow grid (body.stateEnergyView hides it) with the state's summary cards, resource mix,
 // CO2e emission rates and a Tabulator table of the eGRID subregions its power plants are in.
+// Impact Levels (the heatmap mosaic) stays, with the state model's 16 indicators.
 // Several states (state=GA,AL): the cards total the states, and the mix and rates show each state.
 // Without a state: the USEEIO national charts stay, and this view adds the US totals, each state's resource mix,
 // the subregion emission rates and a table of all states. Choosing a state opens its view.
@@ -205,7 +206,7 @@
       .sort((a, b) => (egridData.states[a].co2eRate || 0) - (egridData.states[b].co2eRate || 0));
     setText("stateEnergyMixTitle", "Resource Mix by State");
     setHtml("stateEnergyMix", mixLegend(us.mix, us.mix, "US")
-      + "<div class='energy-note' style='margin:10px 0 8px'>US shares above. States below run from the lowest CO<sub>2</sub>e rate to the highest. Choose a state to view it.</div>"
+      + "<div class='energy-note' style='margin:10px 0 8px'>States ranked from the lowest CO<sub>2</sub>e rate to the highest. Click a bar to view state.</div>"
       + "<div class='energy-mix-states'>" + mixBar("US", us.mix, "US") + "<div class='energy-mix-gap'></div>"
       + states.map(state => mixBar(state, egridData.states[state].mix, stateName(state), state)).join("") + "</div>");
   }
