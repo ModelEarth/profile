@@ -35,6 +35,9 @@
   #indicatorBarChart .tabulator-row.impact-selected { box-shadow: inset 4px 0 0 #0366d6; background: rgba(3, 102, 214, 0.08); }
   /* Triangle outside the table's left edge, pointing at the selected indicator, so the column text stays aligned */
   #indicatorBarChartWrap { position: relative; clear: both; }
+  /* Narrow table: the indicator name shows above its bar in the Impacts column (sortable by impact) */
+  #indicatorBarChart .indicator-name-narrow { overflow: hidden; text-overflow: ellipsis; }
+  #indicatorBarChart .indicator-bar-narrow { margin-top: 4px; }
   #impactPointer { display: none; position: absolute; left: -13px; width: 0; height: 0; transform: translateY(-50%); pointer-events: none;
     border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-left: 9px solid #0366d6; }
   .dark #impactPointer { border-left-color: var(--accent, #3a8fd9); }
@@ -43,7 +46,12 @@
   .dark #matrixTreemap { background: var(--bg-card); }
   #matrixTreemapTagline { font-size: 13px; color: #444; margin-top: 4px; }
   .dark #matrixTreemapTagline { color: var(--text-muted); }
-  #indicatorToolbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin: 4px 0 10px; clear: both; }
+  #indicatorToolbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin: 4px 0 10px; clear: both; container-type: inline-size; }
+  #impactSetHolder { margin-left: auto; }
+  /* Narrow: the impact set dropdown moves to its own line above the Suppliers / Industry / Buyers buttons, at the left */
+  @container (max-width: 700px) {
+    #impactSetHolder { order: -1; flex-basis: 100%; margin-left: 0; }
+  }
   #indicatorParts { margin-right: 5px; }
   /* Part colors, also used for the bar sections */
   #indicatorParts label[data-part-label="supplier"] { --part: #7cc3ee; --part-text: #1f2937; }
@@ -116,7 +124,7 @@
       <label data-part-label="buyers" title="A share of the buyers' own direct impacts, matching the share of their costs spent on this industry. Not part of the model's standard footprint. Click to show only Buyers; use the checkbox to add or remove it."><input type="checkbox" data-part="buyers">Buyers</label>
     </div>
     <div id="indicatorRegionNote"></div>
-    <select id="impact-set-select" style="margin-left:auto"></select>
+    <div id="impactSetHolder"><select id="impact-set-select"></select></div>
   </div>
   <div id="indicatorBarChartWrap">
     <span id="impactPointer" aria-hidden="true"></span>
@@ -1534,6 +1542,28 @@ function setupIndicatorParts() {
   });
 }
 
+// Indicator and Impacts column widths, the narrowest they get before the bar moves into the Indicator column
+const IMPACT_INDICATOR_WIDTH = 200;
+const IMPACT_BAR_WIDTH = 200;
+let impactTableNarrow = false;
+// True when the table can't fit Indicator, Impacts and the value columns (120px each) and Unit (100px)
+function isImpactTableNarrow() {
+  const wrap = document.getElementById('indicatorBarChartWrap');
+  const width = wrap ? wrap.clientWidth : 0;
+  if (!width) return impactTableNarrow; // Hidden: keep the current layout
+  const valueColumns = indicatorFlows.buyers ? 4 : 3; // Suppliers, Industry, Buyers, Total
+  return width < IMPACT_INDICATOR_WIDTH + IMPACT_BAR_WIDTH + valueColumns * 120 + 100;
+}
+// Rebuild the table when its width crosses the narrow layout's threshold
+function watchImpactTableWidth() {
+  const wrap = document.getElementById('indicatorBarChartWrap');
+  if (!wrap || wrap.dataset.widthWatch || typeof ResizeObserver === 'undefined') return;
+  wrap.dataset.widthWatch = '1';
+  new ResizeObserver(() => {
+    if (mainTable && isImpactTableNarrow() !== impactTableNarrow) displayTable();
+  }).observe(wrap);
+}
+
 function displayTable() {
   const formatType = getCurrentNumberFormat() || "simple";
   // Value column in the selected number format
@@ -1566,13 +1596,23 @@ function displayTable() {
     width: 120
   });
   
+  // When the table is too narrow for all its columns, the Indicator column is hidden and each indicator's
+  // name shows on the first line of the Impacts column, above its bar, so the table still sorts by impact.
+  // The Impacts column is then frozen at the left while the value columns scroll.
+  impactTableNarrow = isImpactTableNarrow();
   const columns = [
-    { title: "Indicator", field: "indicator", widthGrow: 2 },
+    ...(impactTableNarrow ? [] : [{ title: "Indicator", field: "indicator", widthGrow: 2, minWidth: IMPACT_INDICATOR_WIDTH }]),
     // Stacked bar of the checked parts (Supplier, Industry, Buyers) on one shared scale
-    { title: "Impacts", field: "partsBar", minWidth: 200, headerSortStartingDir: "desc",
+    { title: "Impacts", field: "partsBar", minWidth: impactTableNarrow ? IMPACT_INDICATOR_WIDTH : IMPACT_BAR_WIDTH,
+      ...(impactTableNarrow ? { widthGrow: 2, frozen: true } : {}), headerSortStartingDir: "desc",
       titleFormatter: () => '<span title="Per $1 of output as a share of each indicator\'s US total, so indicators with different units can be compared">Impacts</span>',
       sorter: (a, b, aRow, bRow) => indicatorPartsValue(aRow.getData()) - indicatorPartsValue(bRow.getData()),
-      formatter: cell => indicatorBar(cell.getRow().getData() || {})
+      formatter: cell => {
+        const data = cell.getRow().getData() || {};
+        return impactTableNarrow
+          ? `<div class="indicator-name-narrow">${data.indicator || ''}</div><div class="indicator-bar-narrow">${indicatorBar(data)}</div>`
+          : indicatorBar(data);
+      }
     },
     valueColumn("Suppliers", "supplierValue"),
     valueColumn("Industry", "directValue"),
@@ -1603,6 +1643,7 @@ function displayTable() {
   // Rows move when the table renders, sorts or resizes
   mainTable.on("renderComplete", positionImpactPointer);
   setupIndicatorParts();
+  watchImpactTableWidth();
 
   
 }

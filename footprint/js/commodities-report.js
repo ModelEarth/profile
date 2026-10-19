@@ -121,12 +121,13 @@ const CommoditiesReport = (function() {
   }
 
   // Value column in the selected number format, sorted by its raw value
-  function numberColumn(title, field, maxWidth, locale, formatType) {
+  function numberColumn(title, field, maxWidth, locale, formatType, minWidth) {
     return {
       title: title,
       field: formatType === "simple" ? field + "Easy" : field,
       hozAlign: "right",
       maxWidth: maxWidth,
+      ...(minWidth ? { minWidth: minWidth } : {}),
       formatter: function (cell) {
         var value = cell.getValue();
         if (formatType === "full") {
@@ -155,13 +156,18 @@ const CommoditiesReport = (function() {
   }
 
   // linkNames false shows names as text, for pages where clicking the row selects the commodity
-  function tableColumns(locale, formatType, state, linkNames) {
+  // narrow reduces the Jobs column so the Commodity column keeps more room
+  function tableColumns(locale, formatType, state, linkNames, narrow) {
     //You can also pass #index=0 from commodities.html to profile/footprint/
     //But we are not passing index as it may change over time
     const columns = [
       {
         title: "Commodity",
         field: "name",
+        // 4 shares of the width to each number column's 1, so Commodity takes the space the number columns
+        // leave at their maxWidth. With an equal share it was held at minWidth, leaving a gap at the right.
+        widthGrow: 4,
+        minWidth: 200,
         formatter: function(cell) {
           const sector = cell.getRow().getData();
           if (linkNames === false) return sector.name;
@@ -172,14 +178,16 @@ const CommoditiesReport = (function() {
           return `<a href="./#${demandHash}${stateParam}">${sector.name}</a>`;
         }
       },
+      /*
       {
         title: "Location",
         field: "location",
         hozAlign: "right",
         width: 100
       },
-      numberColumn("Output", "output", "115px", locale, formatType),
-      numberColumn("Jobs", "jobs", "100px", locale, formatType),
+      */
+      numberColumn("Output", "output", "115px", locale, formatType, 100),
+      numberColumn("Jobs", "jobs", narrow ? "70px" : "100px", locale, formatType),
       numberColumn("GHG", "ghg", "120px", locale, formatType)
     ];
     // Add CO2e column only when viewing US data (no state specified)
@@ -352,11 +360,24 @@ const CommoditiesReport = (function() {
       pointerEl.style.display = 'block';
     }
 
+    // The table is narrow under 600px wide. Keeps the current layout while hidden.
+    function isNarrow() {
+      const width = tableEl ? tableEl.clientWidth : 0;
+      return width ? width < 600 : !!report.narrow;
+    }
+    // Re-render when the table's width crosses the narrow threshold
+    if (tableEl && typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(() => {
+        if (report.tableBuilt && isNarrow() !== report.narrow) render();
+      }).observe(tableEl);
+    }
+
     function render() {
       // Wait for load() so an empty table is never rendered
       if (!report.rows.length) return;
       const state = getModelState();
-      const columns = tableColumns(getCurrentLocale(), getCurrentNumberFormat(), state, options.linkNames);
+      report.narrow = isNarrow();
+      const columns = tableColumns(getCurrentLocale(), getCurrentNumberFormat(), state, options.linkNames, report.narrow);
       const data = shownRows();
       renderFooter();
 
