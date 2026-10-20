@@ -6,6 +6,7 @@
 // Several states (state=GA,AL): the cards total the states, and the mix and rates show each state.
 // Without a state: the USEEIO national charts stay, and this view adds the US totals, each state's resource mix,
 // the subregion emission rates and a table of all states. Choosing a state opens its view.
+// A button after the Resource Mix by State heading switches its bars to the eGRID subregions and back.
 // Markup and CSS: #stateEnergy (after #industryHeader) in info/template-charts.html, shown by body.energyView.
 // When the page has #heroBottomEnergy (info/index.html), the title, intro and summary cards move to the bottom of the hero.
 // Data: egrid-data.js, loaded the first time the view is shown. Built by egrid_to_js.py from the eGRID workbooks in
@@ -23,6 +24,9 @@
   let renderedView = ""; // State codes, e.g. AL,GA, or US for all states
   let renderedStates = []; // The states shown that have eGRID data
   let energyTable = null;
+  let mixBySubregion = false; // All states: the resource mix bars show the eGRID subregions instead of the states
+  let mixAlphabetical = false; // All states: the bars by name instead of by CO2e rate. Clicking the US bar switches.
+  let stateNamesPending = false;
 
   // The states in the hash, e.g. ["AL", "GA"] for state=AL,GA
   function energyStates(hash) {
@@ -53,9 +57,30 @@
     return egridReady;
   }
 
+  // State names come from the #state_select options in map/filter.html, which localsite.js loads asynchronously
   function stateName(state) {
     const option = document.querySelector("#state_select option[value='" + state + "']");
     return option && option.text ? option.text : state;
+  }
+  // Bars drawn before #state_select loaded show state codes (e.g. GA). Replaces each code with the state's name.
+  function fillStateNames() {
+    if (stateNamesPending || document.querySelector("#state_select option")) return;
+    stateNamesPending = true;
+    waitForElm("#state_select option").then(function() {
+      stateNamesPending = false;
+      document.querySelectorAll("#stateEnergyMix .energy-mix-row[data-name-state]").forEach(function(row) {
+        const code = row.dataset.nameState;
+        const name = stateName(code);
+        row.querySelector(".energy-mix-label").textContent = name;
+        if (row.title) row.title = "View " + name;
+        // Bar and segment titles start with the code, e.g. "GA Coal: 15.2%"
+        const bar = row.querySelector(".energy-mix-bar");
+        bar.setAttribute("aria-label", name + " resource mix");
+        bar.querySelectorAll("span[title]").forEach(function(segment) {
+          if (segment.title.indexOf(code + " ") === 0) segment.title = name + segment.title.slice(code.length);
+        });
+      });
+    });
   }
   // e.g. "Georgia", "Georgia and Alabama" or "Georgia, Alabama and Florida"
   function stateNames(states) {
@@ -156,8 +181,10 @@
   }
 
   // Stacked bar of generation by fuel. Negative net generation (e.g. pumped storage) is left out of the bar.
-  // A compact row (all states) is clickable and opens that state's view.
-  function mixBar(label, mix, title, state) {
+  // A compact row (all states) is clickable: opts.state opens that state's view, and opts.sortTitle (the US row) reorders the bars.
+  // opts.nameState marks a state's row, so fillStateNames() can replace its code with the name.
+  function mixBar(label, mix, title, opts) {
+    opts = opts || {};
     const total = mixTotal(mix);
     const segments = egridData.fuels.map(function(fuel, i) {
       const share = Math.max(mix[i], 0) / total;
@@ -165,11 +192,17 @@
       return "<span style='width:" + (share * 100) + "%;background:" + fuelColors[fuel.id] + "' title='"
         + escapeHtml(title + " " + fuel.label + ": " + formatPct(share, 1) + " (" + formatEnergy(mix[i]) + ")") + "'></span>";
     }).join("");
-    const rowAttrs = state
-      ? " energy-mix-compact' data-state='" + state + "' role='button' tabindex='0' title='" + escapeHtml("View " + title) + "'"
-      : "'";
+    const rowAttrs = (opts.state
+      ? " energy-mix-compact' data-state='" + opts.state + "' role='button' tabindex='0' title='" + escapeHtml("View " + title) + "'"
+      : (opts.sortTitle ? " energy-mix-compact energy-mix-sort' role='button' tabindex='0' title='" + escapeHtml(opts.sortTitle) + "'" : "'"))
+      + (opts.nameState ? " data-name-state='" + opts.nameState + "'" : "");
     return "<div class='energy-mix-row" + rowAttrs + "><div class='energy-mix-label'>" + escapeHtml(label) + "</div>"
       + "<div class='energy-mix-bar' role='img' aria-label='" + escapeHtml(title) + " resource mix'>" + segments + "</div></div>";
+  }
+  // A state's bar, labeled with its name. Clickable opens the state's view.
+  function stateMixBar(state, mix, clickable) {
+    const name = stateName(state);
+    return mixBar(name, mix, name, {state: clickable ? state : null, nameState: state});
   }
 
   // Legend with each fuel's share in the first mix. Fuels missing from both mixes are left out.
@@ -187,28 +220,71 @@
   // One state compared with the US, or a bar per state (choose one to view it alone) with the states' combined shares
   function renderStateMix(states, st, us) {
     setText("stateEnergyMixTitle", "Resource Mix");
+    showMixToggle(false);
     if (states.length === 1) {
-      setHtml("stateEnergyMix", mixBar(states[0], st.mix, stateName(states[0])) + mixBar("US", us.mix, "US")
+      setHtml("stateEnergyMix", "<div class='energy-mix-names'>" + stateMixBar(states[0], st.mix, false) + mixBar("US", us.mix, "US") + "</div>"
         + mixLegend(st.mix, us.mix, "US"));
       return;
     }
     // Each state, then after a space the states combined and the US
     setHtml("stateEnergyMix", mixLegend(st.mix, us.mix, "US")
       + "<div class='energy-note' style='margin:10px 0 8px'>Shares above are for the " + states.length + " states combined. Choose a state to view it alone.</div>"
-      + "<div class='energy-mix-states'>" + states.map(state => mixBar(state, egridData.states[state].mix, stateName(state), state)).join("")
+      + "<div class='energy-mix-states energy-mix-names'>" + states.map(state => stateMixBar(state, egridData.states[state].mix, true)).join("")
       + "<div class='energy-mix-gap'></div>" + mixBar("Total", st.mix, states.length + " states combined")
       + mixBar("US", us.mix, "US") + "</div>");
   }
 
-  // The US, then each state from the lowest CO2e rate to the highest
+  // The #stateEnergyMixToggle button, shown with all states. Its label names the view it switches to.
+  function showMixToggle(show) {
+    const toggle = document.getElementById("stateEnergyMixToggle");
+    if (!toggle) return;
+    toggle.style.display = show ? "" : "none";
+    toggle.textContent = mixBySubregion ? "States" : "eGRID Subregions";
+    toggle.setAttribute("aria-pressed", mixBySubregion ? "true" : "false");
+  }
+
+  // The US bar, which switches the order of the bars below it
+  function usSortBar(us) {
+    return mixBar("US", us.mix, "US", {sortTitle: mixAlphabetical ? "Rank by CO2e rate" : "Sort alphabetically"});
+  }
+  // e.g. "States ranked from the lowest CO2e rate to the highest. Click US to sort alphabetically."
+  function mixOrderNote(items) {
+    return mixAlphabetical
+      ? items + " in alphabetical order. Click US to rank by CO<sub>2</sub>e rate."
+      : items + " ranked from the lowest CO<sub>2</sub>e rate to the highest. Click US to sort alphabetically.";
+  }
+
+  // The US, then each state (or eGRID subregion) from the lowest CO2e rate to the highest, or by name
   function renderNationalMix(us) {
-    const states = Object.keys(egridData.states)
-      .sort((a, b) => (egridData.states[a].co2eRate || 0) - (egridData.states[b].co2eRate || 0));
+    showMixToggle(true);
+    if (mixBySubregion) {
+      renderSubregionMix(us);
+      return;
+    }
+    const states = Object.keys(egridData.states).sort(mixAlphabetical
+      ? (a, b) => stateName(a).localeCompare(stateName(b))
+      : (a, b) => (egridData.states[a].co2eRate || 0) - (egridData.states[b].co2eRate || 0));
     setText("stateEnergyMixTitle", "Resource Mix by State");
     setHtml("stateEnergyMix", mixLegend(us.mix, us.mix, "US")
-      + "<div class='energy-note' style='margin:10px 0 8px'>States ranked from the lowest CO<sub>2</sub>e rate to the highest. Click a bar to view state.</div>"
-      + "<div class='energy-mix-states'>" + mixBar("US", us.mix, "US") + "<div class='energy-mix-gap'></div>"
-      + states.map(state => mixBar(state, egridData.states[state].mix, stateName(state), state)).join("") + "</div>");
+      + "<div class='energy-note' style='margin:10px 0 8px'>" + mixOrderNote("States") + " Click a bar to view state.</div>"
+      + "<div class='energy-mix-states energy-mix-names'>" + usSortBar(us) + "<div class='energy-mix-gap'></div>"
+      + states.map(state => stateMixBar(state, egridData.states[state].mix, true)).join("") + "</div>");
+  }
+
+  // The US, then each eGRID subregion from the lowest CO2e rate to the highest, or by name
+  function renderSubregionMix(us) {
+    const subregions = egridData.subregions.slice().sort(mixAlphabetical
+      ? (a, b) => a.name.localeCompare(b.name)
+      : (a, b) => (a.co2eRate2024 || 0) - (b.co2eRate2024 || 0));
+    setText("stateEnergyMixTitle", "Resource Mix by eGRID Subregion");
+    setHtml("stateEnergyMix", mixLegend(us.mix, us.mix, "US")
+      + "<div class='energy-note' style='margin:10px 0 8px'>" + mixOrderNote("eGRID subregions") + " Subregions are grid areas, which can cross state lines.</div>"
+      + "<div class='energy-mix-states energy-mix-names'>" + usSortBar(us) + "<div class='energy-mix-gap'></div>"
+      + subregions.map(s => mixBar(subregionLabel(s.name), s.mix, s.id + " " + s.name)).join("") + "</div>");
+  }
+  // The subregion name, up to 50 characters
+  function subregionLabel(name) {
+    return name.length > 50 ? name.slice(0, 49) + "…" : name;
   }
 
   function rateRows(rows, note) {
@@ -412,6 +488,7 @@
         placeHeroEnergy();
         if (view === "US") renderNationalEnergy();
         else renderStateEnergy(view);
+        fillStateNames();
       });
     }).catch(function(error) {
       console.warn("State energy view: " + error.message);
@@ -423,6 +500,15 @@
   });
   document.addEventListener("click", function(e) {
     if (!e.target.closest) return;
+    if (e.target.closest("#stateEnergyMixToggle")) {
+      mixBySubregion = !mixBySubregion;
+      if (renderedView === "US") renderNationalMix(egridData.us);
+      return;
+    }
+    if (e.target.closest(".energy-mix-sort")) {
+      toggleMixOrder();
+      return;
+    }
     // The national model has the energy use indicators (ENRG, NNRG, RNRG)
     if (e.target.closest(".energyNationalLink")) {
       e.preventDefault();
@@ -433,12 +519,24 @@
     if (stateRow) goHash({'state': stateRow.dataset.state});
   });
   document.addEventListener("keydown", function(e) {
-    const stateRow = e.target.closest ? e.target.closest(".energy-mix-compact[data-state]") : null;
-    if (stateRow && (e.key === "Enter" || e.key === " ")) {
+    if (!e.target.closest || (e.key !== "Enter" && e.key !== " ")) return;
+    const stateRow = e.target.closest(".energy-mix-compact[data-state]");
+    if (stateRow) {
       e.preventDefault();
       goHash({'state': stateRow.dataset.state});
+    } else if (e.target.closest(".energy-mix-sort")) {
+      e.preventDefault();
+      toggleMixOrder();
     }
   });
+  // Alphabetical, or by CO2e rate. Keeps keyboard focus on the redrawn US bar.
+  function toggleMixOrder() {
+    mixAlphabetical = !mixAlphabetical;
+    if (renderedView !== "US") return;
+    renderNationalMix(egridData.us);
+    const sortRow = document.querySelector("#stateEnergyMix .energy-mix-sort");
+    if (sortRow && document.activeElement === document.body) sortRow.focus();
+  }
   document.addEventListener("hashChangeEvent", updateStateEnergyView);
   updateStateEnergyView();
 
