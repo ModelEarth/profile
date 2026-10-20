@@ -334,16 +334,19 @@
   }
 
   // A new Tabulator in #tabulator-energytable. Narrow screens hide the higher "responsive" numbers first.
-  function showEnergyTable(options) {
+  // pageSize pages the rows with the Page box and row count links from addTabulatorPaging() in localsite.js.
+  function showEnergyTable(options, pageSize) {
     loadTabulator().then(function() {
       if (energyTable) {
         energyTable.destroy();
         energyTable = null;
       }
+      const paging = pageSize && typeof addTabulatorPaging === "function";
       energyTable = new Tabulator("#tabulator-energytable", Object.assign({
         layout: "fitColumns",
         responsiveLayout: "hide"
-      }, options));
+      }, paging ? tabulatorPagingOptions(pageSize) : {}, options));
+      if (paging) addTabulatorPaging(energyTable);
       if (options.onRowClick) {
         energyTable.on("rowClick", (e, row) => options.onRowClick(row.getData()));
       }
@@ -406,7 +409,7 @@
         {title: "Capacity GW", field: "capacity", hozAlign: "right", sorter: "number", minWidth: 95, responsive: 3,
           formatter: cell => formatNumber(cell.getValue() / 1000, 1)}
       ]
-    });
+    }, 5); // 5 rows, with row count links for more
   }
 
   function renderSource() {
