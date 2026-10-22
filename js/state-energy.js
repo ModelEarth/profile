@@ -5,7 +5,8 @@
 // Impact Levels (the heatmap mosaic) stays, with the state model's 16 indicators.
 // Several states (state=GA,AL): the cards total the states, and the mix and rates show each state.
 // Without a state: the USEEIO national charts stay, and this view adds the US totals, each state's resource mix,
-// the subregion emission rates and a table of all states. Choosing a state opens its view.
+// the subregion emission rates and a table of all states, and colors the US states map in #geomap by CO2e Mt.
+// Choosing a state opens its view.
 // A button after the Resource Mix by State heading switches its bars to the eGRID subregions and back.
 // Markup and CSS: #stateEnergy (after #industryHeader) in info/template-charts.html, shown by body.energyView.
 // When the page has #heroBottomEnergy (info/index.html), the title, intro and summary cards move to the bottom of the hero.
@@ -27,6 +28,7 @@
   let mixBySubregion = false; // All states: the resource mix bars show the eGRID subregions instead of the states
   let mixAlphabetical = false; // All states: the bars by name instead of by CO2e rate. Clicking the US bar switches.
   let stateNamesPending = false;
+  let mapColored = false; // The US states map in #geomap is colored by CO2e Mt
 
   // The states in the hash, e.g. ["AL", "GA"] for state=AL,GA
   function energyStates(hash) {
@@ -410,6 +412,27 @@
           formatter: cell => formatNumber(cell.getValue() / 1000, 1)}
       ]
     }, 5); // 5 rows, with row count links for more
+    colorStateMap();
+  }
+
+  // Colors the US states map (#geomap with geoview=country) by the table's CO2e Mt column.
+  // setGeomapChoropleth() resides in localsite/js/navigation.js and waits for the state shapes.
+  function colorStateMap() {
+    if (typeof setGeomapChoropleth !== "function") return;
+    const values = {};
+    Object.keys(egridData.states).forEach(function(state) {
+      if (typeof egridData.states[state].co2e === "number") values[state] = egridData.states[state].co2e / 1e6;
+    });
+    const source = " (EPA eGRID " + egridData.year + ")";
+    // The map's dropdown divides by the state table's Population and SqMiles
+    setGeomapChoropleth("geomap", values, "CO<sub>2</sub>e Mt",
+      "Million metric tons of CO<sub>2</sub> equivalent emitted by power plants" + source, {
+        percapita: {title: "CO<sub>2</sub>e tons per person", scale: 1e6,
+          description: "Metric tons of CO<sub>2</sub> equivalent emitted by power plants per resident" + source},
+        perarea: {title: "CO<sub>2</sub>e Mt per 1000 sq mi", scale: 1000,
+          description: "Million metric tons of CO<sub>2</sub> equivalent emitted by power plants per 1000 square miles" + source}
+      });
+    mapColored = true;
   }
 
   function renderSource() {
@@ -483,6 +506,12 @@
     document.body.classList.toggle("energyView", active);
     // State models have no energy indicators, so a state's view replaces the USEEIO charts
     document.body.classList.toggle("stateEnergyView", active && view !== "US");
+    if (mapColored && (!active || view !== "US")) {
+      setGeomapChoropleth("geomap", null);
+      mapColored = false;
+    } else if (!mapColored && active && view === "US" && renderedView === "US") {
+      colorStateMap(); // Back to the energy view, which is still rendered
+    }
     if (!active || view === renderedView) return;
     loadEgridData().then(function() {
       onElmReady("#stateEnergy", function() {
