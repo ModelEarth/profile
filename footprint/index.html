@@ -16,10 +16,15 @@
   <script src="js/useeio.js"></script>
   <!-- Buttons linking the trade visualization pages, also on trade/map/state.html -->
   <script src="../trade-viz-links.js"></script>
+  <!-- Top 10 Industries Supplying Production, shared with the product label (profile/item) -->
+  <link rel="stylesheet" href="../item/css/supporting-industries.css">
 <style>
   /* With space-between, the dropdowns wrapped onto their own line sit at its left */
   #profileTopBar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
   #profileTopSelects { display: flex; flex-wrap: wrap; gap: 7px; }
+  #supportingIndustries { max-width: 640px; margin: 8px 0 16px; }
+  #supportingIndustries .section-header h4 { margin: 0; font-size: 16px; }
+  #supportingIndustriesHeading { margin: 16px 0 0; font-size: 18px; font-weight: 600; }
   #matrixTreemapTitle { font-size: 18px; font-weight: 600; margin-top: 16px; }
   /* 4px more than Tabulator's 4px padding to the left of the first column (as in localsite/css/base-tabulator.css, which this page doesn't load) */
   .tabulator-row .tabulator-cell:first-child,
@@ -104,6 +109,9 @@
 
   <!-- Commodities report from js/commodities-report.js, also on commodities.html -->
   <div id="commodityTable"></div>
+  <!-- The report's .commodity-report-footer goes between the table and these -->
+  <h3 id="supportingIndustriesHeading" style="display:none"></h3>
+  <div id="supportingIndustries"></div>
   
   <p id="info">Loading ...</p>
   <!-- Shown when no commodity is selected. The message inside is for localhost only. -->
@@ -169,6 +177,7 @@
 
 <script src="js/config.js"></script>
 <script src="js/commodities-report.js"></script>
+<script src="../item/js/supporting-industries.js"></script>
 <script src="/localsite/js/impact-sets.js"></script>
 <script>
 loadMarkdown("sector_profile_info.md", "infoDiv", "_parent");
@@ -270,10 +279,51 @@ function loadCommoditiesReport() {
   commoditiesReport.load(); // Loads alongside the sector profile; reuses rows until the model changes
 }
 
+// Top 10 industries supplying the selected commodity in a state model, below the commodities
+// report, from ../item/js/supporting-industries.js (also on the product label). The heading
+// above it names the state and commodity, e.g. "Georgia Textiles...". Both are hidden for the
+// national model and when no commodity is selected.
+let supportingIndustriesPanel = null;
+let supportingIndustriesKey = null; // The newest request, so an older one still loading is dropped
+async function showSupportingIndustries(sector) {
+  const state = getModelState();
+  const heading = document.getElementById('supportingIndustriesHeading');
+  const hide = () => {
+    supportingIndustriesKey = null;
+    heading.style.display = 'none';
+    if (supportingIndustriesPanel) supportingIndustriesPanel.hide();
+  };
+  if (!sector || !state || sector.location !== `US-${state}` || !USEEIO_STATE_MODELS.has(state)) {
+    hide();
+    return;
+  }
+  const key = `${sector.code}/${state}`;
+  if (supportingIndustriesKey === key) return;
+  supportingIndustriesKey = key;
+  if (!supportingIndustriesPanel) {
+    supportingIndustriesPanel = createSupportingIndustriesPanel({
+      element: document.getElementById('supportingIndustries'),
+      ownLabel: 'Selected commodity',
+      footprintLink: false // Already on the footprint report
+    });
+  }
+  // The Exiobase industries for the UN option, none when they can't load (EPA still shows)
+  const industries = await exiobaseIndustriesForSummary(sector.code).catch(error => {
+    console.warn('Top industries: no Exiobase industries for ' + sector.code, error);
+    return [];
+  });
+  if (supportingIndustriesKey !== key) return;
+  heading.textContent = `${getState(state) || state} ${sector.name}`;
+  heading.style.display = '';
+  supportingIndustriesPanel.setSector(sector.code, industries);
+  supportingIndustriesPanel.show(state, key, hide); // A state model that fails to load hides both
+}
+
 // With no commodity selected, hide the sector's impacts chart, treemap and data sources
 function showAllIndustries(show) {
   document.getElementById('allIndustriesMessage').style.display = show ? '' : 'none';
   if (!show) return;
+  showSupportingIndustries(null);
   document.getElementById('info').textContent = 'Click a commodity above to view its environmental profile.';
   ['indicatorToolbar', 'matrixSection', 'dataSourcesSection'].forEach(id => { document.getElementById(id).style.display = 'none'; });
   if (mainTable) { mainTable.destroy(); mainTable = null; }
@@ -395,8 +445,10 @@ async function main() {
       info.textContent = `No valid sector specified in the URL in ${getModelState()} model.`;
     }
     document.getElementById('indicatorBarChart').innerHTML = "";
+    showSupportingIndustries(null);
     return;
   }
+  showSupportingIndustries(sector);
 
   const demandId = await model.findDemand({
     system: "Complete",
