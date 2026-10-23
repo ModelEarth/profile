@@ -830,12 +830,6 @@ function fmtIndicator(val) {
     return scaled.toFixed(2) + "\u00A0" + metric.unit;
 }
 
-function indicatorSourceKey() {
-    const metricKey = TradeShared.getState().metric;
-    const metric = TradeShared.METRICS[metricKey];
-    return (metric && metric.sourceKeys && metric.sourceKeys[0]) || "CO2_total";
-}
-
 function indicatorLabel() {
     const state = TradeShared.getState();
     const metricKey = state.metric;
@@ -1022,8 +1016,8 @@ const VALID_FLOW_DIRS = new Set(["imports", "exports", "balance"]);
 const VALID_INDUSTRY_MODES = new Set(["all", "industry"]);
 const VALID_INDUSTRY_FLOW_DIRS = new Set(["both", "imports", "exports"]);
 const FILTER_STORAGE_KEY = "trade-map-state";
-const MAP_FACTOR_TO_METRIC = { co2: "CO2_total", water: "Water_total", emp: "Employment_total", amt: "amount" };
-const MAP_METRIC_TO_FACTOR = { CO2_total: "co2", Water_total: "water", Employment_total: "emp", amount: "amt" };
+const MAP_FACTOR_TO_METRIC = { co2: "CO2_total", water: "Water_total", emp: "Employment_total", land: "Land_total", material: "Material_total", amt: "amount" };
+const MAP_METRIC_TO_FACTOR = { CO2_total: "co2", Water_total: "water", Employment_total: "emp", Land_total: "land", Material_total: "material", amount: "amt" };
 const FILTER_DEFAULTS = {
     country: "US",
     type: "imports",
@@ -1396,12 +1390,7 @@ function syncIndustryFlowDirToHash(flowDir) {
 }
 
 function sankeyFactorForMetric(metricKey) {
-    return ({
-        CO2_total: "co2",
-        Water_total: "water",
-        Employment_total: "emp",
-        amount: "amt",
-    })[metricKey] || metricKey;
+    return MAP_METRIC_TO_FACTOR[metricKey] || metricKey;
 }
 
 function getSankeySelectionForTrade(trade) {
@@ -1879,7 +1868,7 @@ function applySelections(countryCode, flowDir) {
 
 function collectDirectionalSummaries(data, focusCountry, flowDir, options) {
     const settings = Object.assign({ industryCode: ALL_INDUSTRY_VALUE }, options);
-    const srcKey = indicatorSourceKey();
+    const metricKey = TradeShared.getState().metric || "amount";
     const partnerKey = flowDir === "imports" ? "region1" : "region2";
     const typeKey = "industry1";
     const flowMap = new Map();
@@ -1888,7 +1877,7 @@ function collectDirectionalSummaries(data, focusCountry, flowDir, options) {
         const partner = normalizeCode(row[partnerKey]);
         if (!partner || partner === focusCountry || !COORDS[partner]) continue;
 
-        const metricValue = parseFloat(row[srcKey]) || 0;
+        const metricValue = TradeShared.metricValue(row, metricKey);
         const amountValue = parseFloat(row.amount) || 0;
         if (metricValue <= 0 && amountValue <= 0) continue;
 
@@ -2780,16 +2769,12 @@ const SANKEY_REPO_BRANCH = "main";
 const SANKEY_SUPPORTED_FLOWS = ["domestic", "imports", "exports"];
 const SANKEY_PATH_PATTERN = /^year\/([^/]+)\/([^/]+)\/(domestic|imports|exports)\/trade_impact\.csv$/;
 
-const SANKEY_METRICS = {
-    amount:           { label: "Amount Spent",       unit: "M EUR",      scale: 1,    sourceKeys: ["amount"],                                       scoreDirection: "higher" },
-    CO2_total:        { label: "CO₂ Emissions", unit: "Gt CO₂",scale: 1e12, sourceKeys: ["CO2_total"],                                   scoreDirection: "lower"  },
-    Water_total:      { label: "Water Use",          unit: "Gm³",   scale: 1e9,  sourceKeys: ["Water_total"],                                  scoreDirection: "lower"  },
-    Employment_total: { label: "Employment",         unit: "M jobs",     scale: 1e6,  sourceKeys: ["Employment_total","Employment_people_total"],   scoreDirection: "higher" }
-};
+// The shared factor dropdown's metrics (localsite/js/trade.js)
+const SANKEY_METRICS = TradeShared.METRICS;
 
 const SANKEY_INDUSTRY_LABEL_MODES = { short: true, title: true, verbose: true };
-const SANKEY_FACTOR_TO_METRIC = { co2:"CO2_total", water:"Water_total", emp:"Employment_total", amt:"amount" };
-const SANKEY_METRIC_TO_FACTOR = { CO2_total:"co2", Water_total:"water", Employment_total:"emp", amount:"amt" };
+const SANKEY_FACTOR_TO_METRIC = MAP_FACTOR_TO_METRIC;
+const SANKEY_METRIC_TO_FACTOR = MAP_METRIC_TO_FACTOR;
 
 const SANKEY_SECTOR_NAMES = {
     AGRIC:"Agriculture",AGRI:"Agriculture",FORE:"Forestry",FISH:"Fishing",COAL:"Coal Mining",
@@ -3011,10 +2996,7 @@ function skFmtCompact(v,key) {
     return sc.toLocaleString(undefined,{notation:"compact",maximumFractionDigits:1})+" "+skMetricUnit(key);
 }
 function skGetMetricValue(row,key) {
-    const m=SANKEY_METRICS[key]||{};
-    const keys=Array.isArray(m.sourceKeys)&&m.sourceKeys.length?m.sourceKeys:[key];
-    for(const k of keys){const v=skNum(row[k]);if(v)return v;}
-    return 0;
+    return TradeShared.metricValue(row,key);
 }
 function skEdgeTooltip(link,metricKey) {
     const k=SANKEY_METRICS[metricKey]?metricKey:"amount";

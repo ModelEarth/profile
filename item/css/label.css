@@ -3721,6 +3721,129 @@ input[type=number]::-webkit-outer-spin-button {
 .dark .supporting-industries.supporting-industries-inline {
   background: #0f172a;
 }
+/* EPA / UN data source toggle and the factor dropdown above the ranking */
+.si-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 8px 0 4px;
+}
+.si-source {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+.si-source-btn {
+  padding: 3px 12px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #475569;
+  font-size: 0.8em;
+  font-weight: 600;
+  cursor: pointer;
+}
+.si-source-btn[aria-pressed="true"] {
+  background: #3b82f6;
+  color: white;
+}
+.si-source-btn:not([aria-pressed="true"]):not(:disabled):hover {
+  background: #cbd5e1;
+}
+.si-source-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.dark .si-source {
+  background: #334155;
+}
+.dark .si-source-btn {
+  color: #cbd5e1;
+}
+.dark .si-source-btn:not([aria-pressed="true"]):not(:disabled):hover {
+  background: #475569;
+}
+/* Factor dropdown, matching the trade map's #factor control */
+.si-factor {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  font-size: 0.85em;
+  color: #334155;
+}
+.si-factor-select {
+  padding: 0.25em 0.5em;
+  font-size: 1em;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: white;
+  color: inherit;
+  max-width: 100%;
+}
+.si-factor-note {
+  margin-bottom: 8px;
+}
+.dark .si-factor {
+  color: #e2e8f0;
+}
+.dark .si-factor-select {
+  background: #1e293b;
+  border-color: #475569;
+}
+/* State electricity grid (eGRID) below the Energy Use ranking, colored like #stateEnergyMix */
+.si-grid {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
+}
+.si-grid-title {
+  font-size: 0.85em;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 6px;
+}
+.si-grid-row {
+  display: grid;
+  grid-template-columns: minmax(0, 7em) 1fr;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 0.8em;
+  color: #475569;
+}
+.si-grid-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.si-grid-bar {
+  display: flex;
+  height: 12px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #e2e8f0;
+}
+.si-grid-bar span {
+  height: 100%;
+}
+.si-grid .supporting-industries-link {
+  display: inline-block;
+  margin-top: 6px;
+}
+.dark .si-grid {
+  border-top-color: #334155;
+}
+.dark .si-grid-title {
+  color: #e2e8f0;
+}
+.dark .si-grid-row {
+  color: #cbd5e1;
+}
+.dark .si-grid-bar {
+  background: #334155;
+}
 .supporting-industries-state + .supporting-industries-state {
   margin-top: 12px;
   padding-top: 12px;

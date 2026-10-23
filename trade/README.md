@@ -41,7 +41,7 @@ trade (trade_id, year, region1, region2, industry1, industry2, amount)
 trade_factor  
 
 **Supporting local file**
-trade_factor_lg - For local processing (too large to send to github)
+trade_factor-max - For local processing (too large to send to github)
 
 **Redundant** (For reports but not needed in SQL)
 [trade_impact](../)  
