@@ -81,12 +81,13 @@ const EXIOBASE_INDUSTRIES_BY_NAICS = {
 // The Top 10 panel: a heading, the EPA / UN toggle, the factor dropdown, the ranking and a note.
 // options: element (a div to fill, otherwise a new one), manufacturer (on a product label: the
 // note then says the ranking is the broader industry's, not that manufacturer's suppliers),
-// ownLabel (the star's label for the sector's own industry) and footprintLink (false on the
-// footprint page itself). Returns the element, setSector(sectorCode, exiobaseIndustries),
+// ownLabel (the star's label for the sector's own industry), ownRankBox (false to leave out the
+// box below the list giving the own industry's rank when it's outside the top rows) and
+// footprintLink (false on the footprint page itself). Returns the element, setSector(sectorCode, exiobaseIndustries),
 // show(state, key, onUnavailable), hide() and shownKey(). show() ranks the sector in that
 // state, and calls onUnavailable when the state model fails to load (the panel then hides).
 function createSupportingIndustriesPanel(options) {
-    const opts = Object.assign({ ownLabel: "Product's manufacturing industry", footprintLink: true }, options);
+    const opts = Object.assign({ ownLabel: "Product's manufacturing industry", ownRankBox: true, footprintLink: true }, options);
     const manufacturer = opts.manufacturer;
     let sectorCode = null;
     let exiobaseIndustries = [];
@@ -718,9 +719,9 @@ function supportingIndustriesGridHTML(grid, state, stateName) {
         </div>`;
 }
 
-// options: ownLabel, the star's label for the sector's own industry, and footprintLink
+// options: ownLabel, the star's label for the sector's own industry, ownRankBox and footprintLink
 function supportingIndustriesHTML(result, options) {
-    const { ownLabel, footprintLink } = options;
+    const { ownLabel, ownRankBox, footprintLink } = options;
     const { source, state, sectorCode, sectorName, output, factorKey, totalInputs, totalSpent, top, ranked, ownRank, ownIndustry, ownCodes, grid } = result;
     const isUN = source === "un";
     const factor = supportingIndustriesFactor(factorKey, source);
@@ -790,7 +791,7 @@ function supportingIndustriesHTML(result, options) {
                 </li>
             `).join('')}
         </ol>
-        ${ownIndustry ? `
+        ${ownIndustry && ownRankBox ? `
             <div class="si-own-industry si-own-row" tabindex="0">
                 ${ownTip}
                 <div class="si-own-label">${ownRank > 0
