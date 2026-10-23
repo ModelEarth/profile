@@ -40,7 +40,7 @@
     repoBase: repoBase
   };
   window.TRADE_GITHUB_FALLBACK = window.TRADE_GITHUB_FALLBACK || {
-    owner: inferredPagesOwner || "savar25",
+    owner: inferredPagesOwner || "ModelEarth",
     name: inferredPagesRepo || "trade-data",
     branch: "main"
   };
@@ -57,7 +57,7 @@ if (typeof window.local_app === "undefined") {
   document.write('<script type="text/javascript" src="' + window.TRADE_LOCALSITE_CDN + '/js/localsite.js?showheader=true&showsearch=true&showfilters=true"><\/script>');
 }
 </script>
-<script src="../../state-trade-data.js"></script>
+<script src="../../js/state-flows.js"></script>
 <script src="../../trade-viz-links.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
 <style>
@@ -347,7 +347,7 @@ if (typeof window.local_app === "undefined") {
       <div>
         <h2>US State Trade Flow Sankey</h2>
         <p>
-          Domestic inter-state trade flows for the United States, using the current 2019 state-level trade, impact, code, and specialization CSVs.
+          Purchases between US states in 2019, from Exiobase's US trade split among states with BEA GDP by state.
           View the <a href="index.html">international Sankey</a>.
         </p>
       </div>
@@ -356,9 +356,9 @@ if (typeof window.local_app === "undefined") {
   </div>
 
   <div id="state-help-panel" hidden>
-    <p><strong>What this page shows:</strong> a state-to-state Sankey for US domestic flows in 2019, filtered by industry and direction.</p>
-    <p><strong>Trade Level</strong> uses the <code>level</code> column from <code>state_trade_flows.csv</code>. <strong>Employment Impact</strong> uses <code>employment_impact</code>.</p>
-    <p><strong>Summary cards</strong> come from <code>state_industry_impacts.csv</code> for the selected state and industry. <strong>Specializations</strong> come from <code>state_specializations.csv</code>.</p>
+    <p><strong>What this page shows:</strong> a state-to-state Sankey of US purchases in 2019, filtered by supplying industry and direction.</p>
+    <p><strong>Flows</strong> are built from <code>trade-us.csv</code> (each Exiobase industry pair's national purchases and factors 901&ndash;910), <code>industry_category.csv</code> and <code>category_state.csv</code> (each state's share of US GDP by category, from BEA). A flow from one state to another is the national amount times the supplying state's share times the buying state's share. See <a href="../../../exiobase/tradeflow/bea/notes.md">bea/notes.md</a>.</p>
+    <p><strong>Summary cards</strong> split the selected state's purchases into in-state, other states and imports, and give its sales to other states. <strong>Specializations</strong> are categories where the state's share of US GDP is at least 1.25 times its share of all GDP.</p>
   </div>
 
   <div id="trade-viz-links"></div>
@@ -396,10 +396,7 @@ if (typeof window.local_app === "undefined") {
     <label>
       Indicator:
       <select id="metric-select">
-        <option value="level">Trade Level</option>
-        <option value="price_adjusted_level">Price-adjusted Level</option>
-        <option value="factor_impact">Factor Impact</option>
-        <option value="employment_impact">Employment Impact</option>
+        <option value="level">Amount spent</option>
       </select>
     </label>
     <label>
@@ -431,7 +428,7 @@ if (typeof window.local_app === "undefined") {
 
     <section class="panel-card">
       <h3 id="state-summary-header">State Impact Summary</h3>
-      <p id="state-summary-note">Selected state impact totals from <code>state_industry_impacts.csv</code>, with specialization tags from <code>state_specializations.csv</code>.</p>
+      <p id="state-summary-note">The selected state's purchases and sales, with specialization tags from BEA GDP by state.</p>
       <div id="state-summary-status"></div>
       <div id="state-summary-body"></div>
     </section>
@@ -439,21 +436,16 @@ if (typeof window.local_app === "undefined") {
 
   <div id="sankey-attribution">
     <strong>Data source:</strong>
-    <a href="https://github.com/savar25/trade-data" target="_blank" rel="noopener">savar25/trade-data</a>
-    &middot; country fixed to <code>US</code>
-    &middot; year fixed to <code>2019</code>
-    &middot; flow fixed to <code>domestic</code>
-    &middot; Sankey edges from <code id="trade-path-label">year/2019/US/domestic/state_trade_flows.csv</code>
-    &middot; impact cards from <code>year/2019/US/domestic/state_industry_impacts.csv</code>
+    <a href="https://github.com/ModelEarth/trade-data" target="_blank" rel="noopener">ModelEarth/trade-data</a>
+    &middot; flows from <code>year/2019/US/domestic/trade-us.csv</code>, <code>industry_category.csv</code> and <code>category_state.csv</code>
     &middot; state names from <code>year/2019/US/domestic/state_codes.csv</code>
-    &middot; specialization tags from <code>year/2019/US/domestic/state_specializations.csv</code>
   </div>
 
 </div>
 
 <script>
 const repo = window.TRADE_GITHUB_FALLBACK || {
-  owner: "savar25",
+  owner: "ModelEarth",
   name: "trade-data",
   branch: "main"
 };
@@ -462,41 +454,13 @@ const COUNTRY_CODE = "US";
 const YEAR = "2019";
 const FLOW = "domestic";
 const DATASET_ROOT = "year/" + YEAR + "/" + COUNTRY_CODE + "/" + FLOW + "/";
-const TRADE_FLOW_FILE = "state_trade_flows.csv";
 const STATE_CODES_FILE = "state_codes.csv";
-const IMPACT_FILE = "state_industry_impacts.csv";
-const SPECIALIZATION_FILE = "state_specializations.csv";
 
-const METRICS = {
-  level: {
-    label: "Trade Level",
-    key: "level",
-    unit: "level"
-  },
-  price_adjusted_level: {
-    label: "Price-adjusted Level",
-    key: "price_adjusted_level",
-    unit: "level"
-  },
-  factor_impact: {
-    label: "Factor Impact",
-    key: "factor_impact",
-    unit: "factor"
-  },
-  employment_impact: {
-    label: "Employment Impact",
-    key: "employment_impact",
-    unit: "jobs"
-  }
-};
-
-const IMPACT_SUMMARY_FIELDS = [
-  { key: "direct_jobs", label: "Direct Jobs" },
-  { key: "indirect_jobs", label: "Indirect Jobs" },
-  { key: "induced_jobs", label: "Induced Jobs" },
-  { key: "total_output_impact", label: "Output Impact" },
-  { key: "tax_revenue_impact", label: "Tax Revenue" }
-];
+// The metrics with values this year, from StateFlows.METRICS (../../js/state-flows.js)
+const METRICS = {};
+let metricKeys = [];
+let usdPerEur = null;
+let importsByState = {};
 
 const chart = echarts.init(document.getElementById("sankey-chart"));
 const partnerChart = echarts.init(document.getElementById("partner-chart"));
@@ -530,7 +494,6 @@ const stateSummaryBody = document.getElementById("state-summary-body");
 let stateCodes = [];
 let stateNameByCode = {};
 let specializationsByState = {};
-let impactRows = [];
 let aggregatedFlows = [];
 let availableStates = [];
 let availableIndustries = [];
@@ -548,6 +511,7 @@ function parseNumber(value) {
 
 function titleCase(value) {
   return String(value || "")
+    .toLowerCase()
     .replace(/_/g, " ")
     .replace(/\s+/g, " ")
     .trim()
@@ -676,70 +640,6 @@ function csvValue(row, names) {
   return "";
 }
 
-function parseTradeFlows(text) {
-  const lines = String(text || "").trim().split(/\r?\n/).filter(Boolean);
-  const aggregate = new Map();
-  const states = new Set();
-  const industries = new Set();
-  const flowTypes = new Set();
-  const headers = lines.length ? parseDelimitedLine(lines[0]) : [];
-  const normalizedHeaders = headers.map(function (header) {
-    return normalizeCode(header).toLowerCase();
-  });
-
-  for (let index = 1; index < lines.length; index += 1) {
-    const values = parseDelimitedLine(lines[index]);
-    const row = {};
-    normalizedHeaders.forEach(function (header, headerIndex) {
-      row[header] = values[headerIndex] || "";
-    });
-    const origin = normalizeCode(csvValue(row, ["origin_state", "origin", "source_state"]) || values[1]);
-    const destination = normalizeCode(csvValue(row, ["destination_state", "destination", "target_state"]) || values[2]);
-    const industry = normalizeCode(csvValue(row, ["state_industry_code", "industry_code", "industry"]) || values[3]);
-    const level = parseNumber(csvValue(row, ["level", "trade_level", "amount", "value"]) || values[4]);
-    const priceAdjustedLevel = parseNumber(csvValue(row, ["price_adjusted_level", "adjusted_level", "price_adjusted_value"]));
-    const factorImpact = parseNumber(csvValue(row, ["factor_impact", "factor_level", "trade_factor_level"]));
-    const flowType = normalizeCode(csvValue(row, ["flow_type", "trade_type", "type"]) || values[7] || values[5]);
-    const employmentImpact = parseNumber(csvValue(row, ["employment_impact", "jobs", "job_impact"]) || values[8] || values[6]);
-
-    if (!origin || !destination || !industry) {
-      continue;
-    }
-
-    const key = [origin, destination, industry, flowType].join("\x00");
-    const current = aggregate.get(key) || {
-      origin_state: origin,
-      destination_state: destination,
-      state_industry_code: industry,
-      flow_type: flowType,
-      level: 0,
-      price_adjusted_level: 0,
-      factor_impact: 0,
-      employment_impact: 0
-    };
-
-    current.level += level;
-    current.price_adjusted_level += priceAdjustedLevel || level;
-    current.factor_impact += factorImpact;
-    current.employment_impact += employmentImpact;
-
-    aggregate.set(key, current);
-    states.add(origin);
-    states.add(destination);
-    industries.add(industry);
-    if (flowType) {
-      flowTypes.add(flowType);
-    }
-  }
-
-  return {
-    rows: Array.from(aggregate.values()),
-    states: Array.from(states).sort(),
-    industries: Array.from(industries).sort(),
-    flowTypes: Array.from(flowTypes).sort()
-  };
-}
-
 function parseStateCodes(text) {
   stateCodes = parseSmallCsv(text);
   stateNameByCode = {};
@@ -751,68 +651,40 @@ function parseStateCodes(text) {
   });
 }
 
-function parseImpactRows(text) {
-  impactRows = parseSmallCsv(text).map(function (row) {
-    const stateCode = normalizeCode(row.state_code || (row.region || "").replace(/^US-/, ""));
-    return {
-      state_code: stateCode,
-      industry_code: normalizeCode(row.industry_code),
-      direct_jobs: parseNumber(row.direct_jobs),
-      indirect_jobs: parseNumber(row.indirect_jobs),
-      induced_jobs: parseNumber(row.induced_jobs),
-      total_output_impact: parseNumber(row.total_output_impact),
-      tax_revenue_impact: parseNumber(row.tax_revenue_impact)
-    };
-  });
-}
-
-function parseSpecializations(text) {
-  specializationsByState = {};
-  parseSmallCsv(text).forEach(function (row) {
-    const code = normalizeCode(row.state_code);
-    const specialization = normalizeCode(row.specialization);
-    if (!code || !specialization) {
-      return;
-    }
-    if (!specializationsByState[code]) {
-      specializationsByState[code] = [];
-    }
-    specializationsByState[code].push(titleCase(specialization));
-  });
-}
-
-function applyStateTradePayloads(payloads, emptyMessage) {
-  if (payloads.some(function (text) { return !text; })) {
+// Flows from trade-us.csv, industry_category.csv and category_state.csv; payloads also holds
+// state_codes.csv and eur_annual_rates.csv
+function applyStateTradePayloads(payloads) {
+  if (payloads.slice(0, 4).some(function (text) { return !text; })) {
     throw new Error("Missing state CSV input.");
   }
-
-  const parsedFlows = parseTradeFlows(payloads[0]);
-  if (!parsedFlows.rows.length || !parsedFlows.states.length) {
-    throw new Error(emptyMessage || "State trade flow data is empty.");
+  usdPerEur = payloads[4] ? StateFlows.parseUsdPerEur(payloads[4]) : null;
+  const flows = StateFlows.build(payloads[0], payloads[1], payloads[2], usdPerEur);
+  if (!flows.rows.length) {
+    throw new Error("State trade flow data is empty.");
   }
-  aggregatedFlows = parsedFlows.rows;
-  availableStates = parsedFlows.states;
-  availableIndustries = parsedFlows.industries;
-  availableFlowTypes = parsedFlows.flowTypes;
-  parseStateCodes(payloads[1]);
-  parseImpactRows(payloads[2]);
-  parseSpecializations(payloads[3]);
-}
-
-function localStateTradePayloads() {
-  const localData = window.STATE_TRADE_LOCAL_DATA || null;
-  if (!localData) {
-    return null;
-  }
-  const payloads = [
-    localData.flowCsv,
-    localData.stateCodesCsv,
-    localData.impactCsv,
-    localData.specializationCsv
-  ];
-  return payloads.every(function (text) { return typeof text === "string" && text.length; })
-    ? payloads
-    : null;
+  metricKeys = flows.metricKeys;
+  metricKeys.forEach(function (key) {
+    METRICS[key] = StateFlows.METRICS[key];
+  });
+  metricSelect.innerHTML = metricKeys.map(function (key) {
+    return '<option value="' + key + '">' + escapeHtml(METRICS[key].label) + "</option>";
+  }).join("");
+  aggregatedFlows = flows.rows;
+  importsByState = flows.imports;
+  specializationsByState = flows.specializations;
+  const states = new Set();
+  const industries = new Set();
+  const flowTypes = new Set();
+  flows.rows.forEach(function (row) {
+    states.add(row.origin_state);
+    states.add(row.destination_state);
+    industries.add(row.state_industry_code);
+    flowTypes.add(row.flow_type);
+  });
+  availableStates = Array.from(states).sort();
+  availableIndustries = Array.from(industries).sort();
+  availableFlowTypes = Array.from(flowTypes).sort();
+  parseStateCodes(payloads[3]);
 }
 
 function stateLabel(code) {
@@ -907,8 +779,28 @@ function fmtNumber(value) {
 }
 
 function fmtMetricValue(value, metricKey) {
+  if (metricKey === "level") {
+    // Amounts are in millions
+    return (usdPerEur ? "$" : "\u20AC") + fmtNumber(value * 1e6);
+  }
   const unit = metricUnit(metricKey);
   return fmtNumber(value) + (unit ? " " + unit : "");
+}
+
+function sumMetrics(target, row) {
+  metricKeys.forEach(function (key) {
+    target[key] = (target[key] || 0) + (row[key] || 0);
+  });
+  return target;
+}
+
+// Lines for a tooltip: each metric's value, the active one first
+function metricLines(values) {
+  return [activeSelection.metric].concat(metricKeys.filter(function (key) {
+    return key !== activeSelection.metric;
+  })).map(function (key) {
+    return METRICS[key].label + ": <b>" + fmtMetricValue(values[key] || 0, key) + "</b>";
+  });
 }
 
 function setStatus(message, isError) {
@@ -1247,17 +1139,10 @@ function buildSankeyData(rows, selection) {
     const current = edgeMap.get(key) || {
       source: row.origin_state,
       target: row.destination_state,
-      value: 0,
-      level: 0,
-      price_adjusted_level: 0,
-      factor_impact: 0,
-      employment_impact: 0
+      value: 0
     };
     current.value += value;
-    current.level += row.level;
-    current.price_adjusted_level += row.price_adjusted_level;
-    current.factor_impact += row.factor_impact;
-    current.employment_impact += row.employment_impact;
+    sumMetrics(current, row);
     edgeMap.set(key, current);
   });
 
@@ -1288,14 +1173,10 @@ function buildSankeyData(rows, selection) {
 function formatEdgeTooltip(data) {
   return [
     '<b>' + escapeHtml(stateLabel(data.source)) + '</b>' + stateReportAction(data.source) +
-      ' -&gt; <b>' + escapeHtml(stateLabel(data.target)) + '</b>' + stateReportAction(data.target),
-    METRICS[activeSelection.metric].label + ": <b>" + fmtMetricValue(data.value, activeSelection.metric) + "</b>",
-    "Trade Level: <b>" + fmtMetricValue(data.level, "level") + "</b>",
-    "Price-adjusted Level: <b>" + fmtMetricValue(data.price_adjusted_level, "price_adjusted_level") + "</b>",
-    "Factor Impact: <b>" + fmtMetricValue(data.factor_impact, "factor_impact") + "</b>",
-    "Employment Impact: <b>" + fmtMetricValue(data.employment_impact, "employment_impact") + "</b>",
-    "Industry: <b>" + industryLabel(activeSelection.industry) + "</b>"
-  ].join("<br/>");
+      ' -&gt; <b>' + escapeHtml(stateLabel(data.target)) + '</b>' + stateReportAction(data.target)
+  ].concat(metricLines(data), [
+    "Supplying industries: <b>" + industryLabel(activeSelection.industry) + "</b>"
+  ]).join("<br/>");
 }
 
 function buildPartnerBreakdown(rows, selection) {
@@ -1305,17 +1186,8 @@ function buildPartnerBreakdown(rows, selection) {
     if (!partner) {
       return;
     }
-    const current = grouped.get(partner) || {
-      partner: partner,
-      level: 0,
-      price_adjusted_level: 0,
-      factor_impact: 0,
-      employment_impact: 0
-    };
-    current.level += row.level;
-    current.price_adjusted_level += row.price_adjusted_level;
-    current.factor_impact += row.factor_impact;
-    current.employment_impact += row.employment_impact;
+    const current = grouped.get(partner) || { partner: partner };
+    sumMetrics(current, row);
     grouped.set(partner, current);
   });
 
@@ -1367,21 +1239,14 @@ function renderPartnerChart(rows) {
       formatter: function (params) {
         const item = params[0];
         const source = item.data;
-        return [
-          stateTooltipHeader(source.partner),
-          METRICS[activeSelection.metric].label + ": <b>" + fmtMetricValue(source[activeSelection.metric], activeSelection.metric) + "</b>",
-          "Trade Level: <b>" + fmtMetricValue(source.level, "level") + "</b>",
-          "Price-adjusted Level: <b>" + fmtMetricValue(source.price_adjusted_level, "price_adjusted_level") + "</b>",
-          "Factor Impact: <b>" + fmtMetricValue(source.factor_impact, "factor_impact") + "</b>",
-          "Employment Impact: <b>" + fmtMetricValue(source.employment_impact, "employment_impact") + "</b>"
-        ].join("<br/>");
+        return [stateTooltipHeader(source.partner)].concat(metricLines(source)).join("<br/>");
       }
     },
     xAxis: {
       type: "value",
       axisLabel: {
         formatter: function (value) {
-          return fmtNumber(value);
+          return activeSelection.metric === "level" ? fmtMetricValue(value, "level") : fmtNumber(value);
         }
       }
     },
@@ -1419,57 +1284,61 @@ function renderPartnerChart(rows) {
 
 function renderSummary() {
   if (!activeSelection || !activeSelection.state) {
-    stateSummaryHeader.textContent = "State Impact Summary";
+    stateSummaryHeader.textContent = "State Summary";
     stateSummaryBody.innerHTML = "";
-    setSummaryStatus("Select a state to view the corresponding impact totals and specialization tags.", false);
+    setSummaryStatus("Select a state to view its purchases, sales and specializations.", false);
     return;
   }
 
-  const matchingRows = impactRows.filter(function (row) {
-    return row.state_code === activeSelection.state &&
-      (!activeSelection.industry || row.industry_code === activeSelection.industry);
+  const state = activeSelection.state;
+  const metric = activeSelection.metric;
+  const inIndustry = function (row) {
+    return !activeSelection.industry || row.state_industry_code === activeSelection.industry;
+  };
+  const totals = { instate: 0, otherstates: 0, imports: 0, sold: 0 };
+  aggregatedFlows.forEach(function (row) {
+    if (!inIndustry(row)) return;
+    if (row.destination_state === state) {
+      totals[row.origin_state === state ? "instate" : "otherstates"] += row[metric] || 0;
+    } else if (row.origin_state === state) {
+      totals.sold += row[metric] || 0;
+    }
+  });
+  const imports = importsByState[state] || {};
+  Object.keys(imports).forEach(function (code) {
+    if (!activeSelection.industry || code === activeSelection.industry) totals.imports += imports[code][metric] || 0;
   });
 
-  const tags = specializationsByState[activeSelection.state] || [];
-  stateSummaryHeader.innerHTML = "State Impact Summary for " + escapeHtml(stateLabel(activeSelection.state)) + stateReportAction(activeSelection.state);
-  stateSummaryNote.textContent = activeSelection.industry
-    ? "Impact totals for " + industryLabel(activeSelection.industry) + " in " + stateLabel(activeSelection.state) + "."
-    : "Impact totals aggregated across all industries for " + stateLabel(activeSelection.state) + ".";
-
-  if (!matchingRows.length) {
-    stateSummaryBody.innerHTML = "";
-    setSummaryStatus("No impact summary is available for this state and industry combination.", true);
-    return;
-  }
-
-  const totals = {};
-  IMPACT_SUMMARY_FIELDS.forEach(function (field) {
-    totals[field.key] = 0;
+  const tags = (specializationsByState[state] || []).map(function (entry) {
+    return titleCase(entry.code) + " (" + entry.quotient.toFixed(1) + "\u00D7)";
   });
+  stateSummaryHeader.innerHTML = "State Summary for " + escapeHtml(stateLabel(state)) + stateReportAction(state);
+  stateSummaryNote.textContent = METRICS[metric].label + " of " + stateLabel(state) + "'s purchases and sales" +
+    (activeSelection.industry ? " of " + industryLabel(activeSelection.industry) + " goods and services" : "") + " in " + YEAR + ".";
 
-  matchingRows.forEach(function (row) {
-    IMPACT_SUMMARY_FIELDS.forEach(function (field) {
-      totals[field.key] += row[field.key];
-    });
-  });
-
-  const cardsHtml = IMPACT_SUMMARY_FIELDS.map(function (field) {
+  const cards = [
+    { key: "instate", label: "Bought in-state" },
+    { key: "otherstates", label: "Bought from other states" },
+    { key: "imports", label: "Imports" },
+    { key: "sold", label: "Sold to other states" }
+  ];
+  const cardsHtml = cards.map(function (card) {
     return [
       '<div class="summary-card">',
-      "<strong>" + field.label + "</strong>",
-      "<span>" + fmtNumber(totals[field.key]) + "</span>",
+      "<strong>" + card.label + "</strong>",
+      "<span>" + escapeHtml(fmtMetricValue(totals[card.key], metric)) + "</span>",
       "</div>"
     ].join("");
   }).join("");
 
   const tagsHtml = tags.length
     ? '<div class="tag-row">' + tags.map(function (tag) {
-      return '<span class="tag-pill">' + tag + "</span>";
+      return '<span class="tag-pill">' + escapeHtml(tag) + "</span>";
     }).join("") + "</div>"
-    : '<p>No specialization tags are listed for this state.</p>';
+    : "<p>No category's share of this state's GDP is 1.25 times the US share.</p>";
 
   stateSummaryBody.innerHTML = '<div class="summary-grid">' + cardsHtml + "</div>" + tagsHtml;
-  setSummaryStatus("Summary is based on " + matchingRows.length + " state-industry impact record(s).", false);
+  setSummaryStatus("Specializations: each category's share of the state's GDP relative to the US.", false);
 }
 
 function render() {
@@ -1580,24 +1449,14 @@ function updateFromControls(writeHash) {
 }
 
 async function loadData() {
-  const bundledPayloads = localStateTradePayloads();
-  if (window.location.protocol === "file:" && bundledPayloads) {
-    applyStateTradePayloads(bundledPayloads, "Bundled state trade flow data is empty.");
-    return;
-  }
-
   const payloads = await Promise.all([
-    fetchTextWithFallback(dataPathCandidates(TRADE_FLOW_FILE)),
+    fetchTextWithFallback(buildRepoPathCandidates(StateFlows.FILES.tradeUs)),
+    fetchTextWithFallback(buildRepoPathCandidates(StateFlows.FILES.industryCategory)),
+    fetchTextWithFallback(buildRepoPathCandidates(StateFlows.FILES.categoryState)),
     fetchTextWithFallback(dataPathCandidates(STATE_CODES_FILE)),
-    fetchTextWithFallback(dataPathCandidates(IMPACT_FILE)),
-    fetchTextWithFallback(dataPathCandidates(SPECIALIZATION_FILE))
+    fetchTextWithFallback(buildRepoPathCandidates(StateFlows.FILES.eurRates))
   ]);
-
-  if (payloads.some(function (text) { return !text; }) && bundledPayloads) {
-    applyStateTradePayloads(bundledPayloads, "Bundled state trade flow data is empty.");
-    return;
-  }
-  applyStateTradePayloads(payloads, "State trade flow data is empty.");
+  applyStateTradePayloads(payloads);
 }
 
 stateSelect.addEventListener("change", function () {
