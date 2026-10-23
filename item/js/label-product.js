@@ -54,6 +54,57 @@ function formatValue_ObjectSafe(value, showKeys = true) {
 }
 
 /**
+ * Formats an object's fields as "Key: value" rows. Nested objects become an
+ * indented block of their own rows, and arrays are listed rather than
+ * stringified, so no value renders as [object Object].
+ * @param {Object} obj - The object whose fields to format
+ * @param {string[]} skipKeys - Keys shown elsewhere, left out of the rows
+ * @returns {string[]} - One HTML string per field
+ */
+function formatDetailFields(obj, skipKeys = []) {
+    const fields = [];
+    for (const [key, val] of Object.entries(obj)) {
+        if (val === null || val === undefined || val === '') continue;
+        if (skipKeys.includes(key)) continue;
+        if (Array.isArray(val) && val.length === 0) continue;
+
+        const readableKey = key.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\b\w/g, l => l.toUpperCase());
+
+        // Check if this is an image field
+        const isImage = key.toLowerCase().includes('image') || key.toLowerCase().includes('img') || key.toLowerCase().includes('logo') || key.toLowerCase().includes('photo');
+        // Check if this is a link field
+        const isLink = key.toLowerCase().includes('link') || key.toLowerCase().includes('url');
+        let formattedVal;
+
+        if (isImage && typeof val === 'string') {
+            // Show key as comment/label above image
+            formattedVal = `<div class="detail-image-label">${readableKey}</div><img src="${val}" alt="${readableKey}" class="detail-image" />`;
+            fields.push(`<div class="detail-field detail-field-image">${formattedVal}</div>`);
+        } else if (isLink && typeof val === 'string') {
+            // Truncate URL for display
+            const displayUrl = val.length > 40 ? val.substring(0, 37) + '...' : val;
+            formattedVal = `<a href="${val}" target="_blank" class="location-link">${displayUrl} ↗</a>`;
+            fields.push(`<div class="detail-field"><strong>${readableKey}:</strong> ${formattedVal}</div>`);
+        } else if (Array.isArray(val) && val.some(item => item && typeof item === 'object')) {
+            // A list of objects: one line per item
+            const items = val.map(item => formatValue_ObjectSafe(item)).filter(Boolean);
+            fields.push(`<div class="detail-field"><strong>${readableKey}:</strong><ul class="detail-list">${items.map(item => `<li>${item}</li>`).join('')}</ul></div>`);
+        } else if (Array.isArray(val)) {
+            fields.push(`<div class="detail-field"><strong>${readableKey}:</strong> ${val.join(', ')}</div>`);
+        } else if (typeof val === 'object') {
+            const nested = formatDetailFields(val);
+            if (nested.length) {
+                fields.push(`<div class="detail-field"><strong>${readableKey}:</strong><div class="detail-nested">${nested.join('')}</div></div>`);
+            }
+        } else {
+            formattedVal = String(val);
+            fields.push(`<div class="detail-field"><strong>${readableKey}:</strong> ${formattedVal}</div>`);
+        }
+    }
+    return fields;
+}
+
+/**
  * Formats owned_by object with expandable details
  * @param {*} ownedBy - The owned_by value (can be string or object)
  * @param {string} uniqueId - Unique identifier for expandable section
@@ -67,37 +118,18 @@ function formatOwnedBy(ownedBy, uniqueId) {
         return String(ownedBy);
     }
 
+    // Unwrap a nameless wrapper around a single object, e.g. verifier: { org: {...} }
+    const entries = Object.entries(ownedBy).filter(([, val]) => val !== null && val !== undefined && val !== '');
+    if (!ownedBy.name && !ownedBy.legal_name && entries.length === 1
+        && entries[0][1] && typeof entries[0][1] === 'object' && !Array.isArray(entries[0][1])) {
+        return formatOwnedBy(entries[0][1], uniqueId);
+    }
+
     const name = ownedBy.name || ownedBy.legal_name || '';
     const website = ownedBy.website || ownedBy.web_url || ownedBy.url || '';
 
     // Collect all other fields
-    const otherFields = [];
-    for (const [key, val] of Object.entries(ownedBy)) {
-        if (val === null || val === undefined || val === '') continue;
-        if (key === 'name' || key === 'legal_name' || key === 'website' || key === 'web_url' || key === 'url') continue;
-
-        const readableKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-
-        // Check if this is an image field
-        const isImage = key.toLowerCase().includes('image') || key.toLowerCase().includes('img') || key.toLowerCase().includes('logo') || key.toLowerCase().includes('photo');
-        // Check if this is a link field
-        const isLink = key.toLowerCase().includes('link') || key.toLowerCase().includes('url');
-        let formattedVal;
-
-        if (isImage && typeof val === 'string') {
-            // Show key as comment/label above image
-            formattedVal = `<div style="color: #64748b; font-size: 0.8em; margin-bottom: 4px;">${readableKey}</div><img src="${val}" alt="${readableKey}" style="max-width: 200px; max-height: 200px; border-radius: 4px; border: 1px solid #e2e8f0;" />`;
-            otherFields.push(`<div style="margin-top: 8px;">${formattedVal}</div>`);
-        } else if (isLink && typeof val === 'string') {
-            // Truncate URL for display
-            const displayUrl = val.length > 40 ? val.substring(0, 37) + '...' : val;
-            formattedVal = `<a href="${val}" target="_blank" class="location-link">${displayUrl} ↗</a>`;
-            otherFields.push(`<div style="font-size: 0.85em; margin-top: 4px;"><strong>${readableKey}:</strong> ${formattedVal}</div>`);
-        } else {
-            formattedVal = String(val);
-            otherFields.push(`<div style="font-size: 0.85em; margin-top: 4px;"><strong>${readableKey}:</strong> ${formattedVal}</div>`);
-        }
-    }
+    const otherFields = formatDetailFields(ownedBy, ['name', 'legal_name', 'website', 'web_url', 'url']);
 
     let html = '';
 
@@ -113,8 +145,9 @@ function formatOwnedBy(ownedBy, uniqueId) {
 
     // Add expandable section for other fields
     if (otherFields.length > 0) {
-        html += ` <span style="cursor: pointer; color: #3b82f6; font-size: 0.9em; margin-left: 8px;" onclick="document.getElementById('${uniqueId}').style.display = document.getElementById('${uniqueId}').style.display === 'none' ? 'block' : 'none'">▼ Details</span>`;
-        html += `<div id="${uniqueId}" style="display: none; margin-top: 8px; padding: 8px; background: #f8fafc; border-radius: 4px; border-left: 3px solid #3b82f6;">`;
+        // The arrow points toward "Details" while closed and down once open
+        html += ` <span class="detail-toggle" onclick="const panel = document.getElementById('${uniqueId}'); const open = panel.style.display === 'none'; panel.style.display = open ? 'block' : 'none'; this.querySelector('.detail-toggle-arrow').textContent = open ? '▼' : '▶';"><span class="detail-toggle-arrow">▶</span> Details</span>`;
+        html += `<div id="${uniqueId}" class="detail-panel" style="display: none;">`;
         html += otherFields.join('');
         html += '</div>';
     }
@@ -1198,9 +1231,9 @@ function renderBoxplotChart(data) {
         <div class="chart-header">
             <h3>Greenhouse Warming Potential (GWP)</h3>
             ${currentGwp ? `
-                <div style="margin-top: 8px; margin-bottom: 12px;">
-                    <div style="font-size: 0.9em; color: #64748b;">All ${categoryName} products compared to</div>
-                    <div style="font-size: 1.05em; font-weight: 600; color: #22c55e;">${productName}</div>
+                <div class="boxplot-compare">
+                    <div class="boxplot-compare-label">All ${categoryName} products compared to</div>
+                    <div class="boxplot-compare-product">${productName}</div>
                 </div>
             ` : ''}
         </div>
@@ -1212,17 +1245,17 @@ function renderBoxplotChart(data) {
                 <!-- Whisker line (min to max) -->
                 <line x1="${getPosition(min) * 4.6 + 20}" y1="70"
                       x2="${getPosition(max) * 4.6 + 20}" y2="70"
-                      stroke="#666" stroke-width="2"/>
+                      class="boxplot-whisker" stroke-width="2"/>
 
                 <!-- Min whisker -->
                 <line x1="${getPosition(min) * 4.6 + 20}" y1="55"
                       x2="${getPosition(min) * 4.6 + 20}" y2="85"
-                      stroke="#666" stroke-width="2"/>
+                      class="boxplot-whisker" stroke-width="2"/>
 
                 <!-- Max whisker -->
                 <line x1="${getPosition(max) * 4.6 + 20}" y1="55"
                       x2="${getPosition(max) * 4.6 + 20}" y2="85"
-                      stroke="#666" stroke-width="2"/>
+                      class="boxplot-whisker" stroke-width="2"/>
 
                 <!-- Box (Q1 to Q3) -->
                 <rect x="${getPosition(q1) * 4.6 + 20}" y="45"
@@ -1235,19 +1268,19 @@ function renderBoxplotChart(data) {
                       stroke="#ef4444" stroke-width="3"/>
 
                 <!-- Category Labels -->
-                <text x="${getPosition(min) * 4.6 + 20}" y="110" text-anchor="middle" font-size="11" fill="#666">
+                <text x="${getPosition(min) * 4.6 + 20}" y="110" text-anchor="middle" font-size="11" class="boxplot-label">
                     ${min.toFixed(0)}
                 </text>
-                <text x="${getPosition(q1) * 4.6 + 20}" y="35" text-anchor="middle" font-size="11" fill="#666">
+                <text x="${getPosition(q1) * 4.6 + 20}" y="35" text-anchor="middle" font-size="11" class="boxplot-label">
                     Q1: ${q1.toFixed(0)}
                 </text>
                 <text x="${getPosition(median) * 4.6 + 20}" y="35" text-anchor="middle" font-size="11" fill="#ef4444" font-weight="bold">
                     Median: ${median.toFixed(0)}
                 </text>
-                <text x="${getPosition(q3) * 4.6 + 20}" y="35" text-anchor="middle" font-size="11" fill="#666">
+                <text x="${getPosition(q3) * 4.6 + 20}" y="35" text-anchor="middle" font-size="11" class="boxplot-label">
                     Q3: ${q3.toFixed(0)}
                 </text>
-                <text x="${getPosition(max) * 4.6 + 20}" y="110" text-anchor="middle" font-size="11" fill="#666">
+                <text x="${getPosition(max) * 4.6 + 20}" y="110" text-anchor="middle" font-size="11" class="boxplot-label">
                     ${max.toFixed(0)}
                 </text>
 
@@ -1269,7 +1302,7 @@ function renderBoxplotChart(data) {
             </svg>
         </div>
 
-        <div class="chart-subtitle" style="margin-top: 8px; font-size: 0.85em; color: #64748b; font-style: italic;">
+        <div class="chart-subtitle boxplot-note">
             Average heat impact of atmosphere pollutants equivalent CO<sub>2</sub> over 100 years.
         </div>
 
@@ -2089,7 +2122,18 @@ function renderCertifications(data) {
         certs.push({
             type: "Data Warnings",
             icon: "\u26a0\ufe0f",
-            details: data.warnings.map(w => cleanText(w.message || w)).join("; "),
+            details: data.warnings.map(w => cleanText(w.message || formatValue_ObjectSafe(w))).join("; "),
+            isWarning: true
+        });
+    } else if (data.warnings && typeof data.warnings === "object" && Object.keys(data.warnings).length > 0) {
+        // Warnings grouped by topic, e.g. { density: ["Not specified"], impacts: [...] }
+        const readableKey = key => key.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
+        certs.push({
+            type: "Data Warnings",
+            icon: "\u26a0\ufe0f",
+            details: Object.entries(data.warnings)
+                .map(([topic, list]) => `${readableKey(topic)}: ${formatValue_ObjectSafe(list)}`)
+                .join("; "),
             isWarning: true
         });
     }
