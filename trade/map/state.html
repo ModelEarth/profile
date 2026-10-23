@@ -45,7 +45,7 @@
             repoBase: repoBase
         };
         window.STATE_TRADE_GITHUB_FALLBACK = window.STATE_TRADE_GITHUB_FALLBACK || {
-            owner: inferredPagesOwner || "savar25",
+            owner: inferredPagesOwner || "ModelEarth",
             name: inferredPagesRepo || "trade-data",
             branch: "main"
         };
@@ -567,9 +567,6 @@
                 <span>Indicator</span>
                 <select id="metric-select">
                     <option value="level">Amount spent</option>
-                    <option value="price_adjusted_level">Price-adjusted amount</option>
-                    <option value="factor_impact">Factor impact</option>
-                    <option value="employment_impact">Employment impact</option>
                 </select>
             </label>
             <label class="toolbar-select-wrap" for="direction-select">
@@ -637,8 +634,17 @@
 
 <script>
 const ALL_INDUSTRY_VALUE = "ALL";
-const FLOW_DATASET_RELATIVE = "year/2019/US/domestic/state_trade_flows.csv";
-const STATE_CODES_RELATIVE = "year/2019/US/domestic/state_codes.csv";
+// State-to-state flows are built from three tables that bea/main.py writes (see
+// exiobase/tradeflow/bea/notes.md): trade-us.csv holds each industry pair's national
+// purchases, industry_category.csv each industry's state_industry_code, and
+// category_state.csv each state's share of that code's GDP, as origin and destination
+// weights. A flow from state O to state D is amount * origin weight(O) * destination weight(D).
+const DATA_YEAR = "2019";
+const TRADE_US_RELATIVE = "year/" + DATA_YEAR + "/US/domestic/trade-us.csv";
+const CATEGORY_STATE_RELATIVE = "year/" + DATA_YEAR + "/US/domestic/category_state.csv";
+const INDUSTRY_CATEGORY_RELATIVE = "year/" + DATA_YEAR + "/US/domestic/industry_category.csv";
+const EUR_RATES_RELATIVE = "concordance/eur_annual_rates.csv";
+const STATE_CODES_RELATIVE = "year/" + DATA_YEAR + "/US/domestic/state_codes.csv";
 const TOPOJSON_URL = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json";
 const DEFAULT_MAP_ZOOM = 4;
 const INITIAL_MAP_CENTER = [39.5, -98.35];
@@ -655,6 +661,9 @@ const FIPS_TO_CODE = {
 const csvCache = new Map();
 const appState = {
     rows: [],
+    pairRows: [],
+    inState: new Map(),
+    usdPerEur: null,
     stateNames: new Map(),
     stateCodes: [],
     industries: [],
@@ -669,42 +678,65 @@ const appState = {
     topoData: null
 };
 
+function formatScaled(value, unit) {
+    if (!Number.isFinite(value)) return "-";
+    const size = Math.abs(value);
+    if (size >= 1e9) return d3.format(",.2f")(value / 1e9) + "B " + unit;
+    if (size >= 1e6) return d3.format(",.2f")(value / 1e6) + "M " + unit;
+    if (size >= 1e3) return d3.format(",.1f")(value / 1e3) + "K " + unit;
+    if (size >= 1) return d3.format(",.1f")(value) + " " + unit;
+    return d3.format(",.3f")(value) + " " + unit;
+}
+
+// Each metric sums trade-us.csv columns (amount or factor_id 901-910 in factor.csv), each
+// times a scale to the metric's unit. Greenhouse gases use 100-year global warming
+// potentials, as the product label's UN option does.
 const METRICS = {
     level: {
         label: "Amount spent",
+        columns: { amount: 1 },
         formatter: function (value) {
             if (!Number.isFinite(value)) return "-";
-            if (Math.abs(value) >= 1000) return "$" + d3.format(",.0f")(value) + "M";
-            if (Math.abs(value) >= 1) return "$" + d3.format(",.1f")(value) + "M";
-            return "$" + d3.format(",.2f")(value) + "M";
+            const symbol = appState.usdPerEur ? "$" : "\u20AC";
+            if (Math.abs(value) >= 1000) return symbol + d3.format(",.0f")(value) + "M";
+            if (Math.abs(value) >= 1) return symbol + d3.format(",.1f")(value) + "M";
+            return symbol + d3.format(",.2f")(value) + "M";
         }
     },
-    price_adjusted_level: {
-        label: "Price-adjusted amount",
-        formatter: function (value) {
-            if (!Number.isFinite(value)) return "-";
-            if (Math.abs(value) >= 1000) return "$" + d3.format(",.0f")(value) + "M";
-            if (Math.abs(value) >= 1) return "$" + d3.format(",.1f")(value) + "M";
-            return "$" + d3.format(",.2f")(value) + "M";
-        }
+    ghg: {
+        label: "Greenhouse gases",
+        columns: { 901: 0.001, 902: 0.028, 903: 0.265, 904: 23.5, 905: 0.001 },
+        formatter: function (value) { return formatScaled(value, "t CO\u2082 eq"); }
     },
-    factor_impact: {
-        label: "Factor impact",
-        formatter: function (value) {
-            if (!Number.isFinite(value)) return "-";
-            if (Math.abs(value) >= 1e9) return d3.format(",.2f")(value / 1e9) + "B";
-            if (Math.abs(value) >= 1e6) return d3.format(",.2f")(value / 1e6) + "M";
-            if (Math.abs(value) >= 1000) return d3.format(",.0f")(value);
-            return d3.format(",.2f")(value);
-        }
+    co2: {
+        label: "Carbon dioxide",
+        columns: { 901: 0.001 },
+        formatter: function (value) { return formatScaled(value, "t CO\u2082"); }
     },
-    employment_impact: {
-        label: "Employment impact",
-        formatter: function (value) {
-            if (!Number.isFinite(value)) return "-";
-            if (Math.abs(value) >= 1) return d3.format(",.2f")(value) + " jobs";
-            return d3.format(",.4f")(value) + " jobs";
-        }
+    employment: {
+        label: "Jobs",
+        columns: { 906: 1000 },
+        formatter: function (value) { return formatScaled(value, "jobs"); }
+    },
+    energy: {
+        label: "Energy use",
+        columns: { 907: 1 },
+        formatter: function (value) { return formatScaled(value, "TJ"); }
+    },
+    land: {
+        label: "Land use",
+        columns: { 908: 1 },
+        formatter: function (value) { return formatScaled(value, "km\u00B2"); }
+    },
+    material: {
+        label: "Material use",
+        columns: { 909: 1 },
+        formatter: function (value) { return formatScaled(value, "kt"); }
+    },
+    water: {
+        label: "Water use",
+        columns: { 910: 1e6 },
+        formatter: function (value) { return formatScaled(value, "m\u00B3"); }
     }
 };
 
@@ -719,6 +751,7 @@ function parseNumber(value) {
 
 function titleCase(value) {
     return String(value || "")
+        .toLowerCase()
         .replace(/_/g, " ")
         .replace(/\s+/g, " ")
         .trim()
@@ -927,7 +960,7 @@ function uniquePreserveOrder(values) {
 function buildCandidateUrls(relativePath) {
     const env = window.STATE_TRADE_ENV || {};
     const repo = window.STATE_TRADE_GITHUB_FALLBACK || {
-        owner: "savar25",
+        owner: "ModelEarth",
         name: "trade-data",
         branch: "main"
     };
@@ -999,41 +1032,128 @@ function parseStateCodes(text) {
     }).filter(Boolean);
 }
 
-function parseTradeRows(text) {
-    const aggregate = new Map();
-    d3.csvParse(text).forEach(function (row) {
-        const origin = normalizeCode(row.origin_state);
-        const destination = normalizeCode(row.destination_state);
-        const industry = normalizeCode(row.state_industry_code);
-        if (!origin || !destination || !industry) return;
+function parseUsdPerEur(text) {
+    const row = d3.csvParse(text).find(function (entry) { return String(entry.Year).trim() === DATA_YEAR; });
+    const rate = row ? Number(row.USD) : NaN;
+    return Number.isFinite(rate) && rate > 0 ? rate : null;
+}
 
-        const key = [origin, destination, industry, normalizeCode(row.flow_type)].join("\0");
-        const current = aggregate.get(key) || {
-            key: key,
-            origin_state: origin,
-            destination_state: destination,
-            state_industry_code: industry,
-            flow_type: normalizeCode(row.flow_type),
-            level: 0,
-            price_adjusted_level: 0,
-            factor_impact: 0,
-            employment_impact: 0
-        };
-        current.level += parseNumber(row.level);
-        current.price_adjusted_level += parseNumber(row.price_adjusted_level || row.level);
-        current.factor_impact += parseNumber(row.factor_impact);
-        current.employment_impact += parseNumber(row.employment_impact);
-        aggregate.set(key, current);
+// Builds appState.rows (one per origin state, destination state and the supplying
+// industry's state_industry_code), appState.pairRows (codes summed) and appState.inState
+// (each state's purchases from its own producers) from the three tables
+function buildStateFlows(tradeUsText, industryCategoryText, categoryStateText) {
+    const metricKeys = Object.keys(METRICS);
+    const amountScale = appState.usdPerEur || 1;
+    const metricValues = function (row) {
+        return metricKeys.map(function (key) {
+            const columns = METRICS[key].columns;
+            return Object.keys(columns).reduce(function (sum, column) {
+                return sum + parseNumber(row[column]) * columns[column] * (column === "amount" ? amountScale : 1);
+            }, 0);
+        });
+    };
+    const addInto = function (target, values, factor) {
+        for (let i = 0; i < values.length; i++) target[i] += values[i] * factor;
+    };
+
+    const categoryOf = new Map();
+    d3.csvParse(industryCategoryText).forEach(function (row) {
+        categoryOf.set(String(row.industry_id).trim(), normalizeCode(row.state_industry_code));
     });
 
-    appState.rows = Array.from(aggregate.values());
-    appState.industries = uniquePreserveOrder(appState.rows.map(function (row) {
+    const weights = { origin: new Map(), destination: new Map() };
+    d3.csvParse(categoryStateText).forEach(function (row) {
+        const byState = weights[String(row.weight_type).trim()];
+        if (!byState) return;
+        const code = normalizeCode(row.state_industry_code);
+        if (!byState.has(code)) byState.set(code, new Map());
+        byState.get(code).set(normalizeCode(row.state), parseNumber(row.weight));
+    });
+
+    // National US-to-US purchases by supplying code and buying code
+    const national = new Map();
+    d3.csvParse(tradeUsText).forEach(function (row) {
+        if (String(row.origin).trim() !== "us") return;
+        const code1 = categoryOf.get(String(row.industry1).trim());
+        const code2 = categoryOf.get(String(row.industry2).trim());
+        if (!code1 || !code2) return;
+        if (!national.has(code1)) national.set(code1, new Map());
+        const byCode2 = national.get(code1);
+        if (!byCode2.has(code2)) byCode2.set(code2, metricKeys.map(function () { return 0; }));
+        addInto(byCode2.get(code2), metricValues(row), 1);
+    });
+
+    const rows = [];
+    const pairs = new Map();
+    appState.inState = new Map();
+    national.forEach(function (byCode2, code1) {
+        const originWeights = weights.origin.get(code1) || new Map();
+        // What each destination state buys from code1, summed over the buying codes
+        const bought = new Map();
+        byCode2.forEach(function (values, code2) {
+            (weights.destination.get(code2) || new Map()).forEach(function (weight, state) {
+                if (!bought.has(state)) bought.set(state, metricKeys.map(function () { return 0; }));
+                addInto(bought.get(state), values, weight);
+            });
+        });
+        bought.forEach(function (values, destination) {
+            originWeights.forEach(function (originWeight, origin) {
+                const flow = values.map(function (value) { return value * originWeight; });
+                if (origin === destination) {
+                    const current = appState.inState.get(origin) || metricKeys.map(function () { return 0; });
+                    addInto(current, flow, 1);
+                    appState.inState.set(origin, current);
+                    return;
+                }
+                const row = {
+                    key: [origin, destination, code1].join("\0"),
+                    origin_state: origin,
+                    destination_state: destination,
+                    state_industry_code: code1
+                };
+                metricKeys.forEach(function (key, i) { row[key] = flow[i]; });
+                rows.push(row);
+
+                const pairKey = origin + "\0" + destination;
+                const pair = pairs.get(pairKey) || {
+                    key: pairKey,
+                    origin_state: origin,
+                    destination_state: destination,
+                    state_industry_code: ALL_INDUSTRY_VALUE
+                };
+                metricKeys.forEach(function (key, i) { pair[key] = (pair[key] || 0) + flow[i]; });
+                pairs.set(pairKey, pair);
+            });
+        });
+    });
+
+    appState.inState.forEach(function (values, state) {
+        const byMetric = {};
+        metricKeys.forEach(function (key, i) { byMetric[key] = values[i]; });
+        appState.inState.set(state, byMetric);
+    });
+
+    // Leave out metrics with no values for this year (e.g. energy in 2019)
+    metricKeys.forEach(function (key) {
+        if (key !== "level" && !rows.some(function (row) { return row[key] > 0; })) delete METRICS[key];
+    });
+
+    appState.rows = rows;
+    appState.pairRows = Array.from(pairs.values());
+    appState.industries = uniquePreserveOrder(rows.map(function (row) {
         return row.state_industry_code;
     }).sort());
 }
 
+function renderMetricOptions() {
+    metricSelect.innerHTML = Object.keys(METRICS).map(function (key) {
+        return '<option value="' + key + '">' + escapeHtml(METRICS[key].label) + "</option>";
+    }).join("");
+}
+
 function getFilteredRows() {
-    return appState.rows.filter(function (row) {
+    const byIndustry = appState.viewMode === "industry" && appState.selectedIndustry !== ALL_INDUSTRY_VALUE;
+    return (byIndustry ? appState.rows : appState.pairRows).filter(function (row) {
         if (row.origin_state !== appState.selectedState && row.destination_state !== appState.selectedState) {
             return false;
         }
@@ -1266,11 +1386,15 @@ function updateLegend(summary) {
     if (appState.direction === "inbound") dirText = "showing inbound only";
     if (appState.direction === "outbound") dirText = "showing outbound only";
     document.getElementById("legend-dir").textContent = dirText;
+    const inState = appState.viewMode === "industry" && appState.selectedIndustry !== ALL_INDUSTRY_VALUE
+        ? null : appState.inState.get(appState.selectedState);
     industryBarNote.textContent = "Focus state: " + stateLabel(appState.selectedState) +
-        ". " + metricDef().label + " is taken from the 2019 domestic state flow dataset" +
+        ". " + metricDef().label + " of US purchases in " + DATA_YEAR +
         (appState.viewMode === "industry" && appState.selectedIndustry !== ALL_INDUSTRY_VALUE
-            ? " for " + titleCase(appState.selectedIndustry) + "."
-            : " across all industries.") +
+            ? " from " + titleCase(appState.selectedIndustry) + " suppliers"
+            : "") +
+        ", from Exiobase split among states with BEA GDP by state." +
+        (inState ? " In-state purchases (not drawn): " + metricDef().formatter(inState[appState.metric]) + "." : "") +
         " " + summary.partners.length + " partner states match the current filters.";
 }
 
@@ -1513,7 +1637,7 @@ function handleFlowEnter(event, row) {
     showTooltip(clientPoint.x, clientPoint.y, [
         '<div class="tt-direction">' + stateTooltipHeader(row.origin_state) + " -&gt; " + stateTooltipHeader(row.destination_state) + "</div>",
         '<div>' + metricDef().label + ": <b>" + metricDef().formatter(row[appState.metric]) + "</b></div>",
-        '<div>Industry: <b>' + titleCase(row.state_industry_code) + "</b></div>",
+        '<div>Supplying industries: <b>' + (row.state_industry_code === ALL_INDUSTRY_VALUE ? "All" : titleCase(row.state_industry_code)) + "</b></div>",
         '<div class="tt-muted">Direction: ' + direction + "</div>"
     ].join(""));
 }
@@ -1793,27 +1917,21 @@ window.addEventListener("resize", function () {
 
 async function init() {
     try {
-        let flowResultPromise;
-        let stateCodeResultPromise;
-        const embeddedFlow = embeddedStateTradeResult("flowCsv");
+        // The embedded snapshot (state-trade-data.js) is used for state names only; its
+        // flows are from the older state_trade_flows.csv
         const embeddedStateCodes = embeddedStateTradeResult("stateCodesCsv");
-
-        if (window.location.protocol === "file:" && embeddedFlow && embeddedStateCodes) {
-            flowResultPromise = Promise.resolve(embeddedFlow);
-            stateCodeResultPromise = Promise.resolve(embeddedStateCodes);
-        } else {
-            flowResultPromise = fetchFirstText(FLOW_DATASET_RELATIVE).catch(function (error) {
-                if (embeddedFlow) return embeddedFlow;
-                throw error;
-            });
-            stateCodeResultPromise = fetchFirstText(STATE_CODES_RELATIVE).catch(function (error) {
+        const stateCodeResultPromise = window.location.protocol === "file:" && embeddedStateCodes
+            ? Promise.resolve(embeddedStateCodes)
+            : fetchFirstText(STATE_CODES_RELATIVE).catch(function (error) {
                 if (embeddedStateCodes) return embeddedStateCodes;
                 throw error;
             });
-        }
 
-        const [flowResult, stateCodeResult, topoData] = await Promise.all([
-            flowResultPromise,
+        const [tradeUsResult, industryCategoryResult, categoryStateResult, ratesText, stateCodeResult, topoData] = await Promise.all([
+            fetchFirstText(TRADE_US_RELATIVE),
+            fetchFirstText(INDUSTRY_CATEGORY_RELATIVE),
+            fetchFirstText(CATEGORY_STATE_RELATIVE),
+            fetchFirstText(EUR_RATES_RELATIVE).then(function (result) { return result.text; }, function () { return ""; }),
             stateCodeResultPromise,
             fetch(TOPOJSON_URL).then(function (response) {
                 if (!response.ok) throw new Error("Unable to load state geometry");
@@ -1822,7 +1940,9 @@ async function init() {
         ]);
 
         parseStateCodes(stateCodeResult.text);
-        parseTradeRows(flowResult.text);
+        appState.usdPerEur = ratesText ? parseUsdPerEur(ratesText) : null;
+        buildStateFlows(tradeUsResult.text, industryCategoryResult.text, categoryStateResult.text);
+        renderMetricOptions();
         appState.topoData = topoData;
 
         const cache = readFilterCache();
