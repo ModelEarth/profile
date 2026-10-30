@@ -10,6 +10,7 @@
         { id: "us-states-link", label: "US States", path: "trade/map/state.html" },
         { id: "international-map-link", label: "International map", path: "trade/map/index.html" },
         { id: "state-sankey-link", label: "State Sankey", path: "charts/sankey/state.html" },
+        { id: "dependency-link", label: "Dependency & Advantage", path: "trade/dependency/" },
         // exiobase is a sibling repo of profile in the webroot
         { id: "trade-data-link", label: "Trade Data", path: "../exiobase/tradeflow/" }
     ];

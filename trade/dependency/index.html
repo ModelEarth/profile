@@ -1,0 +1,2173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Import Dependency and Competitive Advantage</title>
+    <link rel="shortcut icon" href="data:image/x-icon;," type="image/x-icon">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <script>
+    (function () {
+        const normalizedPath = (window.location.pathname || "").replace(/\\/g, "/");
+        const isLocalsiteProfileMirror = /\/localsite\/profile\//i.test(normalizedPath);
+        // localsite repo next to this profile repo, by a relative path so it works with the webroot at the
+        // site root or within folders. The next script loads jsDelivr's copy when there isn't one,
+        // so the profile repo also works on its own. Same as trade/map/state.html.
+        const localsiteBase = isLocalsiteProfileMirror ? "../../.." : "../../../localsite";
+        window.STATE_TRADE_LOCALSITE_BASE = localsiteBase;
+        window.STATE_TRADE_LOCALSITE_CDN = "https://cdn.jsdelivr.net/gh/ModelEarth/localsite@main";
+        document.write('<link type="text/css" rel="stylesheet" href="' + localsiteBase + '/css/base.css" />');
+        document.write('<script type="text/javascript" src="' + localsiteBase + '/js/localsite.js?showheader=true&showsearch=true"><\/script>');
+    })();
+    </script>
+    <script>
+    // No adjacent localsite (localsite.js sets window.local_app): use jsDelivr's copy
+    if (typeof window.local_app === "undefined") {
+        window.STATE_TRADE_LOCALSITE_BASE = window.STATE_TRADE_LOCALSITE_CDN;
+        document.write('<link type="text/css" rel="stylesheet" href="' + window.STATE_TRADE_LOCALSITE_CDN + '/css/base.css" />');
+        document.write('<script type="text/javascript" src="' + window.STATE_TRADE_LOCALSITE_CDN + '/js/localsite.js?showheader=true&showsearch=true"><\/script>');
+    }
+    </script>
+    <script>
+    // Tabulator defaults for the report tables
+    document.write('<script type="text/javascript" src="' + window.STATE_TRADE_LOCALSITE_BASE + '/js/earthscape.js"><\/script>');
+    window.addEventListener("load", function () {
+        if (typeof loadMarkdown === "function") {
+            loadMarkdown("README.md", "readmeDiv", "_parent");
+        }
+    });
+    </script>
+    <script src="../../js/state-flows.js"></script>
+    <script src="../../trade-viz-links.js"></script>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js" id="localsite/js/d3.v5.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+    <style>
+        :root {
+            --dep-surface: rgba(255, 255, 255, 0.94);
+            --dep-panel: #fff;
+            --dep-border: rgba(15, 23, 42, 0.08);
+            --dep-border-strong: rgba(15, 23, 42, 0.16);
+            --dep-text: #0f172a;
+            --dep-muted: #64748b;
+            --dep-hover: #f1f5f9;
+            --dep-active: #0f172a;
+            --dep-active-text: #fff;
+            --dep-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.08);
+            --outbound: #ea580c;
+            --inbound: #2563eb;
+            --instate: #10b981;
+            --imports: #f59e0b;
+            --focus: #0f766e;
+        }
+        .dark {
+            --dep-surface: rgba(32, 32, 34, 0.94);
+            --dep-panel: #262628;
+            --dep-border: rgba(255, 255, 255, 0.08);
+            --dep-border-strong: rgba(255, 255, 255, 0.18);
+            --dep-text: #f1f5f9;
+            --dep-muted: #a1a1aa;
+            --dep-hover: #333336;
+            --dep-active: #f1f5f9;
+            --dep-active-text: #18181b;
+            --dep-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+            --focus: #2dd4bf;
+        }
+        body { margin: 0; }
+
+        .dep-map-wrap {
+            position: relative;
+            container-type: inline-size;
+        }
+        #map {
+            position: relative;
+            height: max(560px, calc(100vh - var(--top-nav-offset, 80px) - 40px));
+            width: 100%;
+            background: var(--bg-primary);
+        }
+
+        /* Floating panels over the map */
+        .glass {
+            background: var(--dep-surface);
+            border: 1px solid var(--dep-border);
+            border-radius: var(--panel-radius, 16px);
+            box-shadow: var(--dep-shadow);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            color: var(--dep-text);
+        }
+        /* Everything over the map's upper left: the trade buttons, the filter bar when it's above the map,
+           and the side panel. Map drags pass through the gaps. */
+        .map-overlay {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            right: 288px;
+            bottom: 100px; /* Above the zoom buttons */
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 8px;
+            pointer-events: none;
+        }
+        .map-toolbar {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 8px;
+            max-width: 100%;
+        }
+        .map-toolbar > *, .state-panel { pointer-events: auto; }
+        #filter-dock-top:empty { display: none; }
+        .filter-bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px 14px;
+            padding: 10px 12px;
+        }
+        .filter-field {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--dep-muted);
+        }
+        .filter-field[hidden] { display: none; }
+        .filter-field span { white-space: nowrap; }
+        .filter-field select {
+            min-width: 140px;
+            padding: 6px 28px 6px 10px;
+            border: 1px solid var(--dep-border-strong);
+            border-radius: var(--control-radius, 8px);
+            font-size: 12px;
+            color: var(--dep-text);
+            background-color: var(--dep-panel);
+        }
+        .filter-note {
+            flex: 1 1 100%;
+            margin: 0;
+            font-size: 11.5px;
+            line-height: 1.4;
+            color: var(--dep-muted);
+        }
+
+        /* Map view tabs, in the trade buttons row in place of this page's own button.
+           Sized and colored like .trade-viz-link in ../../trade-viz-links.js. */
+        .segmented {
+            display: inline-flex;
+            padding: 2px;
+            gap: 2px;
+            border-radius: 8px;
+            background: #fff;
+            border: 1px solid #cbd5e1;
+        }
+        .dark .segmented { background: #333; border-color: #555; }
+        .segmented button {
+            padding: 4px 11px;
+            border: 0;
+            border-radius: 6px;
+            background: transparent;
+            color: var(--dep-muted);
+            font-size: 12px;
+            font-weight: 600;
+            line-height: 1.5;
+            cursor: pointer;
+            transition: background 0.15s ease, color 0.15s ease;
+        }
+        .segmented button:hover { color: var(--dep-text); }
+        .segmented button.is-active {
+            background: var(--dep-active);
+            color: var(--dep-active-text);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+        }
+
+        /* Competitive advantage report toggle */
+        .report-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--dep-text);
+            white-space: nowrap;
+            cursor: pointer;
+            user-select: none;
+        }
+        .report-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+        .switch-track {
+            position: relative;
+            width: 34px;
+            height: 20px;
+            border-radius: 999px;
+            background: var(--dep-border-strong);
+            transition: background 0.15s ease;
+        }
+        .switch-track::after {
+            content: "";
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+            transition: transform 0.15s ease;
+        }
+        .report-toggle input:checked + .switch-track { background: var(--instate); }
+        .report-toggle input:checked + .switch-track::after { transform: translateX(14px); }
+        .report-toggle input:focus-visible + .switch-track { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+        .ghost-btn {
+            padding: 6px 12px;
+            border: 1px solid var(--dep-border-strong);
+            border-radius: var(--btn-radius, 999px);
+            background: transparent;
+            color: var(--dep-text);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .ghost-btn:hover { background: var(--dep-hover); }
+
+        /* Side panel with States and Filters tabs. Closed, only its tabs show. */
+        .state-panel {
+            flex: 0 1 auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .state-panel[data-open="true"] { width: 300px; }
+        .panel-tabs {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            padding: 4px;
+        }
+        .state-panel[data-open="true"] .panel-tabs { border-bottom: 1px solid var(--dep-border); }
+        .panel-tab {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border: 0;
+            border-radius: var(--btn-radius, 999px);
+            background: transparent;
+            color: var(--dep-muted);
+            font-size: 12.5px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .panel-tab .material-icons { font-size: 17px; }
+        .panel-tab:hover { color: var(--dep-text); background: var(--dep-hover); }
+        .panel-tab.is-active { background: var(--dep-active); color: var(--dep-active-text); }
+        .panel-close {
+            display: none;
+            margin-left: auto;
+            padding: 4px;
+            border: 0;
+            border-radius: 50%;
+            background: transparent;
+            color: var(--dep-muted);
+            cursor: pointer;
+            line-height: 0;
+        }
+        .panel-close:hover { color: var(--dep-text); background: var(--dep-hover); }
+        .panel-close .material-icons { font-size: 18px; }
+        .state-panel[data-open="true"] .panel-close { display: inline-block; }
+        .panel-body {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            overflow-y: auto;
+        }
+        .panel-body[hidden] { display: none; }
+        .state-panel-head {
+            padding: 12px 14px 8px;
+            border-bottom: 1px solid var(--dep-border);
+        }
+        .dock-note {
+            margin: 0;
+            padding: 14px;
+            font-size: 12px;
+            line-height: 1.5;
+            color: var(--dep-muted);
+        }
+        .dock-note[hidden] { display: none; }
+        .dock-note .ghost-btn { margin-top: 10px; }
+
+        /* The filter bar stacked in the side panel */
+        .state-panel .filter-bar {
+            flex-direction: column;
+            flex-wrap: nowrap;
+            align-items: stretch;
+            gap: 12px;
+            padding: 14px;
+        }
+        .state-panel .filter-field {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 4px 6px;
+        }
+        .state-panel .filter-field[hidden] { display: none; }
+        .state-panel .filter-field > span:first-child { grid-column: 1 / -1; }
+        .state-panel .filter-field select { width: 100%; min-width: 0; }
+        .state-panel .filter-actions { justify-content: space-between; }
+        .state-panel .filter-note { flex: 0 0 auto; }
+        .filter-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+        .ghost-btn .material-icons { font-size: 15px; vertical-align: -3px; margin-right: 4px; }
+        .state-panel-head h4 {
+            margin: 0;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--dep-text);
+        }
+        #status-msg {
+            margin-top: 3px;
+            font-size: 11px;
+            line-height: 1.4;
+            color: var(--dep-muted);
+            white-space: pre-line;
+        }
+        .panel-body[data-tab-body="states"] { overflow: hidden; }
+        #state-list {
+            position: relative;
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 6px;
+        }
+        .state-row {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 7px 8px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background 0.12s ease;
+        }
+        .state-row:hover, .state-row.is-hover { background: var(--dep-hover); }
+        .state-row.is-selected { background: var(--dep-hover); box-shadow: inset 3px 0 0 var(--focus); }
+        .state-row input { margin: 0; flex: 0 0 auto; accent-color: var(--row-accent); }
+        .state-rank {
+            flex: 0 0 20px;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--dep-muted);
+            text-align: right;
+        }
+        .state-swatch {
+            flex: 0 0 12px;
+            width: 12px;
+            height: 12px;
+            border-radius: 4px;
+            background: var(--row-accent);
+        }
+        .state-copy { min-width: 0; flex: 1 1 auto; }
+        .state-name {
+            display: block;
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--dep-text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .state-meta {
+            display: block;
+            font-size: 11px;
+            color: var(--dep-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .state-value {
+            flex: 0 0 auto;
+            font-size: 12px;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            color: var(--dep-text);
+        }
+
+        #map-legend {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            z-index: 1000;
+            width: 260px;
+            padding: 10px 12px;
+            font-size: 11px;
+            line-height: 1.4;
+            color: var(--dep-muted);
+        }
+        #legend-title { font-weight: 700; color: var(--dep-text); margin-bottom: 6px; }
+        .legend-ramp { height: 8px; border-radius: 999px; }
+        .legend-scale { display: flex; justify-content: space-between; margin-top: 4px; font-variant-numeric: tabular-nums; }
+        .legend-keys { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+        .legend-key { display: inline-flex; align-items: center; gap: 6px; }
+        .legend-key i { display: inline-block; width: 16px; height: 3px; border-radius: 3px; }
+
+        .leaflet-container { font-family: inherit; }
+        /* The flow pane covers the map, so only the lines take the pointer and the states below stay clickable.
+           .leaflet-pane > svg path.flow outranks Leaflet's .leaflet-pane > svg path { pointer-events: none }. */
+        .leaflet-flow-pane > svg { pointer-events: none; }
+        .leaflet-pane > svg path.flow {
+            fill: none;
+            stroke-linecap: round;
+            pointer-events: stroke;
+            cursor: pointer;
+            transition: opacity 0.18s ease;
+        }
+        .state-label {
+            fill: #1f2937;
+            font-size: 10px;
+            font-weight: 700;
+            paint-order: stroke;
+            stroke: rgba(255, 255, 255, 0.9);
+            stroke-width: 2.5px;
+            pointer-events: none;
+        }
+        .dark .state-label { fill: #f4f4f5; stroke: rgba(0, 0, 0, 0.7); }
+
+        #map-tooltip {
+            position: fixed;
+            z-index: 2000;
+            display: none;
+            max-width: 300px;
+            padding: 10px 12px;
+            border-radius: 10px;
+            background: rgba(15, 23, 42, 0.94);
+            color: #fff;
+            font-size: 12px;
+            line-height: 1.5;
+            pointer-events: none;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        }
+        #map-tooltip b { font-weight: 700; }
+        #map-tooltip .tt-muted { color: rgba(255, 255, 255, 0.7); }
+
+        .state-report-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            border: 1px solid var(--dep-border-strong);
+            border-radius: 50%;
+            color: var(--dep-text) !important;
+            text-decoration: none !important;
+            font-size: 13px;
+            font-weight: 700;
+        }
+        .state-report-button:hover { background: var(--dep-hover); }
+
+        @container (max-width: 860px) {
+            .map-overlay {
+                position: static;
+                padding: 10px;
+            }
+            .state-panel[data-open="true"] { width: 100%; max-height: 360px; }
+        }
+
+        /* Reports below the map */
+        .dep-reports {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            padding-top: 20px;
+            padding-bottom: 20px;
+        }
+        #summary-strip {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+            gap: 12px;
+        }
+        .summary-card {
+            padding: 14px 16px;
+            border: 1px solid var(--dep-border);
+            border-radius: var(--card-radius, 12px);
+            background: var(--dep-panel);
+        }
+        .summary-label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--dep-muted);
+        }
+        .summary-value {
+            font-size: 24px;
+            font-weight: 700;
+            line-height: 1.1;
+            letter-spacing: -0.01em;
+            color: var(--dep-text);
+            font-variant-numeric: tabular-nums;
+        }
+        .summary-note { margin-top: 4px; font-size: 12px; color: var(--dep-muted); }
+
+        .report-panel {
+            container-type: inline-size;
+            padding: 18px 20px 20px;
+            border: 1px solid var(--dep-border);
+            border-radius: var(--panel-radius, 16px);
+            background: var(--dep-panel);
+        }
+        .report-panel[hidden] { display: none; }
+        .report-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+        .report-head h2 {
+            margin: 0;
+            font-size: 17px;
+            font-weight: 700;
+            color: var(--dep-text);
+        }
+        .report-note {
+            margin: 4px 0 0;
+            font-size: 13px;
+            line-height: 1.5;
+            color: var(--dep-muted);
+        }
+        .panel-menu { position: relative; flex: 0 0 auto; }
+        .report-body {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+        }
+        @container (min-width: 1000px) {
+            .report-body { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); align-items: start; }
+        }
+        .report-chart { width: 100%; height: 320px; }
+        #partner-chart { height: 380px; }
+
+        /* Tabulator inside the report panels */
+        .report-panel .tabulator {
+            border: 1px solid var(--dep-border);
+            border-radius: var(--card-radius, 12px);
+            font-size: 12.5px;
+        }
+        .report-panel .tabulator .tabulator-row { cursor: pointer; }
+        .cell-bar { display: flex; align-items: center; gap: 8px; }
+        .cell-bar-track {
+            position: relative;
+            flex: 1 1 auto;
+            height: 6px;
+            min-width: 40px;
+            border-radius: 999px;
+            background: var(--dep-hover);
+            overflow: hidden;
+        }
+        .cell-bar-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 999px; }
+        .cell-bar-label { flex: 0 0 58px; text-align: right; font-variant-numeric: tabular-nums; }
+        .mix-bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--dep-hover); }
+        .mix-bar span { display: block; height: 100%; }
+    </style>
+</head>
+<body>
+
+<div class="dep-map-wrap">
+    <div class="map-overlay">
+    <div class="map-toolbar">
+        <div id="trade-viz-links"></div>
+        <!-- Moved into #trade-viz-links in place of #dependency-link -->
+        <div class="segmented" id="report-mode" role="tablist" aria-label="Map view">
+            <button type="button" data-report="flows" role="tab">Trade flows</button>
+            <button type="button" data-report="dependency" role="tab">Import dependency</button>
+            <button type="button" data-report="advantage" role="tab">Competitive advantage</button>
+        </div>
+        <div id="filter-dock-top"></div>
+    </div>
+
+    <div class="state-panel glass" data-open="false">
+        <div class="panel-tabs" role="tablist" aria-label="Map panel">
+            <button type="button" class="panel-tab" data-tab="states" role="tab"><i class="material-icons">format_list_numbered</i>States</button>
+            <button type="button" class="panel-tab" data-tab="filters" role="tab"><i class="material-icons">tune</i>Filters</button>
+            <button type="button" class="panel-close" title="Close panel" aria-label="Close panel"><i class="material-icons">close</i></button>
+        </div>
+        <div class="panel-body" data-tab-body="states" role="tabpanel" hidden>
+            <div class="state-panel-head">
+                <h4 id="state-panel-title">States</h4>
+                <div id="status-msg">Loading...</div>
+            </div>
+            <div id="state-list"></div>
+        </div>
+        <div class="panel-body" data-tab-body="filters" role="tabpanel" id="filter-dock-panel" hidden>
+            <p class="dock-note" id="filter-dock-note" hidden>The filters are above the map.<br>
+                <button type="button" class="ghost-btn" data-dock="panel"><i class="material-icons">vertical_align_bottom</i>Move them into this panel</button>
+            </p>
+        <div class="filter-bar" id="filter-bar">
+            <label class="filter-field" for="state-select">
+                <span>Focus state</span>
+                <select id="state-select"></select>
+                <span id="selected-state-report-action"></span>
+            </label>
+            <label class="filter-field" for="industry-select">
+                <span>Industry</span>
+                <select id="industry-select"></select>
+            </label>
+            <label class="filter-field" for="metric-select">
+                <span>Indicator</span>
+                <select id="metric-select"><option value="level">Amount spent</option></select>
+            </label>
+            <label class="filter-field" for="direction-select" id="direction-wrap">
+                <span>Direction</span>
+                <select id="direction-select">
+                    <option value="both">Both</option>
+                    <option value="outbound">Outbound</option>
+                    <option value="inbound">Inbound</option>
+                </select>
+            </label>
+            <label class="filter-field" for="measure-select" id="measure-wrap">
+                <span>Measure</span>
+                <select id="measure-select"></select>
+            </label>
+            <label class="report-toggle" title="Show the competitive advantage report below the map">
+                <input type="checkbox" id="advantage-toggle">
+                <span class="switch-track"></span>
+                <span>Competitive advantage report</span>
+            </label>
+            <div class="filter-actions">
+                <button type="button" class="ghost-btn" id="clear-filters-btn" title="Reset filters and clear stored selections">Clear</button>
+                <button type="button" class="ghost-btn" id="filter-dock-btn"></button>
+            </div>
+            <p class="filter-note" id="filter-note">Loading state trade data...</p>
+        </div>
+        </div>
+    </div>
+    </div>
+
+    <div id="map">
+        <div id="map-legend" class="glass">
+            <div id="legend-title"></div>
+            <div id="legend-body"></div>
+        </div>
+    </div>
+    <div id="map-tooltip"></div>
+</div>
+
+<div class="content contentpadding large-list dep-reports">
+    <div id="summary-strip"></div>
+
+    <section class="report-panel" id="partnerPanel" hidden>
+        <div class="report-head">
+            <div>
+                <h2 id="partner-title">Top Partner States</h2>
+                <p class="report-note" id="partner-note"></p>
+            </div>
+            <div class="panel-menu" id="partnerPanelMenuHolder"></div>
+        </div>
+        <div class="report-body">
+            <div class="report-chart" id="partner-chart"></div>
+            <div id="partner-table"></div>
+        </div>
+    </section>
+
+    <section class="report-panel" id="dependencyPanel">
+        <div class="report-head">
+            <div>
+                <h2 id="dependency-title">Import Dependency</h2>
+                <p class="report-note" id="dependency-note"></p>
+            </div>
+            <div class="panel-menu" id="dependencyPanelMenuHolder"></div>
+        </div>
+        <div class="report-body">
+            <div class="report-chart" id="dependency-chart"></div>
+            <div id="dependency-table"></div>
+        </div>
+    </section>
+
+    <section class="report-panel" id="advantagePanel" hidden>
+        <div class="report-head">
+            <div>
+                <h2 id="advantage-title">Competitive Advantage</h2>
+                <p class="report-note" id="advantage-note"></p>
+            </div>
+            <div class="panel-menu" id="advantagePanelMenuHolder"></div>
+        </div>
+        <div class="report-body">
+            <div class="report-chart" id="advantage-chart"></div>
+            <div id="advantage-table"></div>
+        </div>
+    </section>
+
+    <div id="readmeDiv"></div>
+</div>
+
+<script>
+// State purchases come from trade-us.csv, industry_category.csv and category_state.csv through
+// ../../js/state-flows.js, the same flows as ../map/state.html. Import dependency and competitive
+// advantage follow the definitions in exiobase/tradeflow/bea/main_trade_analyzer.py (see README.md).
+const ALL = "ALL";
+const DATA_YEAR = StateFlows.YEAR;
+const TRADE_DATA_URLS = ["../../../trade-data/", "https://raw.githubusercontent.com/ModelEarth/trade-data/main/"];
+const TOPOJSON_URL = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json";
+const INITIAL_MAP_CENTER = [39.5, -98.35];
+const DEFAULT_MAP_ZOOM = 4;
+const CONTIGUOUS_BOUNDS = [[24.4, -124.8], [49.4, -66.9]];
+const TOP_LINKS = 6;
+const FIPS_TO_CODE = {
+    "01": "AL", "02": "AK", "04": "AZ", "05": "AR", "06": "CA", "08": "CO", "09": "CT", "10": "DE",
+    "11": "DC", "12": "FL", "13": "GA", "15": "HI", "16": "ID", "17": "IL", "18": "IN", "19": "IA",
+    "20": "KS", "21": "KY", "22": "LA", "23": "ME", "24": "MD", "25": "MA", "26": "MI", "27": "MN",
+    "28": "MS", "29": "MO", "30": "MT", "31": "NE", "32": "NV", "33": "NH", "34": "NJ", "35": "NM",
+    "36": "NY", "37": "NC", "38": "ND", "39": "OH", "40": "OK", "41": "OR", "42": "PA", "44": "RI",
+    "45": "SC", "46": "SD", "47": "TN", "48": "TX", "49": "UT", "50": "VT", "51": "VA", "53": "WA",
+    "54": "WV", "55": "WI", "56": "WY"
+};
+
+const pct = function (value) {
+    if (!Number.isFinite(value)) return "-";
+    return d3.format(Math.abs(value) < 0.001 && value !== 0 ? ".2%" : ".1%")(value);
+};
+const signedPct = function (value) {
+    return Number.isFinite(value) ? (value > 0 ? "+" : "") + pct(value) : "-";
+};
+
+// Measures for the Import dependency and Competitive advantage map views. Each value is per state,
+// for the selected industry or all industries, and the selected indicator (except location quotients,
+// which come from GDP by state).
+const REPORT_MEASURES = {
+    dependency: {
+        importShare: {
+            label: "Foreign import share",
+            format: pct,
+            colors: ["#fff7ed", "#fdba74", "#c2410c"],
+            note: "Share of the state's purchases supplied by imports from other countries."
+        },
+        outsideShare: {
+            label: "Bought outside the state",
+            format: pct,
+            colors: ["#eff6ff", "#93c5fd", "#1d4ed8"],
+            note: "Share of the state's purchases supplied by other states and other countries."
+        },
+        supplierHHI: {
+            label: "Supplier concentration (HHI)",
+            format: function (value) { return Number.isFinite(value) ? value.toFixed(3) : "-"; },
+            colors: ["#faf5ff", "#c4b5fd", "#6d28d9"],
+            note: "Herfindahl-Hirschman Index of the states supplying it: near 0 when spread across many states, 1 for a single state."
+        }
+    },
+    advantage: {
+        lq: {
+            label: "Location quotient",
+            format: function (value) { return Number.isFinite(value) ? value.toFixed(2) + "×" : "-"; },
+            diverging: true,
+            center: 1,
+            colors: ["#6366f1", "#eef2f6", "#059669"],
+            note: "The state's share of the industry's US GDP over its share of all US GDP. Above 1 means the state specializes in it."
+        },
+        balance: {
+            label: "Interstate trade balance",
+            format: signedPct,
+            diverging: true,
+            center: 0,
+            colors: ["#e11d48", "#eef2f6", "#059669"],
+            note: "Sales to other states minus purchases from them, over the two together (-100% to +100%)."
+        },
+        usShare: {
+            label: "Share of US interstate sales",
+            format: pct,
+            colors: ["#ecfdf5", "#6ee7b7", "#047857"],
+            note: "The state's sales to other states over all states' interstate sales."
+        }
+    }
+};
+const DEFAULT_MEASURE = { dependency: "importShare", advantage: "lq" };
+const REPORTS = ["flows", "dependency", "advantage"];
+
+const appState = {
+    flows: null,
+    rows: [],
+    pairRows: [],
+    inState: new Map(),
+    usdPerEur: null,
+    stateNames: new Map(),
+    stateCodes: [],
+    industries: [],
+    visiblePartners: new Set(),
+    report: "dependency",
+    selectedState: "CO",
+    metric: "level",
+    direction: "both",
+    industry: ALL,
+    measure: "",
+    showAdvantage: false,
+    hoverState: null
+};
+const METRICS = {};
+const profileCache = new Map();
+
+function normalizeCode(value) {
+    return String(value || "").trim().toUpperCase();
+}
+
+function titleCase(value) {
+    return String(value || "").toLowerCase().replace(/_/g, " ").trim()
+        .replace(/\b\w/g, function (character) { return character.toUpperCase(); });
+}
+
+function escapeHtml(value) {
+    return String(value == null ? "" : value)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function stateLabel(code) {
+    return appState.stateNames.get(normalizeCode(code)) || normalizeCode(code);
+}
+
+function industryLabel(code) {
+    return code === ALL ? "All industries" : titleCase(code);
+}
+
+function cssVar(name) {
+    return getComputedStyle(document.body).getPropertyValue(name).trim();
+}
+
+function isDark() {
+    return document.body.classList.contains("dark");
+}
+
+function formatScaled(value, unit) {
+    if (!Number.isFinite(value)) return "-";
+    const size = Math.abs(value);
+    if (size >= 1e9) return d3.format(",.2f")(value / 1e9) + "B " + unit;
+    if (size >= 1e6) return d3.format(",.2f")(value / 1e6) + "M " + unit;
+    if (size >= 1e3) return d3.format(",.1f")(value / 1e3) + "K " + unit;
+    if (size >= 1) return d3.format(",.1f")(value) + " " + unit;
+    return d3.format(",.3f")(value) + " " + unit;
+}
+
+function metricFormatter(key, unit) {
+    if (key !== "level") return function (value) { return formatScaled(value, unit); };
+    return function (value) {
+        if (!Number.isFinite(value)) return "-";
+        const symbol = appState.usdPerEur ? "$" : "€";
+        const sign = value < 0 ? "-" : "";
+        const size = Math.abs(value);
+        if (size >= 1e6) return sign + symbol + d3.format(",.2f")(size / 1e6) + "T";
+        if (size >= 1e3) return sign + symbol + d3.format(",.1f")(size / 1e3) + "B";
+        if (size >= 1) return sign + symbol + d3.format(",.1f")(size) + "M";
+        return sign + symbol + d3.format(",.2f")(size) + "M";
+    };
+}
+
+function metricDef() {
+    return METRICS[appState.metric] || METRICS.level;
+}
+
+function measureDefs() {
+    return REPORT_MEASURES[appState.report] || {};
+}
+
+function measureDef() {
+    return measureDefs()[appState.measure];
+}
+
+function stateReportAction(code) {
+    if (!code) return "";
+    return '<a class="state-report-button" href="../../#state=' + encodeURIComponent(code) +
+        '" title="Explore state report for ' + escapeHtml(stateLabel(code)) + '">&#8942;</a>';
+}
+
+// ---- Filters in the hash and localStorage (as in ../map/state.html) ----
+
+const FILTER_STORAGE_KEY = "tradeDependency.filters";
+const FILTER_DEFAULTS = {
+    report: "dependency",
+    state: "CO",
+    metric: "level",
+    direction: "both",
+    industry: ALL,
+    measure: "",
+    advantage: ""
+};
+const FILTER_KEYS = Object.keys(FILTER_DEFAULTS);
+
+function readFilterCache() {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(FILTER_STORAGE_KEY) || "{}");
+        return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (error) {
+        return {};
+    }
+}
+
+function currentFilters() {
+    return {
+        report: appState.report,
+        state: appState.selectedState,
+        metric: appState.metric,
+        direction: appState.direction,
+        industry: appState.industry,
+        measure: appState.measure === DEFAULT_MEASURE[appState.report] ? "" : appState.measure,
+        advantage: appState.showAdvantage && appState.report !== "advantage" ? "1" : ""
+    };
+}
+
+function writeFilterCache() {
+    const filters = currentFilters();
+    const cleaned = {};
+    FILTER_KEYS.forEach(function (key) {
+        if (filters[key] && filters[key] !== FILTER_DEFAULTS[key]) cleaned[key] = filters[key];
+    });
+    try {
+        if (Object.keys(cleaned).length) {
+            localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(cleaned));
+        } else {
+            localStorage.removeItem(FILTER_STORAGE_KEY);
+        }
+    } catch (error) {
+        // localStorage unavailable
+    }
+}
+
+function applyFilters(filters) {
+    const report = REPORTS.indexOf(filters.report) >= 0 ? filters.report : FILTER_DEFAULTS.report;
+    const state = normalizeCode(filters.state);
+    const industry = normalizeCode(filters.industry);
+    appState.report = report;
+    appState.selectedState = appState.stateNames.has(state) ? state : (appState.stateNames.has("CO") ? "CO" : appState.stateCodes[0]);
+    appState.metric = Object.prototype.hasOwnProperty.call(METRICS, filters.metric) ? filters.metric : "level";
+    appState.direction = ["both", "outbound", "inbound"].indexOf(filters.direction) >= 0 ? filters.direction : "both";
+    appState.industry = appState.industries.indexOf(industry) >= 0 ? industry : ALL;
+    const measures = REPORT_MEASURES[report] || {};
+    appState.measure = Object.prototype.hasOwnProperty.call(measures, filters.measure) ? filters.measure : (DEFAULT_MEASURE[report] || "");
+    appState.showAdvantage = report === "advantage" || filters.advantage === "1" || filters.advantage === true;
+}
+
+function pushFiltersToHash() {
+    if (typeof updateHash !== "function") return;
+    const filters = currentFilters();
+    const update = {};
+    const remove = [];
+    FILTER_KEYS.forEach(function (key) {
+        if (filters[key] && filters[key] !== FILTER_DEFAULTS[key]) {
+            update[key] = filters[key];
+        } else {
+            remove.push(key);
+        }
+    });
+    updateHash(update, true, remove);
+}
+
+function persistFilters() {
+    writeFilterCache();
+    pushFiltersToHash();
+}
+
+function setFilters(changes) {
+    Object.assign(appState, changes);
+    if (Object.prototype.hasOwnProperty.call(changes, "selectedState") ||
+        Object.prototype.hasOwnProperty.call(changes, "direction") ||
+        Object.prototype.hasOwnProperty.call(changes, "industry")) {
+        appState.visiblePartners = new Set();
+    }
+    persistFilters();
+    renderAll();
+}
+
+function hashFilters() {
+    const hash = typeof getHash === "function" ? getHash() : {};
+    const hasKey = FILTER_KEYS.some(function (key) { return hash[key]; });
+    return hasKey ? hash : null;
+}
+
+function handleExternalHashChange() {
+    const fromHash = hashFilters();
+    applyFilters(fromHash || {});
+    writeFilterCache();
+    appState.visiblePartners = new Set();
+    renderAll();
+}
+
+// ---- Data ----
+
+// The first trade-data source with the file: a local trade-data repo in the webroot, then GitHub
+function fetchTradeData(path) {
+    const urls = TRADE_DATA_URLS.map(function (base) { return base + path; });
+    return earthscape_fetchFirst(urls, DATA_YEAR).then(function (result) {
+        if (!result) throw new Error("Unable to load " + path);
+        return result.text;
+    });
+}
+
+function buildData(tradeUsText, industryCategoryText, categoryStateText) {
+    const flows = StateFlows.build(tradeUsText, industryCategoryText, categoryStateText, appState.usdPerEur);
+    appState.flows = flows;
+    flows.metricKeys.forEach(function (key) {
+        const metric = StateFlows.METRICS[key];
+        METRICS[key] = { label: metric.label, formatter: metricFormatter(key, metric.unit) };
+    });
+
+    // Flow rows and state pairs for the Trade flows view, with in-state purchases kept aside
+    const rows = [];
+    const pairs = new Map();
+    flows.rows.forEach(function (flow) {
+        if (flow.flow_type === "intra_state") {
+            const current = appState.inState.get(flow.origin_state) || {};
+            flows.metricKeys.forEach(function (key) { current[key] = (current[key] || 0) + flow[key]; });
+            appState.inState.set(flow.origin_state, current);
+            return;
+        }
+        rows.push(Object.assign({ key: [flow.origin_state, flow.destination_state, flow.state_industry_code].join("\0") }, flow));
+        const pairKey = flow.origin_state + "\0" + flow.destination_state;
+        const pair = pairs.get(pairKey) || { key: pairKey, origin_state: flow.origin_state, destination_state: flow.destination_state, state_industry_code: ALL };
+        flows.metricKeys.forEach(function (key) { pair[key] = (pair[key] || 0) + flow[key]; });
+        pairs.set(pairKey, pair);
+    });
+    appState.rows = rows;
+    appState.pairRows = Array.from(pairs.values());
+    appState.industries = Array.from(new Set(flows.rows.map(function (row) { return row.state_industry_code; }))).sort();
+}
+
+// Per state and industry, for one indicator: purchases (in-state, from other states by supplying
+// state, and imports) and sales to other states (by destination state)
+function profilesFor(metric) {
+    if (profileCache.has(metric)) return profileCache.get(metric);
+    const purchases = {};
+    const sales = {};
+    const usSales = {};
+    const slot = function (store, state, code, empty) {
+        const byCode = store[state] = store[state] || {};
+        return byCode[code] = byCode[code] || empty();
+    };
+    const emptyPurchase = function () { return { instate: 0, other: 0, imports: 0, suppliers: {} }; };
+    const emptySale = function () { return { other: 0, dests: {} }; };
+    appState.flows.rows.forEach(function (row) {
+        const value = row[metric] || 0;
+        if (!value) return;
+        const code = row.state_industry_code;
+        const purchase = slot(purchases, row.destination_state, code, emptyPurchase);
+        if (row.origin_state === row.destination_state) {
+            purchase.instate += value;
+            return;
+        }
+        purchase.other += value;
+        purchase.suppliers[row.origin_state] = (purchase.suppliers[row.origin_state] || 0) + value;
+        const sale = slot(sales, row.origin_state, code, emptySale);
+        sale.other += value;
+        sale.dests[row.destination_state] = (sale.dests[row.destination_state] || 0) + value;
+        usSales[code] = (usSales[code] || 0) + value;
+    });
+    Object.keys(appState.flows.imports).forEach(function (state) {
+        const byCode = appState.flows.imports[state];
+        Object.keys(byCode).forEach(function (code) {
+            slot(purchases, state, code, emptyPurchase).imports += byCode[code][metric] || 0;
+        });
+    });
+    const result = { purchases: purchases, sales: sales, usSales: usSales };
+    profileCache.set(metric, result);
+    return result;
+}
+
+function addInto(target, source) {
+    Object.keys(source).forEach(function (key) { target[key] = (target[key] || 0) + source[key]; });
+}
+
+// One state's purchases and sales for an industry, or summed over all industries
+function stateProfile(state, industry, metric) {
+    const profiles = profilesFor(metric || appState.metric);
+    const codes = industry === ALL ? appState.industries : [industry];
+    const result = { instate: 0, other: 0, imports: 0, suppliers: {}, sold: 0, dests: {}, usSales: 0 };
+    codes.forEach(function (code) {
+        const purchase = (profiles.purchases[state] || {})[code];
+        if (purchase) {
+            result.instate += purchase.instate;
+            result.other += purchase.other;
+            result.imports += purchase.imports;
+            addInto(result.suppliers, purchase.suppliers);
+        }
+        const sale = (profiles.sales[state] || {})[code];
+        if (sale) {
+            result.sold += sale.other;
+            addInto(result.dests, sale.dests);
+        }
+        result.usSales += profiles.usSales[code] || 0;
+    });
+    result.total = result.instate + result.other + result.imports;
+    return result;
+}
+
+function ranked(byState) {
+    return Object.keys(byState).map(function (code) { return { code: code, value: byState[code] }; })
+        .sort(function (a, b) { return b.value - a.value; });
+}
+
+function hhi(byState) {
+    const values = Object.values(byState);
+    const total = values.reduce(function (sum, value) { return sum + value; }, 0);
+    if (!total) return null;
+    return values.reduce(function (sum, value) { return sum + Math.pow(value / total, 2); }, 0);
+}
+
+function quotientFor(state, industry) {
+    const quotients = appState.flows.quotients[state] || [];
+    if (industry === ALL) return quotients[0] || null;
+    return quotients.find(function (entry) { return entry.code === industry; }) || null;
+}
+
+function ratio(numerator, denominator) {
+    return denominator ? numerator / denominator : null;
+}
+
+function measureValue(report, measure, state, industry) {
+    const profile = stateProfile(state, industry);
+    if (report === "dependency") {
+        if (measure === "importShare") return ratio(profile.imports, profile.total);
+        if (measure === "outsideShare") return ratio(profile.other + profile.imports, profile.total);
+        if (measure === "supplierHHI") return hhi(profile.suppliers);
+    }
+    if (report === "advantage") {
+        if (measure === "lq") {
+            const quotient = quotientFor(state, industry);
+            return quotient ? quotient.quotient : null;
+        }
+        if (measure === "balance") return ratio(profile.sold - profile.other, profile.sold + profile.other);
+        if (measure === "usShare") return ratio(profile.sold, profile.usSales);
+    }
+    return null;
+}
+
+// ---- Trade flows view (as in ../map/state.html) ----
+
+function getFilteredRows() {
+    const byIndustry = appState.industry !== ALL;
+    return (byIndustry ? appState.rows : appState.pairRows).filter(function (row) {
+        if (row.origin_state !== appState.selectedState && row.destination_state !== appState.selectedState) return false;
+        if (byIndustry && row.state_industry_code !== appState.industry) return false;
+        if (appState.direction === "outbound" && row.origin_state !== appState.selectedState) return false;
+        if (appState.direction === "inbound" && row.destination_state !== appState.selectedState) return false;
+        return true;
+    });
+}
+
+function summarizeRows(rows) {
+    const partnerMap = new Map();
+    let inbound = 0;
+    let outbound = 0;
+    rows.forEach(function (row) {
+        const isOutbound = row.origin_state === appState.selectedState;
+        const partner = isOutbound ? row.destination_state : row.origin_state;
+        const current = partnerMap.get(partner) || { code: partner, inbound: 0, outbound: 0, total: 0 };
+        const value = row[appState.metric] || 0;
+        if (isOutbound) { outbound += value; current.outbound += value; } else { inbound += value; current.inbound += value; }
+        current.total += value;
+        partnerMap.set(partner, current);
+    });
+    const partners = Array.from(partnerMap.values()).sort(function (a, b) { return b.total - a.total; });
+    if (appState.visiblePartners.size === 0) {
+        appState.visiblePartners = new Set(partners.map(function (partner) { return partner.code; }));
+    }
+    return { inbound: inbound, outbound: outbound, net: outbound - inbound, partners: partners };
+}
+
+function partnerColor(partner) {
+    if (partner.outbound > 0 && partner.inbound > 0) return "#7c3aed";
+    return partner.outbound > 0 ? cssVar("--outbound") : cssVar("--inbound");
+}
+
+// ---- The view for the current report: state fills, list, flow lines and summary ----
+
+function buildView() {
+    if (appState.report === "flows") return buildFlowsView();
+    return buildMeasureView();
+}
+
+function buildFlowsView() {
+    const rows = getFilteredRows();
+    const summary = summarizeRows(rows);
+    const visible = summary.partners.filter(function (partner) { return appState.visiblePartners.has(partner.code); });
+    const maxTotal = d3.max(visible, function (partner) { return partner.total; }) || 1;
+    const fillScale = d3.scaleLinear().domain([0, maxTotal]).range(isDark() ? ["#3f3f46", "#fb923c"] : ["#f1f5f9", "#c2410c"]);
+    const fills = new Map();
+    visible.forEach(function (partner) { fills.set(partner.code, fillScale(partner.total)); });
+    const links = rows.filter(function (row) {
+        const partner = row.origin_state === appState.selectedState ? row.destination_state : row.origin_state;
+        return appState.visiblePartners.has(partner);
+    }).map(function (row) {
+        return {
+            key: row.key,
+            origin_state: row.origin_state,
+            destination_state: row.destination_state,
+            value: row[appState.metric] || 0,
+            outbound: row.origin_state === appState.selectedState,
+            industry: row.state_industry_code
+        };
+    });
+    return { kind: "flows", rows: rows, summary: summary, fills: fills, links: links, valueFor: function (code) {
+        const partner = summary.partners.find(function (entry) { return entry.code === code; });
+        return partner ? partner.total : 0;
+    } };
+}
+
+function buildMeasureView() {
+    const defn = measureDef();
+    const values = new Map();
+    appState.stateCodes.forEach(function (code) {
+        const value = measureValue(appState.report, appState.measure, code, appState.industry);
+        if (Number.isFinite(value)) values.set(code, value);
+    });
+    const scale = measureScale(defn, Array.from(values.values()));
+    const fills = new Map();
+    values.forEach(function (value, code) { fills.set(code, scale(value)); });
+
+    // Lines to the focus state from its largest suppliers, or from it to its largest buyers
+    const profile = stateProfile(appState.selectedState, appState.industry);
+    const dependency = appState.report === "dependency";
+    const links = ranked(dependency ? profile.suppliers : profile.dests).slice(0, TOP_LINKS).map(function (entry) {
+        return {
+            key: entry.code,
+            origin_state: dependency ? entry.code : appState.selectedState,
+            destination_state: dependency ? appState.selectedState : entry.code,
+            value: entry.value,
+            outbound: !dependency,
+            industry: appState.industry
+        };
+    });
+    return { kind: "measure", defn: defn, values: values, scale: scale, fills: fills, links: links, profile: profile,
+        valueFor: function (code) { return values.get(code); } };
+}
+
+function measureScale(defn, values) {
+    const min = d3.min(values);
+    const max = d3.max(values);
+    const interpolator = d3.interpolateRgbBasis(defn.colors);
+    if (min == null) return function () { return null; };
+    if (defn.diverging) {
+        const low = Math.min(min, defn.center - 1e-9);
+        const high = Math.max(max, defn.center + 1e-9);
+        return d3.scaleDiverging(interpolator).domain([low, defn.center, high]);
+    }
+    return d3.scaleSequential(interpolator).domain([min, max === min ? min + 1e-9 : max]);
+}
+
+// ---- Map ----
+
+const map = L.map("map", {
+    scrollWheelZoom: false,
+    zoomSnap: 0.25,
+    minZoom: 3,
+    zoomControl: false
+}).setView(INITIAL_MAP_CENTER, DEFAULT_MAP_ZOOM);
+
+// Fill the map with the lower 48 states, clear of the trade buttons at the top
+function fitContiguousStates() {
+    map.fitBounds(CONTIGUOUS_BOUNDS, { paddingTopLeft: [24, 64], paddingBottomRight: [24, 16] });
+}
+fitContiguousStates();
+// Lower left, since localsite hides Leaflet's lower right corner. .map-overlay ends above it.
+L.control.zoom({ position: "bottomleft" }).addTo(map);
+
+// CARTO light and dark basemaps with localsite's key, or Esri gray canvas tiles when the key fails (cartoOrEsri in localsite.js)
+const basemaps = {};
+let basemap = null;
+
+function basemapFor(dark) {
+    const key = dark ? "dark" : "light";
+    if (!basemaps[key]) {
+        basemaps[key] = typeof cartoOrEsri === "function"
+            ? cartoOrEsri(dark ? "dark_all" : "light_all", dark
+                ? ["World_Dark_Gray_Base", "World_Dark_Gray_Reference"]
+                : ["World_Light_Gray_Base", "World_Light_Gray_Reference"], { attributionPrefix: "Data: ModelEarth trade-data | " })
+            : L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "OpenStreetMap contributors | Data: ModelEarth trade-data" });
+    }
+    return basemaps[key];
+}
+
+function syncTiles() {
+    const next = basemapFor(isDark());
+    if (next === basemap) return;
+    if (basemap) map.removeLayer(basemap);
+    basemap = next.addTo(map);
+}
+syncTiles();
+
+// Flow lines and labels in their own pane above the state shapes (overlayPane, z-index 400)
+const flowPane = map.createPane("flowPane");
+flowPane.style.zIndex = 450;
+L.svg({ pane: "flowPane" }).addTo(map);
+const stateFillLayer = L.layerGroup().addTo(map);
+const svg = d3.select(flowPane).select("svg");
+const g = svg.append("g");
+const defs = svg.append("defs");
+["outbound", "inbound"].forEach(function (direction) {
+    defs.append("marker")
+        .attr("id", "arrow-" + direction)
+        .attr("viewBox", "0 0 10 10")
+        .attr("refX", 9)
+        .attr("refY", 5)
+        .attr("markerWidth", 6)
+        .attr("markerHeight", 6)
+        .attr("orient", "auto-start-reverse")
+        .append("path")
+        .attr("d", "M 0 0 L 10 5 L 0 10 z")
+        .attr("class", "arrow-head-" + direction);
+});
+L.DomEvent.disableClickPropagation(document.getElementById("map-legend"));
+L.DomEvent.disableScrollPropagation(document.getElementById("map-legend"));
+
+const stateLayerByCode = new Map();
+const stateCenterByCode = new Map();
+const tooltip = document.getElementById("map-tooltip");
+let currentView = null;
+
+function showTooltip(event, html) {
+    tooltip.innerHTML = html;
+    tooltip.style.display = "block";
+    moveTooltip(event);
+}
+
+function moveTooltip(event) {
+    const source = event && event.originalEvent ? event.originalEvent : event;
+    if (!source || typeof source.clientX !== "number") return;
+    const pad = 14;
+    const x = source.clientX + pad + tooltip.offsetWidth > window.innerWidth ? source.clientX - tooltip.offsetWidth - pad : source.clientX + pad;
+    const y = source.clientY + tooltip.offsetHeight + pad > window.innerHeight ? source.clientY - tooltip.offsetHeight - pad : source.clientY + pad;
+    tooltip.style.left = x + "px";
+    tooltip.style.top = y + "px";
+}
+
+function hideTooltip() {
+    tooltip.style.display = "none";
+}
+
+function curvePath(startPoint, endPoint) {
+    const dx = endPoint.x - startPoint.x;
+    const dy = endPoint.y - startPoint.y;
+    const midX = (startPoint.x + endPoint.x) / 2;
+    const midY = (startPoint.y + endPoint.y) / 2 - Math.max(22, Math.hypot(dx, dy) * 0.18);
+    return "M" + startPoint.x + "," + startPoint.y + " Q" + midX + "," + midY + " " + endPoint.x + "," + endPoint.y;
+}
+
+function stateTooltip(code) {
+    const view = currentView;
+    const lines = ['<b>' + escapeHtml(stateLabel(code)) + "</b>"];
+    if (!view) return lines.join("");
+    if (view.kind === "flows") {
+        const partner = view.summary.partners.find(function (entry) { return entry.code === code; });
+        if (code === appState.selectedState) {
+            lines.push('<div class="tt-muted">Focus state</div>');
+        } else if (partner) {
+            if (partner.outbound) lines.push("<div>Sold by " + escapeHtml(stateLabel(appState.selectedState)) + ": <b>" + metricDef().formatter(partner.outbound) + "</b></div>");
+            if (partner.inbound) lines.push("<div>Bought by " + escapeHtml(stateLabel(appState.selectedState)) + ": <b>" + metricDef().formatter(partner.inbound) + "</b></div>");
+        } else {
+            lines.push('<div class="tt-muted">No visible trade with ' + escapeHtml(stateLabel(appState.selectedState)) + "</div>");
+        }
+    } else {
+        lines.push("<div>" + escapeHtml(view.defn.label) + ": <b>" + view.defn.format(view.values.get(code)) + "</b></div>");
+        const extra = measureMeta(code);
+        if (extra) lines.push('<div class="tt-muted">' + escapeHtml(extra) + "</div>");
+    }
+    lines.push('<div class="tt-muted">' + (code === appState.selectedState ? "" : "Click to focus on this state") + "</div>");
+    return lines.join("");
+}
+
+function buildStateMap(topoData) {
+    const geojson = topojson.feature(topoData, topoData.objects.states);
+    L.geoJSON(geojson, {
+        style: function () {
+            return { color: "#94a3b8", weight: 0.7, fillColor: "#e2e8f0", fillOpacity: 0.3 };
+        },
+        onEachFeature: function (feature, layer) {
+            const code = FIPS_TO_CODE[String(feature.id).padStart(2, "0")];
+            if (!code || !appState.stateNames.has(code)) return;
+            stateLayerByCode.set(code, layer);
+            stateCenterByCode.set(code, layer.getBounds().getCenter());
+            layer.on("click", function () {
+                if (code !== appState.selectedState) setFilters({ selectedState: code });
+            });
+            layer.on("mouseover", function (event) {
+                setHoverState(code);
+                showTooltip(event, stateTooltip(code));
+            });
+            layer.on("mousemove", moveTooltip);
+            layer.on("mouseout", function () {
+                setHoverState(null);
+                hideTooltip();
+            });
+        }
+    }).addTo(stateFillLayer);
+}
+
+function styleStates() {
+    const view = currentView;
+    const dark = isDark();
+    const border = dark ? "#52525b" : "#94a3b8";
+    const empty = dark ? "#27272a" : "#e2e8f0";
+    stateLayerByCode.forEach(function (layer, code) {
+        const isFocus = code === appState.selectedState;
+        const isHover = code === appState.hoverState;
+        let fillColor = (view && view.fills.get(code)) || empty;
+        if (view && view.kind === "flows" && isFocus) fillColor = cssVar("--instate");
+        layer.setStyle({
+            fillColor: fillColor,
+            fillOpacity: view && view.fills.has(code) || isFocus ? 0.82 : 0.35,
+            color: isFocus ? cssVar("--focus") : (isHover ? cssVar("--dep-text") : border),
+            weight: isFocus ? 2.6 : (isHover ? 1.8 : 0.7)
+        });
+        if (isFocus || isHover) layer.bringToFront();
+    });
+}
+
+function drawOverlay() {
+    const view = currentView;
+    g.selectAll("*").remove();
+    if (!view) return;
+    g.raise();
+    defs.select(".arrow-head-outbound").attr("fill", cssVar("--outbound"));
+    defs.select(".arrow-head-inbound").attr("fill", cssVar("--inbound"));
+    const links = view.links.slice().sort(function (a, b) { return b.value - a.value; });
+    const maxValue = d3.max(links, function (link) { return link.value; }) || 1;
+    const widthScale = d3.scaleSqrt().domain([0, maxValue]).range([0.8, view.kind === "flows" ? 5.5 : 7]);
+
+    g.selectAll("path.flow")
+        .data(links, function (link) { return link.key; })
+        .join("path")
+        .attr("class", "flow")
+        .attr("stroke", function (link) { return link.outbound ? cssVar("--outbound") : cssVar("--inbound"); })
+        .attr("marker-end", function (link) { return link.outbound ? "url(#arrow-outbound)" : "url(#arrow-inbound)"; })
+        .attr("stroke-width", function (link) { return widthScale(link.value); })
+        .attr("opacity", function (link) {
+            if (!appState.hoverState) return 0.85;
+            return link.origin_state === appState.hoverState || link.destination_state === appState.hoverState ? 1 : 0.15;
+        })
+        .attr("d", function (link) {
+            const origin = stateCenterByCode.get(link.origin_state);
+            const destination = stateCenterByCode.get(link.destination_state);
+            if (!origin || !destination) return "";
+            return curvePath(map.latLngToLayerPoint(origin), map.latLngToLayerPoint(destination));
+        })
+        .on("mouseenter", function (event, link) {
+            const partner = link.outbound ? link.destination_state : link.origin_state;
+            setHoverState(partner);
+            showTooltip(event, [
+                "<b>" + escapeHtml(stateLabel(link.origin_state)) + " &rarr; " + escapeHtml(stateLabel(link.destination_state)) + "</b>",
+                "<div>" + escapeHtml(metricDef().label) + ": <b>" + metricDef().formatter(link.value) + "</b></div>",
+                '<div class="tt-muted">' + escapeHtml(industryLabel(link.industry)) + "</div>"
+            ].join(""));
+        })
+        .on("mousemove", moveTooltip)
+        .on("mouseleave", function () {
+            setHoverState(null);
+            hideTooltip();
+        });
+
+    const labelCodes = new Set([appState.selectedState]);
+    links.forEach(function (link) { labelCodes.add(link.origin_state); labelCodes.add(link.destination_state); });
+    if (view.kind === "measure") view.values.forEach(function (value, code) { labelCodes.add(code); });
+    g.selectAll("text.state-label")
+        .data(Array.from(labelCodes).filter(function (code) { return stateCenterByCode.has(code); }))
+        .join("text")
+        .attr("class", "state-label")
+        .attr("text-anchor", "middle")
+        .attr("x", function (code) { return map.latLngToLayerPoint(stateCenterByCode.get(code)).x; })
+        .attr("y", function (code) { return map.latLngToLayerPoint(stateCenterByCode.get(code)).y + 3; })
+        .text(function (code) { return code; });
+}
+
+function setHoverState(code) {
+    if (appState.hoverState === code) return;
+    appState.hoverState = code;
+    styleStates();
+    g.selectAll("path.flow").attr("opacity", function (link) {
+        if (!code) return 0.85;
+        return link.origin_state === code || link.destination_state === code ? 1 : 0.15;
+    });
+    document.querySelectorAll("#state-list .state-row").forEach(function (row) {
+        row.classList.toggle("is-hover", row.getAttribute("data-state") === code);
+    });
+}
+
+map.on("zoomend moveend", drawOverlay);
+
+// ---- States list to the left of the map ----
+
+function measureMeta(code) {
+    const profile = stateProfile(code, appState.industry);
+    if (appState.report === "dependency") {
+        const top = ranked(profile.suppliers)[0];
+        return top ? "Top supplier " + top.code + " " + pct(ratio(top.value, profile.other)) + " of interstate" : "";
+    }
+    if (appState.measure === "lq" && appState.industry === ALL) {
+        const quotient = quotientFor(code, ALL);
+        return quotient ? "Strongest: " + titleCase(quotient.code) : "";
+    }
+    const top = ranked(profile.dests)[0];
+    return top ? "Top buyer " + top.code + " " + pct(ratio(top.value, profile.sold)) : "";
+}
+
+// Keep the focus state in view within the list, without scrolling the page
+function keepSelectedInList() {
+    const container = document.getElementById("state-list");
+    const selected = container.querySelector(".state-row.is-selected");
+    if (selected && (selected.offsetTop < container.scrollTop || selected.offsetTop + selected.offsetHeight > container.scrollTop + container.clientHeight)) {
+        container.scrollTop = selected.offsetTop - container.clientHeight / 2;
+    }
+}
+
+function renderStateList(view) {
+    const container = document.getElementById("state-list");
+    const status = document.getElementById("status-msg");
+    if (view.kind === "flows") {
+        document.getElementById("state-panel-title").textContent = "Partners of " + stateLabel(appState.selectedState);
+        status.textContent = view.summary.partners.length
+            ? view.summary.partners.length + " partner states. Uncheck to hide, double-click to refocus."
+            : "No partner states match the current filters.";
+        const formatter = metricDef().formatter;
+        container.innerHTML = view.summary.partners.map(function (partner) {
+            const bits = [];
+            if (partner.outbound > 0) bits.push("out " + formatter(partner.outbound));
+            if (partner.inbound > 0) bits.push("in " + formatter(partner.inbound));
+            return [
+                '<label class="state-row" data-state="' + partner.code + '" style="--row-accent:' + partnerColor(partner) + '">',
+                '<input type="checkbox" data-partner="' + partner.code + '"' + (appState.visiblePartners.has(partner.code) ? " checked" : "") + ">",
+                '<span class="state-copy"><span class="state-name">' + escapeHtml(stateLabel(partner.code)) + "</span>",
+                '<span class="state-meta">' + escapeHtml(bits.join(" | ")) + "</span></span>",
+                '<span class="state-value">' + formatter(partner.total) + "</span>",
+                "</label>"
+            ].join("");
+        }).join("");
+        container.querySelectorAll("input[data-partner]").forEach(function (checkbox) {
+            checkbox.addEventListener("change", function () {
+                const code = checkbox.getAttribute("data-partner");
+                if (checkbox.checked) appState.visiblePartners.add(code); else appState.visiblePartners.delete(code);
+                renderAll();
+            });
+        });
+        container.querySelectorAll(".state-row").forEach(function (row) {
+            row.addEventListener("dblclick", function () { setFilters({ selectedState: row.getAttribute("data-state") }); });
+        });
+    } else {
+        const defn = view.defn;
+        document.getElementById("state-panel-title").textContent = "States by " + defn.label.toLowerCase();
+        status.textContent = industryLabel(appState.industry) + ". " + defn.note;
+        const entries = Array.from(view.values.entries()).sort(function (a, b) { return b[1] - a[1]; });
+        container.innerHTML = entries.map(function (entry, index) {
+            const code = entry[0];
+            return [
+                '<div class="state-row' + (code === appState.selectedState ? " is-selected" : "") + '" data-state="' + code + '" style="--row-accent:' + view.fills.get(code) + '" role="button" tabindex="0">',
+                '<span class="state-rank">' + (index + 1) + "</span>",
+                '<span class="state-swatch"></span>',
+                '<span class="state-copy"><span class="state-name">' + escapeHtml(stateLabel(code)) + "</span>",
+                '<span class="state-meta">' + escapeHtml(measureMeta(code)) + "</span></span>",
+                '<span class="state-value">' + defn.format(entry[1]) + "</span>",
+                "</div>"
+            ].join("");
+        }).join("");
+        container.querySelectorAll(".state-row").forEach(function (row) {
+            const code = row.getAttribute("data-state");
+            row.addEventListener("click", function () { if (code !== appState.selectedState) setFilters({ selectedState: code }); });
+            row.addEventListener("keydown", function (event) { if (event.key === "Enter") setFilters({ selectedState: code }); });
+        });
+        keepSelectedInList();
+    }
+    container.querySelectorAll(".state-row").forEach(function (row) {
+        const code = row.getAttribute("data-state");
+        row.addEventListener("mouseenter", function () { setHoverState(code); });
+        row.addEventListener("mouseleave", function () { setHoverState(null); });
+    });
+}
+
+// ---- Legend, filter note and summary cards ----
+
+function renderLegend(view) {
+    const title = document.getElementById("legend-title");
+    const body = document.getElementById("legend-body");
+    if (view.kind === "flows") {
+        title.textContent = "Line width = " + metricDef().label.toLowerCase();
+        body.innerHTML = '<div class="legend-keys">' +
+            '<span class="legend-key"><i style="background:' + cssVar("--outbound") + '"></i>Sold to other states</span>' +
+            '<span class="legend-key"><i style="background:' + cssVar("--inbound") + '"></i>Bought from other states</span>' +
+            "</div>";
+        return;
+    }
+    const domain = view.scale.domain ? view.scale.domain() : [];
+    const stops = view.defn.colors.join(", ");
+    title.textContent = view.defn.label + " | " + industryLabel(appState.industry);
+    // Without the duplicate when a diverging scale's end is its center
+    const labels = Array.from(new Set(domain.map(view.defn.format)));
+    body.innerHTML = '<div class="legend-ramp" style="background:linear-gradient(90deg,' + stops + ')"></div>' +
+        '<div class="legend-scale">' + labels.map(function (label) { return "<span>" + label + "</span>"; }).join("") + "</div>" +
+        '<div class="legend-keys" style="margin-top:6px"><span class="legend-key"><i style="background:' +
+        cssVar(appState.report === "dependency" ? "--inbound" : "--outbound") + '"></i>' +
+        (appState.report === "dependency" ? "Largest supplying states" : "Largest buying states") + "</span></div>";
+}
+
+function renderFilterNote(view) {
+    const note = document.getElementById("filter-note");
+    const state = stateLabel(appState.selectedState);
+    const industry = appState.industry === ALL ? "" : " of " + industryLabel(appState.industry);
+    if (view.kind === "flows") {
+        const inState = appState.industry === ALL ? appState.inState.get(appState.selectedState) : null;
+        note.textContent = metricDef().label + industry + " bought and sold by " + state + " in " + DATA_YEAR +
+            ", from Exiobase split among states with BEA GDP by state." +
+            (inState ? " In-state purchases (not drawn): " + metricDef().formatter(inState[appState.metric]) + "." : "");
+        return;
+    }
+    note.textContent = view.defn.note + " " + (appState.report === "dependency"
+        ? "Lines show the " + TOP_LINKS + " states supplying the most to " + state + "."
+        : "Lines show the " + TOP_LINKS + " states buying the most from " + state + ".") + " " + DATA_YEAR + " data.";
+}
+
+function renderSummary(view) {
+    const formatter = metricDef().formatter;
+    const state = appState.selectedState;
+    let cards;
+    if (view.kind === "flows") {
+        cards = [
+            { label: "Sold to other states", value: formatter(view.summary.outbound), note: "Visible outbound" },
+            { label: "Bought from other states", value: formatter(view.summary.inbound), note: "Visible inbound" },
+            { label: "Net", value: formatter(view.summary.net), note: "Sold minus bought" },
+            { label: "Partner states", value: d3.format(",")(view.summary.partners.length), note: "Matching the filters" }
+        ];
+    } else if (appState.report === "dependency") {
+        const profile = view.profile;
+        const top = ranked(profile.suppliers)[0];
+        cards = [
+            { label: "Total purchases", value: formatter(profile.total), note: industryLabel(appState.industry) },
+            { label: "Foreign imports", value: pct(ratio(profile.imports, profile.total)), note: formatter(profile.imports) + " from other countries" },
+            { label: "From other states", value: pct(ratio(profile.other, profile.total)), note: formatter(profile.other) + (top ? ", most from " + stateLabel(top.code) : "") },
+            { label: "Supplier concentration", value: REPORT_MEASURES.dependency.supplierHHI.format(hhi(profile.suppliers)), note: "HHI of supplying states" }
+        ];
+    } else {
+        const profile = view.profile;
+        const strongest = quotientFor(state, ALL);
+        const quotient = quotientFor(state, appState.industry);
+        cards = [
+            appState.industry === ALL
+                ? { label: "Strongest specialization", value: strongest ? titleCase(strongest.code) : "-", note: strongest ? REPORT_MEASURES.advantage.lq.format(strongest.quotient) + " the US share" : "" }
+                : { label: "Location quotient", value: quotient ? REPORT_MEASURES.advantage.lq.format(quotient.quotient) : "-", note: industryLabel(appState.industry) + " share of GDP vs US" },
+            { label: "Sold to other states", value: formatter(profile.sold), note: pct(ratio(profile.sold, profile.usSales)) + " of US interstate sales" },
+            { label: "Interstate balance", value: signedPct(ratio(profile.sold - profile.other, profile.sold + profile.other)), note: formatter(profile.sold - profile.other) + " net" },
+            { label: "Specializations", value: String((appState.flows.specializations[state] || []).length), note: "Industries at 1.25× the US share or more" }
+        ];
+    }
+    document.getElementById("summary-strip").innerHTML = cards.map(function (card) {
+        return '<div class="summary-card"><span class="summary-label">' + escapeHtml(card.label) + "</span>" +
+            '<div class="summary-value">' + escapeHtml(card.value) + "</div>" +
+            '<div class="summary-note">' + escapeHtml(card.note) + "</div></div>";
+    }).join("");
+}
+
+// ---- Reports below the map: an ECharts chart and a Tabulator table each ----
+
+const charts = {};
+const tables = {};
+const barMax = { lq: 1, share: 1 };
+
+function chartFor(id) {
+    if (!charts[id]) charts[id] = echarts.init(document.getElementById(id));
+    return charts[id];
+}
+
+function chartTheme() {
+    return {
+        text: cssVar("--dep-muted") || "#64748b",
+        strong: cssVar("--dep-text") || "#0f172a",
+        grid: isDark() ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.07)"
+    };
+}
+
+// A Tabulator table from earthscape_TableDisplay, created once and then given new rows
+function setTableData(key, my, rows) {
+    if (typeof earthscape_TableDisplay !== "function") {
+        document.getElementById(my.elementID).textContent = "Tables need localsite/js/earthscape.js.";
+        return;
+    }
+    if (!tables[key]) {
+        tables[key] = earthscape_loadTabulator().then(function () {
+            return new Promise(function (resolve) {
+                const table = earthscape_TableDisplay(Object.assign({ maxHeight: "420px", layout: "fitColumns" }, my), []);
+                table.on("tableBuilt", function () { resolve(table); });
+                if (my.onRowClick) table.on("rowClick", function (event, row) { my.onRowClick(row.getData()); });
+            });
+        });
+    }
+    tables[key].then(function (table) {
+        table.setData(rows);
+        table.redraw();
+    });
+}
+
+function downloadTable(key, filename) {
+    if (tables[key]) tables[key].then(function (table) { table.download("csv", filename); });
+}
+
+function barFormatter(color, format, maxKey) {
+    return function (cell) {
+        const value = cell.getValue();
+        if (!Number.isFinite(value)) return "-";
+        const width = Math.max(0, Math.min(100, value / (barMax[maxKey] || 1) * 100));
+        return '<div class="cell-bar"><span class="cell-bar-track"><span class="cell-bar-fill" style="width:' + width +
+            "%;background:" + (typeof color === "function" ? color(value) : color) + '"></span></span><span class="cell-bar-label">' + format(value) + "</span></div>";
+    };
+}
+
+function metricColumn(title, field) {
+    return {
+        title: title,
+        field: field,
+        hozAlign: "right",
+        sorter: "number",
+        formatter: function (cell) { return metricDef().formatter(cell.getValue()); }
+    };
+}
+
+function renderPartnerReport(view) {
+    const panel = document.getElementById("partnerPanel");
+    panel.hidden = view.kind !== "flows";
+    if (panel.hidden) return;
+    const state = stateLabel(appState.selectedState);
+    const partners = view.summary.partners.filter(function (partner) { return appState.visiblePartners.has(partner.code); });
+    const top = partners.slice(0, 12);
+    const theme = chartTheme();
+    document.getElementById("partner-title").textContent = "Top Partner States for " + state;
+    document.getElementById("partner-note").textContent = metricDef().label + " traded with " + state +
+        (appState.industry === ALL ? "" : " in " + industryLabel(appState.industry)) + ", ranked by the total of both directions. Click a state to focus on it.";
+    const chart = chartFor("partner-chart");
+    chart.setOption({
+        animationDuration: 250,
+        grid: { left: 110, right: 24, top: 10, bottom: 24 },
+        tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: metricDef().formatter },
+        xAxis: { type: "value", axisLabel: { color: theme.text }, splitLine: { lineStyle: { color: theme.grid } } },
+        yAxis: { type: "category", inverse: true, axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: theme.strong },
+            data: top.map(function (partner) { return stateLabel(partner.code); }) },
+        series: [{
+            type: "bar",
+            barWidth: 14,
+            data: top.map(function (partner) { return { value: partner.total, itemStyle: { color: partnerColor(partner) } }; }),
+            itemStyle: { borderRadius: [0, 6, 6, 0] }
+        }]
+    }, true);
+    chart.off("click");
+    chart.on("click", function (params) { setFilters({ selectedState: top[params.dataIndex].code }); });
+    chart.resize();
+
+    setTableData("partner", {
+        elementID: "partner-table",
+        index: "code",
+        initialSort: [{ column: "total", dir: "desc" }],
+        tableOptions: { placeholder: "No partner states match the current filters." },
+        columns: [
+            { title: "State", field: "name", minWidth: 120 },
+            metricColumn("Sold to", "outbound"),
+            metricColumn("Bought from", "inbound"),
+            metricColumn("Net", "net"),
+            metricColumn("Total", "total")
+        ],
+        onRowClick: function (row) { setFilters({ selectedState: row.code }); }
+    }, partners.map(function (partner) {
+        return { code: partner.code, name: stateLabel(partner.code), outbound: partner.outbound, inbound: partner.inbound, net: partner.outbound - partner.inbound, total: partner.total };
+    }));
+}
+
+function industryRows() {
+    const state = appState.selectedState;
+    return appState.industries.map(function (code) {
+        const profile = stateProfile(state, code);
+        const supplier = ranked(profile.suppliers)[0];
+        const buyer = ranked(profile.dests)[0];
+        const quotient = quotientFor(state, code);
+        return {
+            code: code,
+            industry: industryLabel(code),
+            total: profile.total,
+            instate: profile.instate,
+            other: profile.other,
+            imports: profile.imports,
+            instateShare: ratio(profile.instate, profile.total),
+            otherShare: ratio(profile.other, profile.total),
+            importShare: ratio(profile.imports, profile.total),
+            supplierHHI: hhi(profile.suppliers),
+            topSupplier: supplier ? stateLabel(supplier.code) : "-",
+            topSupplierShare: supplier ? ratio(supplier.value, profile.other) : null,
+            lq: quotient ? quotient.quotient : null,
+            gdp: quotient ? quotient.gdp : null,
+            sold: profile.sold,
+            balance: ratio(profile.sold - profile.other, profile.sold + profile.other),
+            usShare: ratio(profile.sold, profile.usSales),
+            topBuyer: buyer ? stateLabel(buyer.code) : "-"
+        };
+    });
+}
+
+function renderDependencyReport(rows) {
+    const state = stateLabel(appState.selectedState);
+    const theme = chartTheme();
+    document.getElementById("dependency-title").textContent = "Import Dependency for " + state;
+    document.getElementById("dependency-note").textContent = "Where " + state + "'s purchases come from by supplying industry: its own producers, other states, or imports from other countries. " +
+        metricDef().label + ", " + DATA_YEAR + ". Click a row to map that industry.";
+    const sorted = rows.slice().sort(function (a, b) { return (b.importShare || 0) - (a.importShare || 0); });
+    const series = [
+        { key: "instateShare", name: "In-state", color: cssVar("--instate") },
+        { key: "otherShare", name: "Other states", color: cssVar("--inbound") },
+        { key: "importShare", name: "Imports", color: cssVar("--imports") }
+    ];
+    const chart = chartFor("dependency-chart");
+    chart.setOption({
+        animationDuration: 250,
+        legend: { top: 0, left: 0, icon: "roundRect", itemWidth: 10, itemHeight: 10, textStyle: { color: theme.text } },
+        grid: { left: 110, right: 16, top: 32, bottom: 24 },
+        tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: pct },
+        xAxis: { type: "value", max: 1, axisLabel: { color: theme.text, formatter: function (value) { return d3.format(".0%")(value); } }, splitLine: { lineStyle: { color: theme.grid } } },
+        yAxis: { type: "category", inverse: true, axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: theme.strong },
+            data: sorted.map(function (row) { return row.industry; }) },
+        series: series.map(function (entry) {
+            return { type: "bar", name: entry.name, stack: "mix", barWidth: 16, itemStyle: { color: entry.color },
+                data: sorted.map(function (row) { return row[entry.key] || 0; }) };
+        })
+    }, true);
+    chart.off("click");
+    chart.on("click", function (params) { setFilters({ industry: sorted[params.dataIndex].code }); });
+    chart.resize();
+
+    const mix = function (cell) {
+        const row = cell.getRow().getData();
+        return '<div class="mix-bar" title="In-state ' + pct(row.instateShare) + " | Other states " + pct(row.otherShare) + " | Imports " + pct(row.importShare) + '">' +
+            series.map(function (entry) { return '<span style="width:' + ((row[entry.key] || 0) * 100) + "%;background:" + entry.color + '"></span>'; }).join("") + "</div>";
+    };
+    setTableData("dependency", {
+        elementID: "dependency-table",
+        index: "code",
+        initialSort: [{ column: "importShare", dir: "desc" }],
+        columns: [
+            { title: "Industry", field: "industry", minWidth: 120, frozen: true },
+            { title: "Sourcing mix", field: "mix", headerSort: false, minWidth: 110, formatter: mix },
+            metricColumn("Purchases", "total"),
+            { title: "Imports", field: "importShare", minWidth: 120, sorter: "number", formatter: barFormatter(cssVar("--imports"), pct, "share") },
+            { title: "Other states", field: "otherShare", minWidth: 120, sorter: "number", formatter: barFormatter(cssVar("--inbound"), pct, "share") },
+            { title: "Top supplier", field: "topSupplier", minWidth: 110 },
+            { title: "Its share", field: "topSupplierShare", hozAlign: "right", sorter: "number", formatter: function (cell) { return pct(cell.getValue()); } },
+            { title: "HHI", field: "supplierHHI", hozAlign: "right", sorter: "number", formatter: function (cell) { return REPORT_MEASURES.dependency.supplierHHI.format(cell.getValue()); } }
+        ],
+        onRowClick: function (row) { setFilters({ industry: row.code }); }
+    }, rows);
+}
+
+function renderAdvantageReport(rows) {
+    const panel = document.getElementById("advantagePanel");
+    panel.hidden = !appState.showAdvantage;
+    if (panel.hidden) return;
+    const state = stateLabel(appState.selectedState);
+    const theme = chartTheme();
+    const lqFormat = REPORT_MEASURES.advantage.lq.format;
+    document.getElementById("advantage-title").textContent = "Competitive Advantage for " + state;
+    document.getElementById("advantage-note").textContent = "Industries where " + state + " specializes (location quotient above 1) and sells more to other states than it buys from them. " +
+        "Location quotients come from BEA GDP by state; sales use " + metricDef().label.toLowerCase() + ", " + DATA_YEAR + ".";
+    const sorted = rows.slice().sort(function (a, b) { return (b.lq || 0) - (a.lq || 0); });
+    barMax.lq = d3.max(rows, function (row) { return row.lq; }) || 1;
+    const lqColor = function (value) { return value >= 1 ? "#059669" : "#6366f1"; };
+    const chart = chartFor("advantage-chart");
+    chart.setOption({
+        animationDuration: 250,
+        grid: { left: 110, right: 40, top: 10, bottom: 24 },
+        tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: lqFormat },
+        xAxis: { type: "value", axisLabel: { color: theme.text, formatter: function (value) { return value + "×"; } }, splitLine: { lineStyle: { color: theme.grid } } },
+        yAxis: { type: "category", inverse: true, axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: theme.strong },
+            data: sorted.map(function (row) { return row.industry; }) },
+        series: [{
+            type: "bar",
+            barWidth: 16,
+            data: sorted.map(function (row) { return { value: row.lq || 0, itemStyle: { color: lqColor(row.lq || 0) } }; }),
+            itemStyle: { borderRadius: [0, 6, 6, 0] },
+            label: { show: true, position: "right", color: theme.text, formatter: function (params) { return lqFormat(params.value); } },
+            markLine: { symbol: "none", silent: true, label: { formatter: "US average", position: "end", color: theme.text }, lineStyle: { color: theme.text, type: "dashed" }, data: [{ xAxis: 1 }] }
+        }]
+    }, true);
+    chart.off("click");
+    chart.on("click", function (params) { setFilters({ industry: sorted[params.dataIndex].code }); });
+    chart.resize();
+
+    setTableData("advantage", {
+        elementID: "advantage-table",
+        index: "code",
+        initialSort: [{ column: "lq", dir: "desc" }],
+        columns: [
+            { title: "Industry", field: "industry", minWidth: 120, frozen: true },
+            { title: "Location quotient", field: "lq", minWidth: 140, sorter: "number", formatter: barFormatter(lqColor, lqFormat, "lq") },
+            { title: "GDP ($M)", field: "gdp", hozAlign: "right", sorter: "number", formatter: function (cell) { return Number.isFinite(cell.getValue()) ? d3.format(",.0f")(cell.getValue()) : "-"; } },
+            metricColumn("Sold to states", "sold"),
+            metricColumn("Bought from states", "other"),
+            { title: "Balance", field: "balance", hozAlign: "right", sorter: "number", formatter: function (cell) {
+                const value = cell.getValue();
+                const color = value > 0 ? "#059669" : (value < 0 ? "#e11d48" : "inherit");
+                return '<span style="color:' + color + ';font-weight:600">' + signedPct(value) + "</span>";
+            } },
+            { title: "US share", field: "usShare", hozAlign: "right", sorter: "number", formatter: function (cell) { return pct(cell.getValue()); } },
+            { title: "Top buyer", field: "topBuyer", minWidth: 110 }
+        ],
+        onRowClick: function (row) { setFilters({ industry: row.code }); }
+    }, rows);
+}
+
+function addReportMenus() {
+    if (typeof addPanelMenu !== "function") return;
+    const filename = function (name) { return name + "-" + appState.selectedState + "-" + DATA_YEAR + ".csv"; };
+    [
+        { panel: "partnerPanel", table: "partner", name: "partner-states" },
+        { panel: "dependencyPanel", table: "dependency", name: "import-dependency" },
+        { panel: "advantagePanel", table: "advantage", name: "competitive-advantage", hide: true }
+    ].forEach(function (entry) {
+        const menuItems = [{ label: "Download CSV", action: "dep-download", icon: "download" }];
+        if (entry.hide) menuItems.push({ label: "Hide report", action: "dep-hide", icon: "visibility_off" });
+        menuItems.push({ label: "About these measures", action: "dep-about", icon: "info" });
+        addPanelMenu({
+            panelType: "Content",
+            targetPanelId: entry.panel,
+            containerSelector: "#" + entry.panel + "MenuHolder",
+            inline: true,
+            menuItems: menuItems,
+            onAction: function (action) {
+                if (action === "dep-download") downloadTable(entry.table, filename(entry.name));
+                else if (action === "dep-hide") setFilters({ showAdvantage: false, report: appState.report === "advantage" ? "dependency" : appState.report });
+                else if (action === "dep-about") document.getElementById("readmeDiv").scrollIntoView({ behavior: "smooth" });
+                else return false;
+                return true;
+            }
+        }).render();
+    });
+}
+
+// ---- Controls ----
+
+const stateSelect = document.getElementById("state-select");
+const industrySelect = document.getElementById("industry-select");
+const metricSelect = document.getElementById("metric-select");
+const directionSelect = document.getElementById("direction-select");
+const measureSelect = document.getElementById("measure-select");
+const advantageToggle = document.getElementById("advantage-toggle");
+renderTradeVizLinks(document.getElementById("trade-viz-links"));
+// The map view tabs take the place of this page's own button among the trade buttons
+(function () {
+    const reportMode = document.getElementById("report-mode");
+    const ownLink = document.getElementById("dependency-link");
+    if (ownLink) ownLink.replaceWith(reportMode); else document.getElementById("trade-viz-links").appendChild(reportMode);
+})();
+
+// ---- Side panel tabs, and where the filter bar sits ----
+// The panel starts closed. The tab left open, and the filter bar's place, are kept in localStorage.
+
+const PANEL_TAB_KEY = "tradeDependency.panelTab";
+const FILTER_DOCK_KEY = "tradeDependency.filterDock";
+const PANEL_TABS = ["states", "filters"];
+const statePanel = document.querySelector(".state-panel");
+const filterBar = document.getElementById("filter-bar");
+const filterDockBtn = document.getElementById("filter-dock-btn");
+
+function storageGet(key) {
+    try { return localStorage.getItem(key) || ""; } catch (error) { return ""; }
+}
+
+function storageSet(key, value) {
+    try {
+        if (value) localStorage.setItem(key, value); else localStorage.removeItem(key);
+    } catch (error) {
+        // localStorage unavailable
+    }
+}
+
+let panelTab = PANEL_TABS.indexOf(storageGet(PANEL_TAB_KEY)) >= 0 ? storageGet(PANEL_TAB_KEY) : "";
+let filterDock = storageGet(FILTER_DOCK_KEY) === "top" ? "top" : "panel";
+
+function setPanelTab(tab) {
+    panelTab = tab;
+    storageSet(PANEL_TAB_KEY, tab);
+    syncPanel();
+}
+
+function syncPanel() {
+    statePanel.dataset.open = panelTab ? "true" : "false";
+    statePanel.querySelectorAll(".panel-tab").forEach(function (button) {
+        const active = button.getAttribute("data-tab") === panelTab;
+        button.classList.toggle("is-active", active);
+        button.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    statePanel.querySelectorAll(".panel-body").forEach(function (body) {
+        body.hidden = body.getAttribute("data-tab-body") !== panelTab;
+    });
+    if (panelTab === "states") keepSelectedInList();
+}
+
+function setFilterDock(dock) {
+    filterDock = dock;
+    storageSet(FILTER_DOCK_KEY, dock === "top" ? "top" : "");
+    syncFilterDock();
+}
+
+// Moves the one filter bar, so its controls keep their listeners
+function syncFilterDock() {
+    const onTop = filterDock === "top";
+    const target = onTop ? document.getElementById("filter-dock-top") : document.getElementById("filter-dock-panel");
+    if (filterBar.parentElement !== target) target.appendChild(filterBar);
+    filterBar.classList.toggle("glass", onTop);
+    document.getElementById("filter-dock-note").hidden = !onTop;
+    filterDockBtn.innerHTML = onTop
+        ? '<i class="material-icons">vertical_align_bottom</i>Move to side panel'
+        : '<i class="material-icons">vertical_align_top</i>Show above map';
+    filterDockBtn.title = onTop ? "Move the filters into the side panel" : "Show the filters above the map";
+}
+
+statePanel.querySelectorAll(".panel-tab").forEach(function (button) {
+    button.addEventListener("click", function () {
+        const tab = button.getAttribute("data-tab");
+        setPanelTab(tab === panelTab ? "" : tab);
+    });
+});
+statePanel.querySelector(".panel-close").addEventListener("click", function () { setPanelTab(""); });
+filterDockBtn.addEventListener("click", function () {
+    setFilterDock(filterDock === "top" ? "panel" : "top");
+    if (filterDock === "top" && panelTab === "filters") setPanelTab("");
+});
+document.querySelector("#filter-dock-note [data-dock]").addEventListener("click", function () { setFilterDock("panel"); });
+syncFilterDock();
+syncPanel();
+
+function renderOptions() {
+    stateSelect.innerHTML = appState.stateCodes.map(function (code) {
+        return '<option value="' + code + '">' + escapeHtml(stateLabel(code)) + " (" + code + ")</option>";
+    }).join("");
+    industrySelect.innerHTML = '<option value="' + ALL + '">All industries</option>' + appState.industries.map(function (code) {
+        return '<option value="' + code + '">' + escapeHtml(industryLabel(code)) + "</option>";
+    }).join("");
+    metricSelect.innerHTML = Object.keys(METRICS).map(function (key) {
+        return '<option value="' + key + '">' + escapeHtml(METRICS[key].label) + "</option>";
+    }).join("");
+}
+
+function syncControls() {
+    document.querySelectorAll("#report-mode button").forEach(function (button) {
+        const active = button.getAttribute("data-report") === appState.report;
+        button.classList.toggle("is-active", active);
+        button.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    stateSelect.value = appState.selectedState;
+    document.getElementById("selected-state-report-action").innerHTML = stateReportAction(appState.selectedState);
+    industrySelect.value = appState.industry;
+    metricSelect.value = appState.metric;
+    directionSelect.value = appState.direction;
+    document.getElementById("direction-wrap").hidden = appState.report !== "flows";
+    const measures = measureDefs();
+    document.getElementById("measure-wrap").hidden = appState.report === "flows";
+    measureSelect.innerHTML = Object.keys(measures).map(function (key) {
+        return '<option value="' + key + '">' + escapeHtml(measures[key].label) + "</option>";
+    }).join("");
+    measureSelect.value = appState.measure;
+    advantageToggle.checked = appState.showAdvantage;
+    advantageToggle.disabled = appState.report === "advantage";
+}
+
+document.querySelectorAll("#report-mode button").forEach(function (button) {
+    button.addEventListener("click", function () {
+        const report = button.getAttribute("data-report");
+        if (report === appState.report) return;
+        const changes = { report: report, measure: DEFAULT_MEASURE[report] || "" };
+        if (report === "advantage") changes.showAdvantage = true;
+        setFilters(changes);
+    });
+});
+stateSelect.addEventListener("change", function () { setFilters({ selectedState: this.value }); });
+industrySelect.addEventListener("change", function () { setFilters({ industry: this.value }); });
+metricSelect.addEventListener("change", function () { setFilters({ metric: this.value }); });
+directionSelect.addEventListener("change", function () { setFilters({ direction: this.value }); });
+measureSelect.addEventListener("change", function () { setFilters({ measure: this.value }); });
+advantageToggle.addEventListener("change", function () {
+    setFilters({ showAdvantage: this.checked });
+    if (this.checked) document.getElementById("advantagePanel").scrollIntoView({ behavior: "smooth", block: "nearest" });
+});
+document.getElementById("clear-filters-btn").addEventListener("click", function () {
+    try { localStorage.removeItem(FILTER_STORAGE_KEY); } catch (error) {}
+    applyFilters({});
+    appState.visiblePartners = new Set();
+    pushFiltersToHash();
+    renderAll();
+});
+
+window.addEventListener("resize", function () {
+    Object.values(charts).forEach(function (chart) { chart.resize(); });
+});
+
+// Restyle the map and charts when the site switches between light and dark
+let renderedDark = isDark();
+new MutationObserver(function () {
+    if (isDark() === renderedDark) return;
+    renderedDark = isDark();
+    syncTiles();
+    renderAll();
+}).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+
+function renderAll() {
+    if (!appState.flows) return;
+    syncControls();
+    const view = buildView();
+    currentView = view;
+    renderStateList(view);
+    styleStates();
+    drawOverlay();
+    renderLegend(view);
+    renderFilterNote(view);
+    renderSummary(view);
+    renderPartnerReport(view);
+    barMax.share = 1;
+    const rows = industryRows();
+    renderDependencyReport(rows);
+    renderAdvantageReport(rows);
+}
+
+async function init() {
+    try {
+        const files = StateFlows.FILES;
+        const [tradeUsText, industryCategoryText, categoryStateText, ratesText, stateCodesText, topoData] = await Promise.all([
+            fetchTradeData(files.tradeUs),
+            fetchTradeData(files.industryCategory),
+            fetchTradeData(files.categoryState),
+            fetchTradeData(files.eurRates).catch(function () { return ""; }),
+            fetchTradeData(files.stateCodes),
+            fetch(TOPOJSON_URL).then(function (response) {
+                if (!response.ok) throw new Error("Unable to load state geometry");
+                return response.json();
+            })
+        ]);
+        d3.csvParse(stateCodesText).forEach(function (row) {
+            const code = normalizeCode(row.state_code);
+            if (!code) return;
+            appState.stateNames.set(code, String(row.state_name || code).trim());
+            appState.stateCodes.push(code);
+        });
+        appState.usdPerEur = ratesText ? StateFlows.parseUsdPerEur(ratesText) : null;
+        buildData(tradeUsText, industryCategoryText, categoryStateText);
+        renderOptions();
+        applyFilters(hashFilters() || readFilterCache());
+        writeFilterCache();
+        pushFiltersToHash();
+        syncTiles();
+        buildStateMap(topoData);
+        addReportMenus();
+        document.addEventListener("hashChangeEvent", handleExternalHashChange);
+        renderAll();
+    } catch (error) {
+        console.error(error);
+        document.getElementById("status-msg").textContent = "Unable to load state trade data: " + error.message;
+        document.getElementById("filter-note").textContent = "The page looks for a trade-data folder in the webroot, then GitHub's copy.";
+    }
+}
+
+init();
+</script>
+</body>
+</html>

@@ -6,7 +6,7 @@
 // A US flow from state O to state D is amount * origin weight(O) * destination weight(D), with the
 // origin weight for the supplying industry's code and the destination weight for the buyer's.
 // Imports are placed in D by the destination weight alone.
-// Used by profile/trade/map/state.html and profile/charts/sankey/state.html.
+// Used by profile/trade/map/state.html, profile/trade/dependency/ and profile/charts/sankey/state.html.
 
 window.StateFlows = (function () {
   var YEAR = "2019";
@@ -94,8 +94,9 @@ window.StateFlows = (function () {
   //   rows: one per origin state, destination state and supplying state_industry_code (upper
   //     case), with flow_type intra_state or inter_state and a value per metric
   //   imports: state -> code -> values, imports bought in each state by supplying code
-  //   specializations: state -> [{ code, quotient }], codes where the state's share of US GDP
-  //     for the code is at least 1.25 times its share of all GDP, largest first
+  //   quotients: state -> [{ code, quotient, gdp }], every code's location quotient, the state's
+  //     share of US GDP for the code over its share of all GDP, largest first
+  //   specializations: state -> [{ code, quotient, gdp }], the quotients of at least 1.25
   function build(tradeUsText, industryCategoryText, categoryStateText, usdPerEur) {
     var amountScale = usdPerEur || 1;
     var rowValues = function (row) {
@@ -173,6 +174,7 @@ window.StateFlows = (function () {
       });
     });
 
+    var quotients = {};
     var specializations = {};
     var codeTotals = {};
     var grandTotal = 0;
@@ -185,18 +187,19 @@ window.StateFlows = (function () {
     Object.keys(gdp).forEach(function (state) {
       var stateTotal = Object.keys(gdp[state]).reduce(function (sum, code) { return sum + gdp[state][code]; }, 0);
       if (!stateTotal || !grandTotal) return;
-      specializations[state] = Object.keys(gdp[state]).map(function (code) {
-        return { code: code, quotient: (gdp[state][code] / codeTotals[code]) / (stateTotal / grandTotal) };
-      }).filter(function (entry) {
-        return entry.quotient >= 1.25;
+      quotients[state] = Object.keys(gdp[state]).map(function (code) {
+        return { code: code, quotient: (gdp[state][code] / codeTotals[code]) / (stateTotal / grandTotal), gdp: gdp[state][code] };
       }).sort(function (a, b) { return b.quotient - a.quotient; });
+      specializations[state] = quotients[state].filter(function (entry) {
+        return entry.quotient >= 1.25;
+      });
     });
 
     var metricKeys = METRIC_KEYS.filter(function (key) {
       return key === "level" || rows.some(function (row) { return row[key] > 0; });
     });
 
-    return { metricKeys: metricKeys, rows: rows, imports: imports, specializations: specializations };
+    return { metricKeys: metricKeys, rows: rows, imports: imports, quotients: quotients, specializations: specializations };
   }
 
   return {
