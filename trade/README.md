@@ -14,7 +14,7 @@ Pitch in to help us refine and optimize our interactive reports:
 - [Trade Data Dashboard](https://model.earth/trade-data/)<!-- bea-dashboard/ -->  
 - [US State Trade Sankey](../charts/sankey/state.html)  
 - [US State Trade Map](map/state.html)  
-- [Import Dependency & Supply Chain Risk Dashboard](dependency/)  
+- [Import Dependency & Supply Chain Risk Dashboard](advantage/)  
 - [Comparison Frontends](../../comparison/)
 
 Also see [IO Charts](../../io/charts/) using [US States from Matrix table files](/io/about/) with new [50 State USEEIO json](https://github.com/ModelEarth/useeio-json/)

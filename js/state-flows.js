@@ -6,7 +6,7 @@
 // A US flow from state O to state D is amount * origin weight(O) * destination weight(D), with the
 // origin weight for the supplying industry's code and the destination weight for the buyer's.
 // Imports are placed in D by the destination weight alone.
-// Used by profile/trade/map/state.html, profile/trade/dependency/ and profile/charts/sankey/state.html.
+// Used by profile/trade/map/state.html, profile/trade/advantage/ and profile/charts/sankey/state.html.
 
 window.StateFlows = (function () {
   var YEAR = "2019";
