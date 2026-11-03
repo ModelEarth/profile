@@ -1663,6 +1663,22 @@ function renderAll() {
         : "No matching rows for the current selection.";
 }
 
+// The middle of a state's bounds, where its label and lines go. Alaska's Aleutian Islands cross the 180th meridian,
+// which stretches its bounds around the globe and puts their middle near Norway, so for a state that spans more than
+// half the globe use the bounds of its largest piece instead.
+function stateCenter(layer) {
+    const bounds = layer.getBounds();
+    if (bounds.getEast() - bounds.getWest() <= 180) return bounds.getCenter();
+    let largest = null;
+    let largestArea = -1;
+    layer.getLatLngs().forEach(function (polygon) {
+        const pieceBounds = L.latLngBounds(Array.isArray(polygon[0]) ? polygon[0] : polygon);
+        const area = (pieceBounds.getEast() - pieceBounds.getWest()) * (pieceBounds.getNorth() - pieceBounds.getSouth());
+        if (area > largestArea) { largest = pieceBounds; largestArea = area; }
+    });
+    return largest ? largest.getCenter() : bounds.getCenter();
+}
+
 function buildStateMap(topoData) {
     stateFillLayer.clearLayers();
     stateLayerByCode.clear();
@@ -1683,7 +1699,7 @@ function buildStateMap(topoData) {
             if (!code || !appState.stateNames.has(code)) return;
 
             stateLayerByCode.set(code, layer);
-            stateCenterByCode.set(code, layer.getBounds().getCenter());
+            stateCenterByCode.set(code, stateCenter(layer));
 
             layer.on("click", function () {
                 appState.selectedState = code;
