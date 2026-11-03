@@ -2,11 +2,13 @@
 
 How much each US state relies on suppliers outside the state, and the industries where it holds an advantage over other states. Open the panel at the map's upper left: its States tab ranks every state, and its Filters tab holds the filters. "Show above map" moves the filters out of the panel and over the map. The page remembers the tab you leave open and where the filters are. Choose a map view with the tabs among the trade buttons at the top of the map:
 
-- **Trade flows** - The [US State Trade Map](../map/state.html): what the focus state buys from and sells to other states.
-- **Import dependency** - States shaded by how much they rely on outside suppliers. Lines show the states supplying the most to the focus state.
-- **Competitive advantage** - States shaded by their specialization or trade balance. Lines show the states buying the most from the focus state.
+- **Trade flows** (the default) - The [US State Trade Map](../map/state.html): what the focus state buys from and sells to other states. The Import Dependency report appears below the map, and the **Competitive advantage report** toggle adds that report too.
+- **Import dependency** (`#report=dependency`) - States shaded by how much they rely on outside suppliers. Lines show the states supplying the most to the focus state. Only the Import Dependency report appears below the map.
+- **Competitive advantage** (`#report=advantage`) - States shaded by their specialization or trade balance. Lines show the states buying the most from the focus state. Only the Competitive Advantage report appears below the map.
 
-The **Competitive advantage report** toggle adds that report below the map in any view.
+Changing the view adds a browser history entry, so Back returns to the previous view.
+
+The map fills the window below the search filters. "Open Earth View" in the search filters' menu shows the Earth map (earth.nullschool.net) in its place, and its close-X brings the trade map back.
 
 ## Measures
 

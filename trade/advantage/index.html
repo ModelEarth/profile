@@ -78,16 +78,38 @@
         }
         body { margin: 0; }
 
-        .dep-map-wrap {
+        /* The map area is localsite's #fullscreen (base.css), the window's height below the header and search
+           filters, as on engine. "Open Earth View" puts the Earth map (#mainEarthDisplay) in it over the trade map,
+           and the voice widget's words and controls (.claude-voice-words, .claude-voice-ui) fill it.
+           A min-height, so the side panel can stack above the map in narrow views. */
+        #fullscreen.dep-map-wrap {
             position: relative;
             container-type: inline-size;
+            display: flex;
+            flex-direction: column;
+            height: auto;
+            min-height: max(560px, var(--fullscreen-height));
         }
         #map {
             position: relative;
-            height: max(560px, calc(100vh - var(--top-nav-offset, 80px) - 40px));
+            flex: 1 1 auto;
+            min-height: 420px;
             width: 100%;
             background: var(--bg-primary);
         }
+        /* The Earth map covers the trade map, which stays in place under it so Leaflet keeps its size.
+           !important over the inline position: relative from localsite's info/template-main.html. */
+        #fullscreen > #mainEarthDisplay {
+            position: absolute !important;
+            inset: 0;
+        }
+        #fullscreen.earthShown > .map-overlay,
+        #fullscreen.earthShown > #map,
+        #fullscreen.earthShown > #map-tooltip {
+            visibility: hidden;
+        }
+        /* The Earth map's play button shows only with it, until the voice widget moves it into its own controls. */
+        #fullscreen:not(.earthShown) > #earthPlayPauseButton { display: none; }
 
         /* Floating panels over the map */
         .glass {
@@ -200,6 +222,7 @@
             cursor: pointer;
             user-select: none;
         }
+        .report-toggle[hidden] { display: none; }
         .report-toggle input { position: absolute; opacity: 0; pointer-events: none; }
         .switch-track {
             position: relative;
@@ -408,6 +431,7 @@
             font-size: 11px;
             line-height: 1.4;
             color: var(--dep-muted);
+            cursor: default; /* Not Leaflet's grab hand: drags on the legend don't move the map (disableClickPropagation) */
         }
         #legend-title { font-weight: 700; color: var(--dep-text); margin-bottom: 6px; }
         .legend-ramp { height: 8px; border-radius: 999px; }
@@ -580,8 +604,13 @@
 </head>
 <body>
 
-<div class="dep-map-wrap">
-    <div class="map-overlay">
+<!-- #fullscreen (localsite/css/base.css): localsite's showGlobalMap() puts the Earth map (#mainEarthDisplay) here
+     over the trade map, with this play/pause button at its lower right. -->
+<div id="fullscreen" class="dep-map-wrap">
+<!-- While the voice widget's (engine/claude-voice.js) words float over the map, the trade map fades only 30% (data-words-dim),
+     staying in view and clickable, and the tooltip stays as it is. -->
+<div id="earthPlayPauseButton" class="earthPlay playPauseButton" role="button" tabindex="0" title="Next photo" aria-label="Next photo"><i class="material-icons play-pause-icon" aria-hidden="true">play_arrow</i></div>
+    <div class="map-overlay" data-words-dim="0.7">
     <div class="map-toolbar">
         <div id="trade-viz-links"></div>
         <!-- Moved into #trade-viz-links in place of #dependency-link -->
@@ -651,13 +680,13 @@
     </div>
     </div>
 
-    <div id="map">
+    <div id="map" data-words-dim="0.7">
         <div id="map-legend" class="glass">
             <div id="legend-title"></div>
             <div id="legend-body"></div>
         </div>
     </div>
-    <div id="map-tooltip"></div>
+    <div id="map-tooltip" data-words-stay></div>
 </div>
 
 <div class="content contentpadding large-list dep-reports">
@@ -800,7 +829,7 @@ const appState = {
     stateCodes: [],
     industries: [],
     visiblePartners: new Set(),
-    report: "dependency",
+    report: "flows",
     selectedState: "CO",
     metric: "level",
     direction: "both",
@@ -889,7 +918,7 @@ function stateReportAction(code) {
 
 const FILTER_STORAGE_KEY = "tradeDependency.filters";
 const FILTER_DEFAULTS = {
-    report: "dependency",
+    report: "flows",
     state: "CO",
     metric: "level",
     direction: "both",
@@ -916,7 +945,8 @@ function currentFilters() {
         direction: appState.direction,
         industry: appState.industry,
         measure: appState.measure === DEFAULT_MEASURE[appState.report] ? "" : appState.measure,
-        advantage: appState.showAdvantage && appState.report !== "advantage" ? "1" : ""
+        // The toggle only applies to the flows view: report=dependency and report=advantage each show one report
+        advantage: appState.showAdvantage && appState.report === "flows" ? "1" : ""
     };
 }
 
@@ -948,10 +978,12 @@ function applyFilters(filters) {
     appState.industry = appState.industries.indexOf(industry) >= 0 ? industry : ALL;
     const measures = REPORT_MEASURES[report] || {};
     appState.measure = Object.prototype.hasOwnProperty.call(measures, filters.measure) ? filters.measure : (DEFAULT_MEASURE[report] || "");
-    appState.showAdvantage = report === "advantage" || filters.advantage === "1" || filters.advantage === true;
+    appState.showAdvantage = filters.advantage === "1" || filters.advantage === true;
 }
 
-function pushFiltersToHash() {
+// mode "history" (goHash) or "replace" (goHashNoHistory) fires hashChangeEvent and updates priorHash.
+// Without a mode, updateHash changes the hash silently.
+function pushFiltersToHash(mode) {
     if (typeof updateHash !== "function") return;
     const filters = currentFilters();
     const update = {};
@@ -963,23 +995,35 @@ function pushFiltersToHash() {
             remove.push(key);
         }
     });
-    updateHash(update, true, remove);
+    if (mode === "history" && typeof goHash === "function") {
+        goHash(update, remove);
+    } else if (mode && typeof goHashNoHistory === "function") {
+        goHashNoHistory(update, remove);
+    } else {
+        updateHash(update, true, remove);
+    }
 }
 
-function persistFilters() {
+// Set by handleHashChange, so a change that reaches the hash isn't rendered twice
+let renderedByHash = false;
+
+// Changing the report adds a browser history entry, so Back returns to the prior view
+function commitFilters(reportChanged) {
     writeFilterCache();
-    pushFiltersToHash();
+    renderedByHash = false;
+    pushFiltersToHash(reportChanged ? "history" : "replace");
+    if (!renderedByHash) renderAll();
 }
 
 function setFilters(changes) {
+    const reportChanged = Object.prototype.hasOwnProperty.call(changes, "report") && changes.report !== appState.report;
     Object.assign(appState, changes);
     if (Object.prototype.hasOwnProperty.call(changes, "selectedState") ||
         Object.prototype.hasOwnProperty.call(changes, "direction") ||
         Object.prototype.hasOwnProperty.call(changes, "industry")) {
         appState.visiblePartners = new Set();
     }
-    persistFilters();
-    renderAll();
+    commitFilters(reportChanged);
 }
 
 function hashFilters() {
@@ -988,11 +1032,19 @@ function hashFilters() {
     return hasKey ? hash : null;
 }
 
-function handleExternalHashChange() {
-    const fromHash = hashFilters();
-    applyFilters(fromHash || {});
+// Runs for goHash() from this page's controls and for hash edits and Back/Forward.
+// Only renders when a filter value differs from priorHash (see localsite/AGENTS.md).
+function handleHashChange() {
+    const hash = getHash();
+    const prior = window.priorHash || {};
+    const changed = FILTER_KEYS.filter(function (key) { return String(hash[key] || "") !== String(prior[key] || ""); });
+    if (!changed.length) return;
+    renderedByHash = true;
+    applyFilters(hashFilters() || {});
     writeFilterCache();
-    appState.visiblePartners = new Set();
+    if (["state", "direction", "industry"].some(function (key) { return changed.indexOf(key) >= 0; })) {
+        appState.visiblePartners = new Set();
+    }
     renderAll();
 }
 
@@ -1271,6 +1323,15 @@ function fitContiguousStates() {
     map.fitBounds(CONTIGUOUS_BOUNDS, { paddingTopLeft: [24, 64], paddingBottomRight: [24, 16] });
 }
 fitContiguousStates();
+// #fullscreen's height settles once localsite measures the header above it, so the map refits until it's been moved
+let mapMovedByUser = false;
+map.getContainer().addEventListener("pointerdown", function () { mapMovedByUser = true; });
+if (typeof ResizeObserver === "function") {
+    new ResizeObserver(function () {
+        map.invalidateSize();
+        if (!mapMovedByUser) fitContiguousStates();
+    }).observe(map.getContainer());
+}
 // Lower left, since localsite hides Leaflet's lower right corner. .map-overlay ends above it.
 L.control.zoom({ position: "bottomleft" }).addTo(map);
 
@@ -1306,19 +1367,32 @@ const stateFillLayer = L.layerGroup().addTo(map);
 const svg = d3.select(flowPane).select("svg");
 const g = svg.append("g");
 const defs = svg.append("defs");
-["outbound", "inbound"].forEach(function (direction) {
-    defs.append("marker")
-        .attr("id", "arrow-" + direction)
-        .attr("viewBox", "0 0 10 10")
-        .attr("refX", 9)
-        .attr("refY", 5)
-        .attr("markerWidth", 6)
-        .attr("markerHeight", 6)
-        .attr("orient", "auto-start-reverse")
-        .append("path")
-        .attr("d", "M 0 0 L 10 5 L 0 10 z")
-        .attr("class", "arrow-head-" + direction);
-});
+// Arrowheads grow with their line: 6 times its width up to 9px, as before, then at 65% of that rate, so the widest
+// lines' heads stay modest while the thin lines' heads keep their size.
+function arrowHeadSize(strokeWidth) {
+    const full = 6 * strokeWidth;
+    return Math.round((full <= 9 ? full : 9 + (full - 9) * 0.65) * 2) / 2;
+}
+// One marker per direction and head size (to the half pixel), made as lines need it
+function arrowMarker(direction, size) {
+    const id = "arrow-" + direction + "-" + String(size).replace(".", "_");
+    if (defs.select("#" + id).empty()) {
+        defs.append("marker")
+            .attr("id", id)
+            .attr("viewBox", "0 0 10 10")
+            .attr("refX", 9)
+            .attr("refY", 5)
+            .attr("markerUnits", "userSpaceOnUse")
+            .attr("markerWidth", size)
+            .attr("markerHeight", size)
+            .attr("orient", "auto-start-reverse")
+            .append("path")
+            .attr("d", "M 0 0 L 10 5 L 0 10 L 1.1 5 z") // Fins: the back is notched in to a point
+            .attr("class", "arrow-head-" + direction)
+            .attr("fill", cssVar(direction === "outbound" ? "--outbound" : "--inbound"));
+    }
+    return "url(#" + id + ")";
+}
 L.DomEvent.disableClickPropagation(document.getElementById("map-legend"));
 L.DomEvent.disableScrollPropagation(document.getElementById("map-legend"));
 
@@ -1347,12 +1421,17 @@ function hideTooltip() {
     tooltip.style.display = "none";
 }
 
+// An arch rising 10% of the line's length (at least 10px) at its middle. A cubic curve with its control points a
+// quarter of the way in from each end, rather than a third as a plain quadratic curve would have, so it's fuller.
+const CURVE_CONTROL_AT = 0.25;
 function curvePath(startPoint, endPoint) {
     const dx = endPoint.x - startPoint.x;
     const dy = endPoint.y - startPoint.y;
-    const midX = (startPoint.x + endPoint.x) / 2;
-    const midY = (startPoint.y + endPoint.y) / 2 - Math.max(22, Math.hypot(dx, dy) * 0.18);
-    return "M" + startPoint.x + "," + startPoint.y + " Q" + midX + "," + midY + " " + endPoint.x + "," + endPoint.y;
+    const peak = Math.max(10, Math.hypot(dx, dy) * 0.1);
+    const lift = peak / 0.75; // The curve's middle rises 3/4 as far as its control points
+    const x1 = startPoint.x + dx * CURVE_CONTROL_AT, y1 = startPoint.y + dy * CURVE_CONTROL_AT - lift;
+    const x2 = endPoint.x - dx * CURVE_CONTROL_AT, y2 = endPoint.y - dy * CURVE_CONTROL_AT - lift;
+    return "M" + startPoint.x + "," + startPoint.y + " C" + x1 + "," + y1 + " " + x2 + "," + y2 + " " + endPoint.x + "," + endPoint.y;
 }
 
 function stateTooltip(code) {
@@ -1430,8 +1509,8 @@ function drawOverlay() {
     g.selectAll("*").remove();
     if (!view) return;
     g.raise();
-    defs.select(".arrow-head-outbound").attr("fill", cssVar("--outbound"));
-    defs.select(".arrow-head-inbound").attr("fill", cssVar("--inbound"));
+    defs.selectAll(".arrow-head-outbound").attr("fill", cssVar("--outbound"));
+    defs.selectAll(".arrow-head-inbound").attr("fill", cssVar("--inbound"));
     const links = view.links.slice().sort(function (a, b) { return b.value - a.value; });
     const maxValue = d3.max(links, function (link) { return link.value; }) || 1;
     const widthScale = d3.scaleSqrt().domain([0, maxValue]).range([0.8, view.kind === "flows" ? 5.5 : 7]);
@@ -1441,7 +1520,7 @@ function drawOverlay() {
         .join("path")
         .attr("class", "flow")
         .attr("stroke", function (link) { return link.outbound ? cssVar("--outbound") : cssVar("--inbound"); })
-        .attr("marker-end", function (link) { return link.outbound ? "url(#arrow-outbound)" : "url(#arrow-inbound)"; })
+        .attr("marker-end", function (link) { return arrowMarker(link.outbound ? "outbound" : "inbound", arrowHeadSize(widthScale(link.value))); })
         .attr("stroke-width", function (link) { return widthScale(link.value); })
         .attr("opacity", function (link) {
             if (!appState.hoverState) return 0.85;
@@ -1808,6 +1887,9 @@ function industryRows() {
 }
 
 function renderDependencyReport(rows) {
+    const panel = document.getElementById("dependencyPanel");
+    panel.hidden = appState.report === "advantage";
+    if (panel.hidden) return;
     const state = stateLabel(appState.selectedState);
     const theme = chartTheme();
     document.getElementById("dependency-title").textContent = "Import Dependency for " + state;
@@ -1860,9 +1942,14 @@ function renderDependencyReport(rows) {
     }, rows);
 }
 
+// report=advantage shows only this report and report=dependency hides it. The flows view shows it with the toggle.
+function advantageReportShown() {
+    return appState.report === "advantage" || (appState.report === "flows" && appState.showAdvantage);
+}
+
 function renderAdvantageReport(rows) {
     const panel = document.getElementById("advantagePanel");
-    panel.hidden = !appState.showAdvantage;
+    panel.hidden = !advantageReportShown();
     if (panel.hidden) return;
     const state = stateLabel(appState.selectedState);
     const theme = chartTheme();
@@ -2069,16 +2156,14 @@ function syncControls() {
     }).join("");
     measureSelect.value = appState.measure;
     advantageToggle.checked = appState.showAdvantage;
-    advantageToggle.disabled = appState.report === "advantage";
+    advantageToggle.closest(".report-toggle").hidden = appState.report !== "flows";
 }
 
 document.querySelectorAll("#report-mode button").forEach(function (button) {
     button.addEventListener("click", function () {
         const report = button.getAttribute("data-report");
         if (report === appState.report) return;
-        const changes = { report: report, measure: DEFAULT_MEASURE[report] || "" };
-        if (report === "advantage") changes.showAdvantage = true;
-        setFilters(changes);
+        setFilters({ report: report, measure: DEFAULT_MEASURE[report] || "" });
     });
 });
 stateSelect.addEventListener("change", function () { setFilters({ selectedState: this.value }); });
@@ -2092,10 +2177,10 @@ advantageToggle.addEventListener("change", function () {
 });
 document.getElementById("clear-filters-btn").addEventListener("click", function () {
     try { localStorage.removeItem(FILTER_STORAGE_KEY); } catch (error) {}
+    const reportChanged = appState.report !== FILTER_DEFAULTS.report;
     applyFilters({});
     appState.visiblePartners = new Set();
-    pushFiltersToHash();
-    renderAll();
+    commitFilters(reportChanged);
 });
 
 window.addEventListener("resize", function () {
@@ -2158,7 +2243,7 @@ async function init() {
         syncTiles();
         buildStateMap(topoData);
         addReportMenus();
-        document.addEventListener("hashChangeEvent", handleExternalHashChange);
+        document.addEventListener("hashChangeEvent", handleHashChange);
         renderAll();
     } catch (error) {
         console.error(error);
