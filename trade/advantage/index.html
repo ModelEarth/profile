@@ -830,7 +830,7 @@ const appState = {
     industries: [],
     visiblePartners: new Set(),
     report: "flows",
-    selectedState: "CO",
+    selectedState: "GA",
     metric: "level",
     direction: "both",
     industry: ALL,
@@ -919,7 +919,7 @@ function stateReportAction(code) {
 const FILTER_STORAGE_KEY = "tradeDependency.filters";
 const FILTER_DEFAULTS = {
     report: "flows",
-    state: "CO",
+    state: "GA", // Used when neither the hash nor the cache has a state (see withCachedState)
     metric: "level",
     direction: "both",
     industry: ALL,
@@ -972,7 +972,7 @@ function applyFilters(filters) {
     const state = normalizeCode(filters.state);
     const industry = normalizeCode(filters.industry);
     appState.report = report;
-    appState.selectedState = appState.stateNames.has(state) ? state : (appState.stateNames.has("CO") ? "CO" : appState.stateCodes[0]);
+    appState.selectedState = appState.stateNames.has(state) ? state : (appState.stateNames.has(FILTER_DEFAULTS.state) ? FILTER_DEFAULTS.state : appState.stateCodes[0]);
     appState.metric = Object.prototype.hasOwnProperty.call(METRICS, filters.metric) ? filters.metric : "level";
     appState.direction = ["both", "outbound", "inbound"].indexOf(filters.direction) >= 0 ? filters.direction : "both";
     appState.industry = appState.industries.indexOf(industry) >= 0 ? industry : ALL;
@@ -989,7 +989,8 @@ function pushFiltersToHash(mode) {
     const update = {};
     const remove = [];
     FILTER_KEYS.forEach(function (key) {
-        if (filters[key] && filters[key] !== FILTER_DEFAULTS[key]) {
+        // state stays in the hash even when it's the default, so links such as Industries (trade-viz-links.js) can pass it forward
+        if (filters[key] && (key === "state" || filters[key] !== FILTER_DEFAULTS[key])) {
             update[key] = filters[key];
         } else {
             remove.push(key);
@@ -1032,6 +1033,13 @@ function hashFilters() {
     return hasKey ? hash : null;
 }
 
+// Without a state in the filters, use the cached state, then FILTER_DEFAULTS.state (GA) in applyFilters
+function withCachedState(filters) {
+    const result = Object.assign({}, filters);
+    if (!result.state) result.state = readFilterCache().state;
+    return result;
+}
+
 // Runs for goHash() from this page's controls and for hash edits and Back/Forward.
 // Only renders when a filter value differs from priorHash (see localsite/AGENTS.md).
 function handleHashChange() {
@@ -1040,7 +1048,7 @@ function handleHashChange() {
     const changed = FILTER_KEYS.filter(function (key) { return String(hash[key] || "") !== String(prior[key] || ""); });
     if (!changed.length) return;
     renderedByHash = true;
-    applyFilters(hashFilters() || {});
+    applyFilters(withCachedState(hashFilters() || {}));
     writeFilterCache();
     if (["state", "direction", "industry"].some(function (key) { return changed.indexOf(key) >= 0; })) {
         appState.visiblePartners = new Set();
@@ -2253,7 +2261,7 @@ async function init() {
         appState.usdPerEur = ratesText ? StateFlows.parseUsdPerEur(ratesText) : null;
         buildData(tradeUsText, industryCategoryText, categoryStateText);
         renderOptions();
-        applyFilters(hashFilters() || readFilterCache());
+        applyFilters(withCachedState(hashFilters() || readFilterCache()));
         writeFilterCache();
         pushFiltersToHash();
         syncTiles();

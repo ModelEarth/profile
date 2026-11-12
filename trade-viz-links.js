@@ -11,9 +11,27 @@
         { id: "international-map-link", label: "International map", path: "trade/map/index.html" },
         { id: "state-sankey-link", label: "State Sankey", path: "charts/sankey/state.html" },
         { id: "dependency-link", label: "Dependency & Advantage", path: "trade/advantage/" },
-        // exiobase is a sibling repo of profile in the webroot
-        { id: "trade-data-link", label: "Trade Data", path: "../exiobase/tradeflow/" }
+        // passHash: hash keys carried forward from the current page, e.g. footprint/#state=GA
+        { id: "industries-link", label: "Industries", path: "footprint/", passHash: ["state"] }
     ];
+
+    // getHash() is in localsite.js, which each page loads
+    function linkHref(link) {
+        const href = profileBase + link.path;
+        if (!link.passHash) return href;
+        const hash = typeof getHash === "function" ? getHash() : {};
+        return href + "#" + link.passHash.map(function (key) {
+            return key + "=" + encodeURIComponent(hash[key] || "");
+        }).join("&");
+    }
+    function refreshPassHashLinks() {
+        TRADE_VIZ_LINKS.forEach(function (link) {
+            const a = link.passHash && document.getElementById(link.id);
+            if (a) a.href = linkHref(link);
+        });
+    }
+    // hashChangeEvent fires for goHash() and direct hash edits
+    document.addEventListener("hashChangeEvent", refreshPassHashLinks);
 
     function addStyles() {
         if (document.getElementById("trade-viz-links-style")) return;
@@ -52,10 +70,15 @@
             a.id = link.id;
             a.className = "trade-viz-link";
             a.textContent = link.label;
-            a.href = profileBase + link.path;
+            a.href = linkHref(link);
             if (profileBase && pagePath(new URL(a.href).pathname) === pagePath(window.location.pathname)) {
                 a.classList.add("is-current");
                 a.setAttribute("aria-current", "page");
+            }
+            if (link.passHash) {
+                // Pages that change the hash with updateHash() don't fire hashChangeEvent, so re-read it before the link is used
+                a.addEventListener("pointerdown", function () { a.href = linkHref(link); });
+                a.addEventListener("focus", function () { a.href = linkHref(link); });
             }
             container.appendChild(a);
         });
