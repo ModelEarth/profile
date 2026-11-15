@@ -6,23 +6,56 @@
     const scriptSrc = document.currentScript ? document.currentScript.src : "";
     const profileBase = scriptSrc ? new URL(".", scriptSrc).href : "";
 
+    // passHash: hash keys carried forward from the current page when it has them, e.g. footprint/#state=GA.
+    // Lists pass whole (state=GA,TX). Pages showing one place use the first (TradeVizHash.first) and keep
+    // the list in their hash (TradeVizHash.keepList). The state pages use 2019 data only, so they don't take year.
     const TRADE_VIZ_LINKS = [
-        { id: "us-states-link", label: "US States", path: "trade/map/state.html" },
-        { id: "international-map-link", label: "International map", path: "trade/map/index.html" },
-        { id: "state-sankey-link", label: "State Sankey", path: "charts/sankey/state.html" },
-        { id: "dependency-link", label: "Dependency & Advantage", path: "trade/advantage/" },
-        // passHash: hash keys carried forward from the current page, e.g. footprint/#state=GA
-        { id: "industries-link", label: "Industries", path: "footprint/", passHash: ["state"] }
+        { id: "us-states-link", label: "US States", path: "trade/map/state.html", passHash: ["state"] },
+        { id: "international-map-link", label: "International map", path: "trade/map/index.html", passHash: ["country", "year"] },
+        { id: "state-sankey-link", label: "State Sankey", path: "charts/sankey/state.html", passHash: ["state"] },
+        { id: "dependency-link", label: "Dependency & Advantage", path: "trade/advantage/", passHash: ["state"] },
+        { id: "industries-link", label: "Industries", path: "footprint/", passHash: ["state", "country", "year"] }
     ];
 
-    // getHash() is in localsite.js, which each page loads
+    // getHash() is in localsite.js, which each page loads. Read when the link is used, since updateHash()
+    // and goHashQuiet() change the hash without a hashChangeEvent.
+    // href with the current hash's values for keys added, e.g. ("../info/", ["state", "geo"]) -> "../info/#state=GA&geo=US13121"
+    function hashHref(href, keys) {
+        href = String(href).split("#")[0];
+        const hash = typeof getHash === "function" ? getHash() : {};
+        const pairs = [];
+        (keys || []).forEach(function (key) {
+            const value = String(hash[key] || "").trim();
+            if (value) pairs.push(key + "=" + encodeURIComponent(value).replace(/%2C/g, ","));
+        });
+        return pairs.length ? href + "#" + pairs.join("&") : href;
+    }
+    // Keeps a link's href passing the hash keys forward: on hashChangeEvent, and before the link is used,
+    // since pages that change the hash with updateHash() don't fire hashChangeEvent.
+    // Hover (the status bar URL), pointerdown (click, middle-click, right-click) and keyboard focus.
+    function passHashLink(a, href, keys) {
+        if (!a) return;
+        const refresh = function () { a.href = hashHref(href, keys); };
+        refresh();
+        ["pointerenter", "pointerdown", "focus"].forEach(function (type) { a.addEventListener(type, refresh); });
+        document.addEventListener("hashChangeEvent", refresh);
+    }
+    // The location keys localsite pages read. Not the map view values (nullschool's earth, m...) also in the hash.
+    const LOCATION_HASH_KEYS = ["geoview", "country", "usregion", "state", "geo", "regiontitle"];
+    // For links on other pages, such as "Local Industries" on engine/index.html:
+    //   HashLinks.pass(document.getElementById("local-industries-link"));  // the link's own href, location keys
+    //   HashLinks.pass(a, ["state", "year"]);                                // other keys
+    window.HashLinks = {
+        locationKeys: LOCATION_HASH_KEYS,
+        href: hashHref,
+        pass: function (a, keys) {
+            if (a) passHashLink(a, a.getAttribute("href"), keys || LOCATION_HASH_KEYS);
+        }
+    };
+
     function linkHref(link) {
         const href = profileBase + link.path;
-        if (!link.passHash) return href;
-        const hash = typeof getHash === "function" ? getHash() : {};
-        return href + "#" + link.passHash.map(function (key) {
-            return key + "=" + encodeURIComponent(hash[key] || "");
-        }).join("&");
+        return link.passHash ? hashHref(href, link.passHash) : href;
     }
     function refreshPassHashLinks() {
         TRADE_VIZ_LINKS.forEach(function (link) {
@@ -60,6 +93,21 @@
         return pathname.replace(/\/index\.html$/i, "/");
     }
 
+    // For pages that show one place from a hash list such as state=GA,TX (passed whole by these links)
+    window.TradeVizHash = {
+        // The first value of a comma-separated hash value: "GA,TX" -> "GA"
+        first: function (value) {
+            return String(value || "").split(",")[0].trim();
+        },
+        // The hash value to write for the chosen place: the hash's list while it still starts with
+        // that place (GA,TX stays for GA), otherwise the chosen place alone
+        keepList: function (hashValue, chosen) {
+            const list = String(hashValue || "").trim();
+            const pick = String(chosen || "").trim();
+            return pick && list.split(",")[0].trim().toUpperCase() === pick.toUpperCase() ? list : pick;
+        }
+    };
+
     window.renderTradeVizLinks = function (container) {
         if (!container) return;
         addStyles();
@@ -76,9 +124,10 @@
                 a.setAttribute("aria-current", "page");
             }
             if (link.passHash) {
-                // Pages that change the hash with updateHash() don't fire hashChangeEvent, so re-read it before the link is used
-                a.addEventListener("pointerdown", function () { a.href = linkHref(link); });
-                a.addEventListener("focus", function () { a.href = linkHref(link); });
+                // Re-read the hash before the link is used (see passHashLink)
+                ["pointerenter", "pointerdown", "focus"].forEach(function (type) {
+                    a.addEventListener(type, function () { a.href = linkHref(link); });
+                });
             }
             container.appendChild(a);
         });

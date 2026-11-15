@@ -45,7 +45,7 @@ async function main() {
       let hash = getHash();
       let notesContent = "";
 
-      notesContent = "<br>From useeio-json/models/2020/" + getModelFolderName() + "/sectors.json<br>";
+      notesContent = "<br>From useeio-json/models/" + getModelYear() + "/" + getModelFolderName() + "/sectors.json<br>";
 
       // Only add RoUS note if state parameter exists
       if (hash && hash.state) {

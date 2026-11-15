@@ -825,7 +825,7 @@ function currentFilters() {
 function validateFilterValue(key, value) {
     if (value == null || value === "") return null;
     if (key === "state") {
-        const code = normalizeCode(value);
+        const code = normalizeCode(TradeVizHash.first(value)); // state=GA,TX shows GA
         if (appState.stateNames.size && !appState.stateNames.has(code)) return null;
         return code;
     }
@@ -859,9 +859,11 @@ function pushFiltersToHash() {
     const filters = currentFilters();
     const update = {};
     const remove = [];
+    const hashState = getHash().state;
     FILTER_KEYS.forEach(function (key) {
         if (filters[key] && filters[key] !== FILTER_DEFAULTS[key]) {
-            update[key] = filters[key];
+            // A list such as state=GA,TX stays while its first state is shown, for links that pass it on
+            update[key] = key === "state" ? TradeVizHash.keepList(hashState, filters[key]) : filters[key];
         } else {
             remove.push(key);
         }

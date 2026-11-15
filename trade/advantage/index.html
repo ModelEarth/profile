@@ -969,7 +969,7 @@ function writeFilterCache() {
 
 function applyFilters(filters) {
     const report = REPORTS.indexOf(filters.report) >= 0 ? filters.report : FILTER_DEFAULTS.report;
-    const state = normalizeCode(filters.state);
+    const state = normalizeCode(TradeVizHash.first(filters.state)); // state=GA,TX shows GA
     const industry = normalizeCode(filters.industry);
     appState.report = report;
     appState.selectedState = appState.stateNames.has(state) ? state : (appState.stateNames.has(FILTER_DEFAULTS.state) ? FILTER_DEFAULTS.state : appState.stateCodes[0]);
@@ -988,10 +988,12 @@ function pushFiltersToHash(mode) {
     const filters = currentFilters();
     const update = {};
     const remove = [];
+    const hashState = getHash().state;
     FILTER_KEYS.forEach(function (key) {
-        // state stays in the hash even when it's the default, so links such as Industries (trade-viz-links.js) can pass it forward
+        // state stays in the hash even when it's the default, so links such as Industries (trade-viz-links.js) can pass it forward.
+        // A list such as state=GA,TX stays while its first state is shown.
         if (filters[key] && (key === "state" || filters[key] !== FILTER_DEFAULTS[key])) {
-            update[key] = filters[key];
+            update[key] = key === "state" ? TradeVizHash.keepList(hashState, filters[key]) : filters[key];
         } else {
             remove.push(key);
         }

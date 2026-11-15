@@ -1087,6 +1087,7 @@ function readFilterState() {
     FILTER_HASH_KEYS.forEach(function(key) {
         merged[key] = hash[key] || cache[key] || FILTER_DEFAULTS[key];
     });
+    merged.country = TradeVizHash.first(merged.country) || FILTER_DEFAULTS.country; // country=CN,US shows CN
     return merged;
 }
 
@@ -1095,7 +1096,9 @@ function filteredHashObject(filters) {
     FILTER_HASH_KEYS.forEach(function(key) {
         const value = filters[key];
         if (value !== undefined && value !== null && value !== "" && String(value) !== String(FILTER_DEFAULTS[key])) {
-            hashObj[key] = String(value);
+            // A list such as country=CN,US stays while its first country is shown, for links that pass it on
+            hashObj[key] = key === "country" && typeof getHash === "function"
+                ? TradeVizHash.keepList(getHash().country, value) : String(value);
         }
     });
     return hashObj;
@@ -1829,9 +1832,10 @@ function setSelectedFlowDirValue(flowDir) {
     return true;
 }
 
+// The first country in the hash: country=CN,US shows CN
 function getHashCountry() {
     if (typeof getHash !== "function") return "";
-    return getHash().country || "";
+    return TradeVizHash.first(getHash().country);
 }
 
 function getHashFlowDir() {

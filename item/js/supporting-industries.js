@@ -35,7 +35,7 @@ const SUPPORTING_INDUSTRIES_FACTORS = {
         un: { factors: { 908: 1 }, unit: "km²", note: "land (factor_id 908)" } },
     water: { label: "Water Use", noun: "water use", indicator: "WATR", matrix: "N", unit: "m³", scale: 0.001, // kg to m3
         un: { factors: { 910: 1e6 }, note: "blue water withdrawal (factor_id 910)" } }, // Mm3 to m3
-    material: { label: "Material Use", noun: "metals and minerals", unit: "t", epa: false,
+    material: { label: "Material Use", noun: "metals and minerals", indicator: "MNRL", unit: "t", epa: false,
         un: { factors: { 909: 1000 }, note: "metals and minerals (factor_id 909)" } }, // kt to t
     health: { label: "Health: Toxicity", noun: "human toxicity", indicator: "HTOX", matrix: "N", unit: "CTUh" },
     air: { label: "Health: Respiratory", noun: "respiratory effects", indicator: "HRSP", matrix: "N", unit: "kg PM2.5 eq" },
@@ -44,10 +44,10 @@ const SUPPORTING_INDUSTRIES_FACTORS = {
     va: { label: "Value Added", noun: "value added", indicator: "VADD", matrix: "D", usd: true, domesticOnly: true }
 };
 const SUPPORTING_INDUSTRIES_DEFAULT_FACTOR = "amt";
-// The EPA and UN toggle left of the factor dropdown, keyed by the "source" hash value
+// The UN and EPA toggle left of the factor dropdown, keyed by the "source" hash value, in button order
 const SUPPORTING_INDUSTRIES_SOURCES = {
-    epa: { label: "EPA", title: "US EPA USEEIO 2020 state models" },
-    un: { label: "UN", title: "Exiobase 2019 trade tables, split among states by BEA GDP by state" }
+    un: { label: "UN", title: "Exiobase trade tables (UN), split among states by BEA GDP by state" },
+    epa: { label: "EPA", title: "US EPA USEEIO 2020 state models" }
 };
 const SUPPORTING_INDUSTRIES_DEFAULT_SOURCE = "epa";
 
@@ -60,13 +60,89 @@ function factorHasSource(factorKey, source) {
     const factor = SUPPORTING_INDUSTRIES_FACTORS[factorKey];
     return source === "un" ? !!factor.un : factor.epa !== false;
 }
+// The UN factor key for a USEEIO indicator code (GHG -> co2), or null when Exiobase has none
+function unFactorForIndicator(indicatorCode) {
+    return Object.keys(SUPPORTING_INDUSTRIES_FACTORS).find(key =>
+        SUPPORTING_INDUSTRIES_FACTORS[key].indicator === indicatorCode && factorHasSource(key, "un")) || null;
+}
+
+// The UN / EPA source, shared by every toggle on the page (the Top 10 panel and profile/footprint's
+// matrix section) and kept in the hash as source=un. EPA is the default and leaves source out.
+function getSupportingIndustriesSource() {
+    const hash = (typeof getHash === "function") ? getHash() : {};
+    return hash.source === "un" ? "un" : SUPPORTING_INDUSTRIES_DEFAULT_SOURCE;
+}
+// Sets the source quietly (no hashChangeEvent, so the page doesn't reload), then tells each toggle
+// through a "supportingIndustriesSource" event on document, with the source in event.detail.source
+function setSupportingIndustriesSource(source) {
+    if (typeof goHashQuiet === "function") {
+        if (source === SUPPORTING_INDUSTRIES_DEFAULT_SOURCE) goHashQuiet({}, "source"); else goHashQuiet({ source });
+    }
+    document.dispatchEvent(new CustomEvent("supportingIndustriesSource", { detail: { source } }));
+}
+// The UN / EPA toggle (.si-source in css/supporting-industries.css). Clicking a button calls
+// setSupportingIndustriesSource(). Mark the buttons with markSourceButtons().
+function sourceButtonsHTML() {
+    return `<div class="si-source" role="group" aria-label="Data source">
+        ${Object.keys(SUPPORTING_INDUSTRIES_SOURCES).map(key => `<button type="button" class="si-source-btn"
+            data-source="${key}" title="${SUPPORTING_INDUSTRIES_SOURCES[key].title}">${SUPPORTING_INDUSTRIES_SOURCES[key].label}</button>`).join("")}
+    </div>`;
+}
+function setupSourceButtons(container) {
+    container.querySelectorAll(".si-source-btn").forEach(button => button.addEventListener("click", () => {
+        if (button.getAttribute("aria-pressed") !== "true" && !button.disabled) setSupportingIndustriesSource(button.dataset.source);
+    }));
+}
+// Presses the shown source's button. When UN can't show the sector, unNote adds the reason to its
+// hover text and greys it out, unless unExplained: then UN stays clickable and choosing it shows
+// why, with links to related UN sectors (exiobaseBarrierHTML for a sector with no Exiobase industry).
+function markSourceButtons(container, source, unNote, unExplained) {
+    container.querySelectorAll(".si-source-btn").forEach(button => {
+        button.setAttribute("aria-pressed", String(button.dataset.source === source));
+        const title = SUPPORTING_INDUSTRIES_SOURCES[button.dataset.source].title;
+        const noted = button.dataset.source === "un" && !!unNote;
+        button.disabled = noted && !unExplained;
+        button.title = noted ? title + " | " + unNote : title;
+    });
+}
 
 // UN option: the Exiobase trade tables in ModelEarth/trade-data, as each industry's national
 // purchases (from US producers and imports) in US/domestic/trade-us.csv, placed in states with
 // the BEA weights in US/domestic/category_state.csv and the categories in
 // US/domestic/industry_category.csv. exiobase/tradeflow/bea/category_state.py writes all three.
-// 2019 matches the interstate map.
+// 2019 matches the interstate map and is the default year.
 const EXIOBASE_STATE_YEAR = "2019";
+// Years in trade-data/year with US trade tables, newest first. Their status is on exiobase/tradeflow/.
+const EXIOBASE_YEARS = ["2024", "2023", "2022", "2021", "2020", "2019", "2018"];
+// Years with the state tables (trade-us.csv, industry_category.csv and category_state.csv). Other
+// years use the nearest one's state weights, and the Top 10 and matrix use its trade-us.csv.
+const EXIOBASE_STATE_YEARS = ["2019", "2022"];
+// Years whose trade_factor.csv lacks factors, shown in the year dropdown and notes
+const EXIOBASE_YEAR_NOTES = {
+    "2023": "trade amounts and material use only, no greenhouse gas or jobs factors",
+    "2024": "trade amounts and material use only, no greenhouse gas or jobs factors"
+};
+
+// The Exiobase year from the hash (year=2022), otherwise 2019. The hash's year is shared with the
+// USEEIO model year (profile/footprint/js/config.js), which only has 2020.
+function getExiobaseYear() {
+    const year = String(((typeof getHash === "function") ? getHash() : {}).year || "").trim();
+    return EXIOBASE_YEARS.includes(year) ? year : EXIOBASE_STATE_YEAR;
+}
+// The year with state tables nearest a year (the earlier one on a tie): 2020 -> 2019, 2021 -> 2022
+function exiobaseStateTablesYear(year) {
+    year = String(year || getExiobaseYear());
+    if (EXIOBASE_STATE_YEARS.includes(year)) return year;
+    return EXIOBASE_STATE_YEARS.slice().sort((a, b) => Math.abs(a - year) - Math.abs(b - year) || a - b)[0];
+}
+// The year the Top 10 and matrix show: the hash's year when it has state tables, otherwise the nearest
+function exiobaseTablesYear() {
+    return exiobaseStateTablesYear(getExiobaseYear());
+}
+// The page listing each Exiobase year's files and processing status
+function exiobaseStatusUrl() {
+    return profileUrl("../exiobase/tradeflow/");
+}
 const TRADE_DATA_RAW = "https://raw.githubusercontent.com/ModelEarth/trade-data/main/";
 // Exiobase industries for a product's NAICS codes, by the longest matching NAICS prefix.
 // From trade-data/concordance/exio_to_useeio2_commodity_concordance.csv, leaving out its
@@ -78,12 +154,13 @@ const EXIOBASE_INDUSTRIES_BY_NAICS = {
     "3313": ["ALUM1"], "332": ["FABRI"], "3334": ["MACHI"], "3351": ["ELECT"]
 };
 
-// The Top 10 panel: a heading, the EPA / UN toggle, the factor dropdown, the ranking and a note.
+// The Top 10 panel: a heading, the UN / EPA toggle, the factor dropdown, the ranking and a note.
 // options: element (a div to fill, otherwise a new one), manufacturer (on a product label: the
 // note then says the ranking is the broader industry's, not that manufacturer's suppliers),
 // ownLabel (the star's label for the sector's own industry), ownRankBox (false to leave out the
-// box below the list giving the own industry's rank when it's outside the top rows) and
-// footprintLink (false on the footprint page itself). Returns the element, setSector(sectorCode, exiobaseIndustries),
+// box below the list giving the own industry's rank when it's outside the top rows),
+// footprintLink (false on the footprint page itself) and unLinkFor(summaryCode) (a link to another sector in UN,
+// listed when UN has no industries for this one; default: profile/footprint). Returns the element, setSector(sectorCode, exiobaseIndustries),
 // show(state, key, onUnavailable), hide() and shownKey(). show() ranks the sector in that
 // state, and calls onUnavailable when the state model fails to load (the panel then hides).
 function createSupportingIndustriesPanel(options) {
@@ -92,16 +169,17 @@ function createSupportingIndustriesPanel(options) {
     let sectorCode = null;
     let exiobaseIndustries = [];
     const hash = (typeof getHash === "function") ? getHash() : {};
-    let source = hash.source === "un" ? "un" : SUPPORTING_INDUSTRIES_DEFAULT_SOURCE;
+    let source = getSupportingIndustriesSource();
     let factorKey = Object.prototype.hasOwnProperty.call(SUPPORTING_INDUSTRIES_FACTORS, hash.factor) ? hash.factor : SUPPORTING_INDUSTRIES_DEFAULT_FACTOR;
     const factorOptions = () => Object.keys(SUPPORTING_INDUSTRIES_FACTORS)
         .filter(key => factorHasSource(key, source))
         .map(key => `<option value="${key}"${key === factorKey ? " selected" : ""}>${SUPPORTING_INDUSTRIES_FACTORS[key].label}</option>`)
         .join("");
     const product = manufacturer ? ", not only this product" : "";
-    const noteText = () => (source === "un"
+    const noteText = () => (source === "un" && !exiobaseIndustries.length ? "" : source === "un"
         ? `Ranks the purchases made by the state's broader industry (all producers in ${exiobaseIndustries.join(", ")}${product})
-            in the Exiobase ${EXIOBASE_STATE_YEAR} trade tables. They are split among states
+            in the Exiobase ${exiobaseTablesYear()} trade tables${getExiobaseYear() !== exiobaseTablesYear()
+                ? ` (${getExiobaseYear()} has no state tables, so the nearest year with them is shown)` : ""}. They are split among states
             by each state's share of US GDP in the supplying and buying industries' categories (BEA), as the
             interstate tables are, so in-state supply is an estimate, not a survey of shipments.`
         : `Ranks the estimated direct materials and services supplied to the state's broader industry (all
@@ -115,10 +193,7 @@ function createSupportingIndustriesPanel(options) {
             <h4>Top ${SUPPORTING_INDUSTRIES_COUNT} Industries Supplying Production</h4>
         </div>
         <div class="si-controls">
-            <div class="si-source" role="group" aria-label="Data source">
-                ${Object.keys(SUPPORTING_INDUSTRIES_SOURCES).map(key => `<button type="button" class="si-source-btn"
-                    data-source="${key}" title="${SUPPORTING_INDUSTRIES_SOURCES[key].title}">${SUPPORTING_INDUSTRIES_SOURCES[key].label}</button>`).join("")}
-            </div>
+            ${sourceButtonsHTML()}
             <label class="si-factor">Factor:
                 <select class="si-factor-select" aria-label="Factor used to rank the supplying industries"></select>
             </label>
@@ -129,16 +204,13 @@ function createSupportingIndustriesPanel(options) {
     const stateDiv = div.querySelector(".supporting-industries-state");
     const factorSelect = div.querySelector(".si-factor-select");
     const noteP = div.querySelector(".supporting-industries-note");
-    const sourceButtons = div.querySelectorAll(".si-source-btn");
+    const sourceGroup = div.querySelector(".si-source");
     let shownKey = null;
     let shownState = null;
 
     // The toggle, dropdown and note for the current source and sector
     function updateControls() {
-        sourceButtons.forEach(button => {
-            button.setAttribute("aria-pressed", String(button.dataset.source === source));
-            button.disabled = button.dataset.source === "un" && !exiobaseIndustries.length;
-        });
+        markSourceButtons(sourceGroup, source, exiobaseIndustries.length ? "" : "No Exiobase industry matches this sector", true);
         factorSelect.innerHTML = factorOptions();
         noteP.innerHTML = noteText();
     }
@@ -148,7 +220,14 @@ function createSupportingIndustriesPanel(options) {
     function showRanking(state, key) {
         const factor = factorKey;
         const from = source;
-        const loading = from === "un" ? "Exiobase " + EXIOBASE_STATE_YEAR + " trade data for " + state
+        // UN without Exiobase industries for the sector: why, with related industries to see instead
+        if (from === "un" && !exiobaseIndustries.length) {
+            stateDiv.innerHTML = `<div class="supporting-industries-status">Loading the Exiobase ${exiobaseTablesYear()} industries...</div>`;
+            return exiobaseBarrierHTML({ sectorCode, state, linkFor: opts.unLinkFor }).then(html => {
+                if (shownKey === key && source === from) stateDiv.innerHTML = html;
+            });
+        }
+        const loading = from === "un" ? "Exiobase " + exiobaseTablesYear() + " trade data for " + state
             : SUPPORTING_INDUSTRIES_FACTORS[factor].national ? "national energy data" : state + " state model";
         stateDiv.innerHTML = `<div class="supporting-industries-status">Loading ${loading}...</div>`;
         const ranking = from === "un"
@@ -181,14 +260,17 @@ function createSupportingIndustriesPanel(options) {
         rerank();
     });
 
-    // EPA or UN. A factor the other source lacks goes back to Amount Spent.
-    sourceButtons.forEach(button => button.addEventListener("click", () => {
-        if (button.dataset.source === source) return;
-        source = button.dataset.source;
+    // EPA or UN, from this toggle or another on the page (setSupportingIndustriesSource).
+    // A factor the other source lacks goes back to Amount Spent.
+    setupSourceButtons(sourceGroup);
+    document.addEventListener("supportingIndustriesSource", event => {
+        const next = event.detail && event.detail.source;
+        if (!SUPPORTING_INDUSTRIES_SOURCES[next] || next === source) return;
+        source = next;
         if (!factorHasSource(factorKey, source)) factorKey = SUPPORTING_INDUSTRIES_DEFAULT_FACTOR;
         updateControls();
         rerank();
-    }));
+    });
 
     // The panel stays open: the EPA state model loaded but the factor's data (e.g. the national
     // model) did not, or the UN tables have no file for the state
@@ -196,17 +278,17 @@ function createSupportingIndustriesPanel(options) {
         console.warn("Top industries: could not rank " + state + " by " + factorKey + " (" + source + ")", error);
         if (shownKey !== key) return;
         stateDiv.innerHTML = source === "un"
-            ? `<div class="supporting-industries-status">The Exiobase ${EXIOBASE_STATE_YEAR} trade tables could not be
+            ? `<div class="supporting-industries-status">The Exiobase ${exiobaseTablesYear()} trade tables could not be
                 loaded. Choose EPA for this state.</div>`
             : `<div class="supporting-industries-status">${SUPPORTING_INDUSTRIES_FACTORS[factorKey].label}
                 could not be loaded for ${state}. Choose another factor.</div>`;
     }
 
-    // The sector to rank, with its Exiobase industries (none disables UN, which then goes back to EPA)
+    // The sector to rank, with its Exiobase industries (with none, UN shows why instead of a ranking)
     function setSector(code, industries) {
         sectorCode = code;
         exiobaseIndustries = industries || [];
-        if (source === "un" && !exiobaseIndustries.length) source = SUPPORTING_INDUSTRIES_DEFAULT_SOURCE;
+        source = getSupportingIndustriesSource(); // A link or typed hash may have changed source=
         if (!factorHasSource(factorKey, source)) factorKey = SUPPORTING_INDUSTRIES_DEFAULT_FACTOR;
         updateControls();
     }
@@ -474,9 +556,12 @@ function exiobaseIndustriesFor(naicsCodes) {
 // industry belongs to the summary sector holding most of its detail sectors (all of them on a tie),
 // so a few stray detail codes don't add it elsewhere: 326 gets RUBBE but not MACHI. Industries
 // "for treatment" (secondary materials and waste treatment) are left out, as in
-// EXIOBASE_INDUSTRIES_BY_NAICS. Summary sectors with no industry (e.g. 42, 562) return none.
+// EXIOBASE_INDUSTRIES_BY_NAICS. Summary sectors with no industry (e.g. 42, 562) return none, and
+// exiobaseBarrierHTML() explains why. Resolves with {bySummary, counts (industry_id -> summary ->
+// detail sectors), treatment (summary -> "for treatment" industry_ids), names (industry_id -> name),
+// details (industry_id -> USEEIO detail sectors)}.
 let exiobaseBySummaryRequest = null;
-function exiobaseIndustriesForSummary(sectorCode) {
+function loadExiobaseBySummary() {
     if (!exiobaseBySummaryRequest) {
         exiobaseBySummaryRequest = Promise.all([
             fetchTradeDataText("year/" + EXIOBASE_STATE_YEAR + "/industry.csv"),
@@ -486,16 +571,29 @@ function exiobaseIndustriesForSummary(sectorCode) {
                 return response.text();
             })
         ]).then(([industryText, concordanceText, crosswalkText]) => {
-            const ids = new Map(parseCsvRows(industryText).map(row => [row.name, row.industry_id]));
+            const industryRows = parseCsvRows(industryText);
+            const ids = new Map(industryRows.map(row => [row.name, row.industry_id]));
+            const names = new Map(industryRows.map(row => [row.industry_id, String(row.name || row.industry_id).replace(/\s*\(\d+\)$/, "")]));
             const summaryOf = new Map();
             parseCsvRows(crosswalkText).forEach(row => ["BEA_Detail", "BEA_Detail_Waste_Disagg"].forEach(col => {
                 if (row[col] && !summaryOf.has(row[col])) summaryOf.set(row[col], row.BEA_Summary);
             }));
             const counts = new Map(); // industry_id -> summary -> detail sectors
+            const treatment = new Map(); // summary -> "for treatment" industry_ids
+            const details = new Map(); // industry_id -> USEEIO detail sectors, in the concordance's order
             parseCsvRows(concordanceText).forEach(row => {
                 const id = ids.get(row.Exiobase_Sector);
+                if (id && row.USEEIO_Detail_2012) {
+                    if (!details.has(id)) details.set(id, []);
+                    if (!details.get(id).includes(row.USEEIO_Detail_2012)) details.get(id).push(row.USEEIO_Detail_2012);
+                }
                 const summary = summaryOf.get(row.USEEIO_Detail_2012);
-                if (!id || !summary || /for treatment/.test(row.Exiobase_Sector)) return;
+                if (!id || !summary) return;
+                if (/for treatment/.test(row.Exiobase_Sector)) {
+                    if (!treatment.has(summary)) treatment.set(summary, new Set());
+                    treatment.get(summary).add(id);
+                    return;
+                }
                 if (!counts.has(id)) counts.set(id, new Map());
                 counts.get(id).set(summary, (counts.get(id).get(summary) || 0) + 1);
             });
@@ -508,11 +606,134 @@ function exiobaseIndustriesForSummary(sectorCode) {
                     bySummary.get(summary).push(id);
                 });
             });
-            return bySummary;
+            return { bySummary, counts, treatment, names, details };
         });
         exiobaseBySummaryRequest.catch(() => { exiobaseBySummaryRequest = null; }); // allow a retry
     }
-    return exiobaseBySummaryRequest.then(bySummary => bySummary.get(sectorCode) || []);
+    return exiobaseBySummaryRequest;
+}
+function exiobaseIndustriesForSummary(sectorCode) {
+    return loadExiobaseBySummary().then(match => match.bySummary.get(sectorCode) || []);
+}
+// The USEEIO summary sector an Exiobase industry belongs to (the first when tied), or null
+function exiobaseSummaryFor(industryId) {
+    return loadExiobaseBySummary().then(match => summaryOfIndustry(match, industryId));
+}
+// An Exiobase industry's USEEIO detail sectors (for the national model), from the concordance
+function exiobaseDetailsFor(industryId) {
+    return loadExiobaseBySummary().then(match => match.details.get(industryId) || []);
+}
+// The Exiobase industries holding a USEEIO detail sector (none for "for treatment" industries)
+function exiobaseIndustriesForDetail(detailCode) {
+    return loadExiobaseBySummary().then(match => Array.from(match.details.keys())
+        .filter(id => match.details.get(id).includes(detailCode) && summaryOfIndustry(match, id)));
+}
+function summaryOfIndustry(match, industryId) {
+    for (const [summary, ids] of match.bySummary) if (ids.includes(industryId)) return summary;
+    return null;
+}
+
+// Related Exiobase industries for a summary sector with none of its own, where the concordance
+// doesn't give the sector a matching industry (by majority). Hand-picked for sectors no
+// concordance row reaches. Each is an industry_id and why it's related.
+const EXIOBASE_RELATED_BY_SUMMARY = {
+    "42": [
+        { id: "WHOLE", why: "Exiobase's wholesale industry (ISIC 51), which EPA's concordance maps to the retail detail sectors 445000 and 452000 instead of the wholesale detail sectors (4231 to 4250)" },
+        { id: "SALEM", why: "includes the wholesale of motor vehicles and their parts (ISIC 50), which Exiobase groups with their sale and repair" }
+    ]
+};
+
+// Summary sector names (from a state model's sectors.json, the same in every state), loaded once
+let summaryNamesRequest = null;
+function loadSummaryNames() {
+    if (!summaryNamesRequest) {
+        summaryNamesRequest = fetch(USEEIO_STATE_MODEL_ENDPOINT + "/GAEEIOv1.0-s-20/sectors.json")
+            .then(response => {
+                if (!response.ok) throw new Error(response.status + " for sectors.json");
+                return response.json();
+            })
+            .then(sectors => new Map(sectors.filter(s => s.location === "US-GA").map(s => [s.code, s.name])));
+        summaryNamesRequest.catch(() => { summaryNamesRequest = null; }); // allow a retry
+    }
+    return summaryNamesRequest;
+}
+
+// Why UN (Exiobase) can't show a summary sector, as HTML, with links to the sectors that show the
+// related Exiobase industries in UN:
+// - partial: industries with some of the sector's detail sectors, shown with the sector holding most of theirs
+// - named: hand-picked (EXIOBASE_RELATED_BY_SUMMARY) or sharing a distinctive word with the sector's name
+// - treatment: "for treatment" industries (waste treatment and recycling), which no sector shows
+// options: sectorCode, state, noState (true when the page has no state: UN is split among states),
+// linkFor(summaryCode) (the link to that sector in UN; default: profile/footprint for the state)
+async function exiobaseBarrierHTML(options) {
+    const year = exiobaseTablesYear();
+    const status = html => `<div class="supporting-industries-status si-barrier">${html}</div>`;
+    if (options.noState) {
+        return status(`UN shows the Exiobase ${year} trade tables split among states by each state's share of US GDP
+            (BEA), so it needs a state. Choose a state above to see this sector's UN suppliers and buyers.`);
+    }
+    const { sectorCode, state } = options;
+    const [match, sectorNames] = await Promise.all([loadExiobaseBySummary(), loadSummaryNames().catch(() => new Map())]);
+    const sectorName = sectorNames.get(sectorCode) || sectorCode;
+    const escape = text => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const linkFor = options.linkFor || (code => footprintUrl(`#state=${state}&demand=${code}/US-${state}&source=un`));
+    const shownIn = id => {
+        const summary = summaryOfIndustry(match, id);
+        return summary
+            ? `shown in UN with <a href="${linkFor(summary)}">${escape(sectorNames.get(summary) || summary)} (${summary})</a>`
+            : "not shown with any sector";
+    };
+    const item = (id, why) => `<li><b>${escape(match.names.get(id) || id)}</b> (${id})${why ? " - " + why : ""}, ${shownIn(id)}</li>`;
+
+    // Industries with some of this sector's detail sectors, but more of another's
+    const partial = [];
+    match.counts.forEach((summaries, id) => {
+        if (summaries.has(sectorCode)) {
+            const total = Array.from(summaries.values()).reduce((sum, n) => sum + n, 0);
+            partial.push({ id, here: summaries.get(sectorCode), total });
+        }
+    });
+    // Hand-picked, then industries sharing a distinctive word with the sector name (e.g. "wholesale")
+    const listed = new Set(partial.map(p => p.id));
+    const named = (EXIOBASE_RELATED_BY_SUMMARY[sectorCode] || []).filter(r => !listed.has(r.id));
+    named.forEach(r => listed.add(r.id));
+    const common = new Set(["trade", "services", "service", "products", "product", "other", "manufacturing", "related",
+        "activities", "except", "industries", "support", "goods", "based", "general", "government", "federal", "state", "local"]);
+    const words = String(sectorName).toLowerCase().split(/[^a-z]+/).filter(word => word.length >= 5 && !common.has(word));
+    match.names.forEach((name, id) => {
+        if (listed.has(id) || !summaryOfIndustry(match, id)) return;
+        const lower = name.toLowerCase();
+        if (words.some(word => new RegExp("\\b" + word).test(lower))) {
+            named.push({ id, why: "a similar name" });
+            listed.add(id);
+        }
+    });
+    const treatment = Array.from(match.treatment.get(sectorCode) || []);
+
+    const concordance = "https://github.com/ModelEarth/trade-data/blob/main/concordance/exio_to_useeio2_commodity_concordance.csv";
+    const related = partial.length || named.length;
+    let html = `<p style="margin-top:0"><b>UN can't show ${escape(sectorName)} (${sectorCode}) on its own.</b>
+        The Exiobase ${year} trade tables are by Exiobase industry, and
+        <a href="${concordance}" target="_blank">EPA's Exiobase to USEEIO concordance</a> gives no industry that
+        belongs mainly to this sector${partial.length ? ": the ones that touch it belong mainly to other sectors" : ""}.
+        Choose EPA for this sector${related ? ", or see a related industry in UN" : ""}.</p>`;
+    if (partial.length) {
+        html += `<div>Industries that include part of this sector:</div><ul>`
+            + partial.sort((a, b) => b.here / b.total - a.here / a.total)
+                .map(p => item(p.id, `${p.here} of its ${p.total} USEEIO detail sectors ${p.here === 1 ? "is" : "are"} here`)).join("") + "</ul>";
+    }
+    if (named.length) {
+        html += `<div>Similar industries:</div><ul>` + named.map(r => item(r.id, r.why)).join("") + "</ul>";
+    }
+    if (treatment.length) {
+        html += `<div>Waste treatment industries, which the matching leaves out since they also treat secondary
+            materials for other sectors:</div><ul>`
+            + treatment.map(id => `<li>${escape(match.names.get(id) || id)} (${id})</li>`).join("") + "</ul>";
+    }
+    if (!partial.length && !named.length && !treatment.length) {
+        html += `<p>No Exiobase industry is related to this sector.</p>`;
+    }
+    return status(html);
 }
 
 // A trade-data file from the trade-data clone beside profile/ (or its site), then from GitHub
@@ -549,14 +770,17 @@ function parseCsvRows(text) {
 
 // Exiobase industry names (without their ISIC numbers), each industry's broad category, each
 // state's origin and destination weight for each category, and the year's US dollars per euro,
-// loaded once
-let exiobaseSharedRequest = null;
-function loadExiobaseShared() {
-    if (!exiobaseSharedRequest) {
-        exiobaseSharedRequest = Promise.all([
-            fetchTradeDataText("year/" + EXIOBASE_STATE_YEAR + "/industry.csv"),
-            fetchTradeDataText("year/" + EXIOBASE_STATE_YEAR + "/US/domestic/industry_category.csv"),
-            fetchTradeDataText("year/" + EXIOBASE_STATE_YEAR + "/US/domestic/category_state.csv"),
+// loaded once per year. The categories and weights come from the nearest year with state tables
+// (weightsYear).
+const exiobaseSharedRequests = new Map();
+function loadExiobaseShared(year) {
+    year = String(year || exiobaseTablesYear());
+    const weightsYear = exiobaseStateTablesYear(year);
+    if (!exiobaseSharedRequests.has(year)) {
+        const request = Promise.all([
+            fetchTradeDataText("year/" + year + "/industry.csv"),
+            fetchTradeDataText("year/" + weightsYear + "/US/domestic/industry_category.csv"),
+            fetchTradeDataText("year/" + weightsYear + "/US/domestic/category_state.csv"),
             fetchTradeDataText("concordance/eur_annual_rates.csv")
         ]).then(([industryText, categoryText, weightsText, ratesText]) => {
             const names = new Map(parseCsvRows(industryText)
@@ -564,71 +788,356 @@ function loadExiobaseShared() {
             const categories = new Map(parseCsvRows(categoryText).map(row => [row.industry_id, row.state_industry_code]));
             const weights = new Map(parseCsvRows(weightsText)
                 .map(row => [row.state_industry_code + "|" + row.weight_type + "|" + row.state, parseFloat(row.weight) || 0]));
-            const rates = parseCsvRows(ratesText).find(row => row.Year === EXIOBASE_STATE_YEAR);
+            const rates = parseCsvRows(ratesText).find(row => row.Year === year);
             const usdPerEur = rates ? parseFloat(rates.USD) : NaN;
-            if (!(usdPerEur > 0)) throw new Error("No " + EXIOBASE_STATE_YEAR + " USD rate in eur_annual_rates.csv");
-            return { names, categories, weights, usdPerEur };
+            if (!(usdPerEur > 0)) throw new Error("No " + year + " USD rate in eur_annual_rates.csv");
+            return { names, categories, weights, usdPerEur, year, weightsYear };
         });
-        exiobaseSharedRequest.catch(() => { exiobaseSharedRequest = null; }); // allow a retry
+        request.catch(() => exiobaseSharedRequests.delete(year)); // allow a retry
+        exiobaseSharedRequests.set(year, request);
     }
-    return exiobaseSharedRequest;
+    return exiobaseSharedRequests.get(year);
 }
 
-// Every industry's national purchases (trade-us.csv), grouped by buying industry, loaded once
-let exiobaseInputsRequest = null;
-function loadExiobaseInputs() {
-    if (!exiobaseInputsRequest) {
-        exiobaseInputsRequest = fetchTradeDataText(`year/${EXIOBASE_STATE_YEAR}/US/domestic/trade-us.csv`).then(text => {
-            const byIndustry = new Map();
+// The factor_id columns in trade-us.csv (901 to 910, listed in the year's factor.csv)
+const EXIOBASE_FACTOR_IDS = ["901", "902", "903", "904", "905", "906", "907", "908", "909", "910"];
+
+// Every industry pair's national flow (trade-us.csv), grouped by buying industry (byBuyer) and by
+// supplying industry (bySupplier), and each industry's own direct factors per million euros of US
+// output (intensity). A flow's factor columns are its amount times the supplier's direct factor,
+// so the intensity is the factor total over the amount of the supplier's US-made sales. Loaded once
+// per year with state tables (EXIOBASE_STATE_YEARS).
+const exiobaseFlowsRequests = new Map();
+function loadExiobaseFlows(year) {
+    year = exiobaseStateTablesYear(year || exiobaseTablesYear());
+    if (!exiobaseFlowsRequests.has(year)) {
+        const request = fetchTradeDataText(`year/${year}/US/domestic/trade-us.csv`).then(text => {
+            const byBuyer = new Map();
+            const bySupplier = new Map();
+            const sums = new Map();
+            const add = (map, key, row) => { if (!map.has(key)) map.set(key, []); map.get(key).push(row); };
             parseCsvRows(text).forEach(row => {
-                if (!byIndustry.has(row.industry2)) byIndustry.set(row.industry2, []);
-                byIndustry.get(row.industry2).push(row);
+                add(byBuyer, row.industry2, row);
+                add(bySupplier, row.industry1, row);
+                if (row.origin === "foreign") return;
+                if (!sums.has(row.industry1)) sums.set(row.industry1, { amount: 0, factors: {} });
+                const sum = sums.get(row.industry1);
+                sum.amount += parseFloat(row.amount) || 0;
+                EXIOBASE_FACTOR_IDS.forEach(id => { sum.factors[id] = (sum.factors[id] || 0) + (parseFloat(row[id]) || 0); });
             });
-            return byIndustry;
+            const intensity = new Map();
+            sums.forEach((sum, code) => {
+                const perAmount = {};
+                EXIOBASE_FACTOR_IDS.forEach(id => { perAmount[id] = sum.amount ? sum.factors[id] / sum.amount : 0; });
+                intensity.set(code, perAmount);
+            });
+            return { byBuyer, bySupplier, intensity };
         });
-        exiobaseInputsRequest.catch(() => { exiobaseInputsRequest = null; }); // allow a retry
+        request.catch(() => exiobaseFlowsRequests.delete(year)); // allow a retry
+        exiobaseFlowsRequests.set(year, request);
     }
-    return exiobaseInputsRequest;
+    return exiobaseFlowsRequests.get(year);
 }
 
-// Ranks the industries supplying the product's Exiobase industries in the state. As in the
-// interstate tables, a state pair's share of a national flow is the supplier's state weight
-// (its share of US GDP in the supplying industry's category) times the buyer's (in the buying
-// industry's category), here for all states. A US purchase splits into in-state (origin weight
-// o of the state, times destination weight d) and other states ((1 - o) times d). Imports of
-// the same industry pair place d of them in the state, shown as foreign. Amounts are millions
-// of euros, shown in US dollars at the year's rate; factors sum their factor_id columns.
-async function rankExiobaseInputs(state, targets, factorKey) {
-    const factor = supportingIndustriesFactor(factorKey, "un");
-    const [shared, inputs] = await Promise.all([loadExiobaseShared(), loadExiobaseInputs()]);
+// Calls fn(cells) for each line of a CSV without quoted cells (the trade tables), after the header.
+// Resolves the header's column names to indexes first: columns({trade_id: 0, ...}).
+function eachPlainCsvLine(text, columns, fn) {
+    const lines = text.split("\n");
+    const header = (lines[0] || "").replace(/^\uFEFF/, "").trim().split(",");
+    columns(Object.fromEntries(header.map((name, i) => [name, i])));
+    for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line) fn(line.split(","));
+    }
+}
+
+// Each Exiobase industry's sales to industries in the same region in a year, with the factors on them,
+// from {region}/domestic/trade.csv and trade_factor.csv (US-made sales to US industries for "US"). Every
+// year in EXIOBASE_YEARS has them for the regions in EXIOBASE_PROCESSED_REGIONS, and 2018 for all 49.
+// The trade tables hold industry-to-industry flows only, so sales to households, government and exports
+// aren't in them. Resolves with {industries: Map of industry_id -> {amount (millions of euros), factors
+// (factor_id -> level)}, factorIds (the factor_ids the year has)}. Loaded once per year and region.
+const exiobaseSalesRequests = new Map();
+function loadExiobaseSales(year, region) {
+    year = String(year || getExiobaseYear());
+    region = region || "US";
+    const key = year + "/" + region;
+    if (!exiobaseSalesRequests.has(key)) {
+        const request = Promise.all([
+            fetchTradeDataText(`year/${year}/${region}/domestic/trade.csv`),
+            fetchTradeDataText(`year/${year}/${region}/domestic/trade_factor.csv`)
+        ]).then(([tradeText, factorText]) => {
+            const supplierOf = new Map();
+            const industries = new Map();
+            const entry = code => {
+                if (!industries.has(code)) industries.set(code, { amount: 0, factors: {} });
+                return industries.get(code);
+            };
+            let c = {};
+            eachPlainCsvLine(tradeText, columns => { c = columns; }, cells => {
+                if (cells[c.region1] !== region || cells[c.region2] !== region) return;
+                const code = cells[c.industry1];
+                supplierOf.set(cells[c.trade_id], code);
+                entry(code).amount += parseFloat(cells[c.amount]) || 0;
+            });
+            const factorIds = new Set();
+            eachPlainCsvLine(factorText, columns => { c = columns; }, cells => {
+                const code = supplierOf.get(cells[c.trade_id]);
+                if (!code) return;
+                const id = cells[c.factor_id];
+                const factors = entry(code).factors;
+                factors[id] = (factors[id] || 0) + (parseFloat(cells[c.level]) || 0);
+                factorIds.add(id);
+            });
+            return { industries, factorIds };
+        });
+        request.catch(() => exiobaseSalesRequests.delete(key)); // allow a retry
+        exiobaseSalesRequests.set(key, request);
+    }
+    return exiobaseSalesRequests.get(key);
+}
+
+// Exiobase regions processed for every year (the default COUNTRY list in exiobase/tradeflow/config.yaml):
+// 13 countries and Exiobase's Rest of World Middle East (WM). The World view adds these up. 2018's run
+// also wrote the other 35 of Exiobase's 49 regions, so a country in one of those shows for 2018 only.
+const EXIOBASE_PROCESSED_REGIONS = ["AU", "BR", "CA", "CN", "DE", "FR", "GB", "IN", "IT", "JP", "KR", "RU", "US", "WM"];
+const EXIOBASE_ALL_REGIONS_YEARS = ["2018"];
+// How much of the world the 14 hold, from 2018's files for all 49 regions: their shares of the
+// within-country industry-to-industry sales, of the greenhouse gases on those sales and of the jobs.
+// missing: the largest regions left out with their share of the sales, then the other 27 together.
+const EXIOBASE_WORLD_COVERAGE = {
+    year: "2018", regions: 49, sales: 0.789, ghg: 0.839, jobs: 0.684,
+    missing: [["WA", 0.040], ["WL", 0.020], ["WF", 0.014], ["ES", 0.013], ["TW", 0.011], ["ID", 0.011], ["MX", 0.009], ["TR", 0.009]],
+    otherMissing: 0.083, otherCount: 27
+};
+// Names for the processed regions, Exiobase's five Rest of World regions and the largest missing ones.
+// Other countries' names come from concordance/exio_country_concordance.csv.
+const EXIOBASE_REGION_NAMES = {
+    WORLD: "World", AU: "Australia", BR: "Brazil", CA: "Canada", CN: "China", DE: "Germany", FR: "France",
+    GB: "United Kingdom", IN: "India", IT: "Italy", JP: "Japan", KR: "South Korea", RU: "Russia", US: "United States",
+    ES: "Spain", TW: "Taiwan", ID: "Indonesia", MX: "Mexico", TR: "Turkey",
+    WA: "Rest of Asia and Pacific", WE: "Rest of Europe", WF: "Rest of Africa", WL: "Rest of Americas", WM: "Rest of Middle East"
+};
+function exiobaseRegionName(code) {
+    return EXIOBASE_REGION_NAMES[code] || code;
+}
+// True when the year's files have the Exiobase region
+function exiobaseYearHasRegion(year, region) {
+    return EXIOBASE_PROCESSED_REGIONS.includes(region) || EXIOBASE_ALL_REGIONS_YEARS.includes(String(year));
+}
+
+// Each country's Exiobase region by ISO code, from concordance/exio_country_concordance.csv: the country
+// itself for the 44 with their own region, otherwise one of the five Rest of World regions (WA, WE, WF,
+// WL, WM). Resolves with a Map of ISO code -> {region, name}. Loaded once.
+let exiobaseCountriesRequest = null;
+function loadExiobaseCountries() {
+    if (!exiobaseCountriesRequest) {
+        exiobaseCountriesRequest = fetchTradeDataText("concordance/exio_country_concordance.csv").then(text => new Map(
+            parseCsvRows(text).filter(row => /^[A-Z]{2}$/.test(row.ISO_Code || "") && /^[A-Z]{2}$/.test(row.CountryCode || ""))
+                .map(row => [row.ISO_Code, { region: row.CountryCode, name: row.Country }])));
+        exiobaseCountriesRequest.catch(() => { exiobaseCountriesRequest = null; }); // allow a retry
+    }
+    return exiobaseCountriesRequest;
+}
+// A place for the UN lists: "WORLD", an Exiobase region code (WM) or a country's ISO code (SA, in WM).
+// Resolves with {location, name, regions (the Exiobase regions it adds up), partOf (the Rest of World
+// region holding a country without its own)}.
+async function exiobasePlace(location) {
+    if (location === "WORLD") return { location, name: "World", regions: EXIOBASE_PROCESSED_REGIONS.slice(), partOf: null };
+    if (/^W[AEFLM]$/.test(location)) return { location, name: exiobaseRegionName(location), regions: [location], partOf: null };
+    const match = (await loadExiobaseCountries().catch(() => new Map())).get(location);
+    const region = match ? match.region : (EXIOBASE_PROCESSED_REGIONS.includes(location) ? location : null);
+    const name = EXIOBASE_REGION_NAMES[location] || (match && match.name) || location;
+    return { location, name, regions: region ? [region] : [], partOf: region && region !== location ? region : null };
+}
+
+// The UN commodity list: one row per Exiobase industry and region, for the US and each state, in the
+// row shape of profile/footprint/js/commodities-report.js ({code, location, name, output, jobs, ghg}),
+// plus factors (factor_id -> level, for any UN indicator). output is US-made sales to US industries in
+// US dollars at the year's rate. A state's rows are the national ones times the state's origin weight
+// for the industry's category (its share of US GDP in that category, from the nearest year with state
+// tables). jobs and ghg are null when the year has no employment or greenhouse gas factors.
+// With countries (ISO codes, Exiobase regions or "WORLD"), lists those places instead: see
+// exiobaseCountryRows(). Resolves with {rows, year, weightsYear, usdPerEur, missing}.
+async function exiobaseCommodityRows(year, states, countries) {
+    if (countries && countries.length) return exiobaseCountryRows(year, countries);
+    year = String(year || getExiobaseYear());
+    const [shared, sales] = await Promise.all([loadExiobaseShared(year), loadExiobaseSales(year)]);
+    const co2 = supportingIndustriesFactor("co2", "un");
+    const emp = supportingIndustriesFactor("emp", "un");
+    const has = factor => Object.keys(factor.factors).some(id => sales.factorIds.has(id));
+    const hasGhg = has(co2);
+    const hasJobs = has(emp);
+    const sum = (factors, factor) => Object.keys(factor.factors).reduce((total, id) => total + (factors[id] || 0) * factor.factors[id], 0);
+    const regions = [{ location: "US", share: () => 1 }].concat((states || []).map(state => ({
+        location: "US-" + state,
+        share: code => shared.weights.get((shared.categories.get(code) || "services") + "|origin|" + state) || 0
+    })));
+    const rows = [];
+    regions.forEach(region => {
+        sales.industries.forEach((item, code) => {
+            const share = region.share(code);
+            if (!(item.amount > 0) || !(share > 0)) return;
+            const factors = {};
+            Object.keys(item.factors).forEach(id => { factors[id] = item.factors[id] * share; });
+            rows.push({
+                code, location: region.location,
+                name: shared.names.get(code) || code,
+                output: item.amount * 1e6 * shared.usdPerEur * share,
+                jobs: hasJobs ? sum(item.factors, emp) * share : null,
+                ghg: hasGhg ? sum(item.factors, co2) * share : null,
+                factors
+            });
+        });
+    });
+    const missing = [!hasGhg && "greenhouse gases", !hasJobs && "jobs"].filter(Boolean);
+    return { rows, year, weightsYear: shared.weightsYear, usdPerEur: shared.usdPerEur, missing, factorIds: sales.factorIds };
+}
+
+// The UN list for countries and the world, in exiobaseCommodityRows()' row shape: each place's
+// industries' sales to industries in the same Exiobase region (its domestic files). A country without
+// its own Exiobase region shows the Rest of World region holding it (place.partOf). "WORLD" adds up
+// the processed regions (EXIOBASE_PROCESSED_REGIONS), which leave out flows between countries.
+// Resolves with {rows, year, usdPerEur, missing, places, missingRegions (not in the year's files),
+// factorIds}.
+async function exiobaseCountryRows(year, locations) {
+    year = String(year || getExiobaseYear());
+    const [shared, places] = await Promise.all([loadExiobaseShared(year), Promise.all(locations.map(exiobasePlace))]);
+    const needed = [...new Set(places.flatMap(place => place.regions))];
+    const loaded = new Map();
+    const missingRegions = [];
+    await Promise.all(needed.map(region => {
+        if (!exiobaseYearHasRegion(year, region)) { missingRegions.push(region); return null; }
+        return loadExiobaseSales(year, region).then(sales => loaded.set(region, sales), error => {
+            console.warn(`No Exiobase ${year} ${region} domestic files`, error);
+            missingRegions.push(region);
+        });
+    }));
+    const factorIds = new Set();
+    loaded.forEach(sales => sales.factorIds.forEach(id => factorIds.add(id)));
+    const co2 = supportingIndustriesFactor("co2", "un");
+    const emp = supportingIndustriesFactor("emp", "un");
+    const has = factor => Object.keys(factor.factors).some(id => factorIds.has(id));
+    const hasGhg = has(co2);
+    const hasJobs = has(emp);
+    const sum = (factors, factor) => Object.keys(factor.factors).reduce((total, id) => total + (factors[id] || 0) * factor.factors[id], 0);
+    const rows = [];
+    places.forEach(place => {
+        place.shownRegions = place.regions.filter(region => loaded.has(region));
+        const industries = new Map();
+        place.shownRegions.forEach(region => loaded.get(region).industries.forEach((item, code) => {
+            if (!industries.has(code)) industries.set(code, { amount: 0, factors: {} });
+            const total = industries.get(code);
+            total.amount += item.amount;
+            Object.keys(item.factors).forEach(id => { total.factors[id] = (total.factors[id] || 0) + item.factors[id]; });
+        }));
+        industries.forEach((item, code) => {
+            if (!(item.amount > 0)) return;
+            rows.push({
+                code, location: place.location,
+                name: shared.names.get(code) || code,
+                output: item.amount * 1e6 * shared.usdPerEur,
+                jobs: hasJobs ? sum(item.factors, emp) : null,
+                ghg: hasGhg ? sum(item.factors, co2) : null,
+                factors: item.factors
+            });
+        });
+    });
+    const missing = [!hasGhg && "greenhouse gases", !hasJobs && "jobs"].filter(Boolean);
+    return { rows, year, usdPerEur: shared.usdPerEur, missing, places, missingRegions, factorIds };
+}
+
+// The state's flows for its Exiobase industries (targets), by trading industry and region, from the
+// national flows in trade-us.csv. As in the interstate tables, a state pair's share of a national flow
+// is the supplier's state weight (its share of US GDP in the supplying industry's category) times the
+// buyer's (in the buying industry's category), here for all states.
+// direction "sellers": what the state's targets buy. A US purchase splits into in-state (origin weight o
+//   of the supplier, times the targets' destination weight d) and other states ((1 - o) times d).
+//   Imports of the same industry pair place d of them in the state, shown as foreign. Factors are the
+//   flow's own columns: the supplier's direct factors on the purchase.
+// direction "buyers": what each industry buys from the state's targets. The targets' US-made sales
+//   start in the state by their origin weight o, then go to buyers in the state (o times the buyer's d)
+//   or other states (o times (1 - d)). Factors are the buyer's own direct factors on what it spends.
+// Resolves with {industries: Map of code -> {code, name, regions: {state, restOfUS, foreign}}, names,
+// usdPerEur}, where each region holds amount (millions of euros) and factors (factor_id -> value).
+async function exiobaseStateFlows(state, targets, direction) {
+    const year = exiobaseTablesYear();
+    const [shared, flows] = await Promise.all([loadExiobaseShared(year), loadExiobaseFlows(year)]);
     const weight = (code, type) => shared.weights.get((shared.categories.get(code) || "services") + "|" + type + "|" + state) || 0;
-    const usd = row => (parseFloat(row.amount) || 0) * 1e6 * shared.usdPerEur;
-    const measure = factor.amount ? usd : row => Object.keys(factor.factors)
-        .reduce((sum, id) => sum + (parseFloat(row[id]) || 0) * factor.factors[id], 0);
     const industries = new Map();
-    let totalSpent = 0;
+    const entry = code => {
+        if (!industries.has(code)) {
+            const region = () => ({ amount: 0, factors: {} });
+            industries.set(code, { code, name: shared.names.get(code) || code, regions: { state: region(), restOfUS: region(), foreign: region() } });
+        }
+        return industries.get(code);
+    };
+    const addTo = (region, amount, factorsOf, share) => {
+        if (!(share > 0)) return;
+        region.amount += amount * share;
+        EXIOBASE_FACTOR_IDS.forEach(id => { region.factors[id] = (region.factors[id] || 0) + (factorsOf[id] || 0) * share; });
+    };
+    const rowFactors = row => {
+        const factors = {};
+        EXIOBASE_FACTOR_IDS.forEach(id => { factors[id] = parseFloat(row[id]) || 0; });
+        return factors;
+    };
     targets.forEach(target => {
+        if (direction === "buyers") {
+            const inState = weight(target, "origin");
+            (flows.bySupplier.get(target) || []).forEach(row => {
+                if (row.origin === "foreign") return; // Imports aren't the state's own sales
+                const amount = parseFloat(row.amount) || 0;
+                const buyerIntensity = flows.intensity.get(row.industry2) || {};
+                const factors = {};
+                EXIOBASE_FACTOR_IDS.forEach(id => { factors[id] = (buyerIntensity[id] || 0) * amount; });
+                const buyer = entry(row.industry2);
+                const buyerShare = weight(row.industry2, "destination");
+                addTo(buyer.regions.state, amount, factors, inState * buyerShare);
+                addTo(buyer.regions.restOfUS, amount, factors, inState * (1 - buyerShare));
+            });
+            return;
+        }
         const buyerShare = weight(target, "destination");
-        if (!(buyerShare > 0)) return;
-        (inputs.get(target) || []).forEach(row => {
-            if (!industries.has(row.industry1)) {
-                industries.set(row.industry1, { code: row.industry1, name: shared.names.get(row.industry1) || row.industry1, state: 0, restOfUS: 0, foreign: 0 });
-            }
-            const industry = industries.get(row.industry1);
-            const value = measure(row) * buyerShare;
+        (flows.byBuyer.get(target) || []).forEach(row => {
+            const amount = parseFloat(row.amount) || 0;
+            const factors = rowFactors(row);
+            const supplier = entry(row.industry1);
             if (row.origin === "foreign") {
-                industry.foreign += value;
+                addTo(supplier.regions.foreign, amount, factors, buyerShare);
             } else {
                 const inState = weight(row.industry1, "origin");
-                industry.state += value * inState;
-                industry.restOfUS += value * (1 - inState);
+                addTo(supplier.regions.state, amount, factors, buyerShare * inState);
+                addTo(supplier.regions.restOfUS, amount, factors, buyerShare * (1 - inState));
             }
-            totalSpent += usd(row) * buyerShare;
         });
+    });
+    return { industries, names: shared.names, usdPerEur: shared.usdPerEur };
+}
+
+// A region's value for a UN factor: US dollars for Amount Spent, otherwise its factor_id values
+// times the factor's weights
+function exiobaseRegionValue(region, factor, usdPerEur) {
+    if (factor.amount) return region.amount * 1e6 * usdPerEur;
+    return Object.keys(factor.factors).reduce((sum, id) => sum + (region.factors[id] || 0) * factor.factors[id], 0);
+}
+
+// Ranks the industries supplying the product's Exiobase industries in the state (see
+// exiobaseStateFlows). Amounts are millions of euros, shown in US dollars at the year's rate;
+// factors sum their factor_id columns.
+async function rankExiobaseInputs(state, targets, factorKey) {
+    const factor = supportingIndustriesFactor(factorKey, "un");
+    const flows = await exiobaseStateFlows(state, targets, "sellers");
+    const industries = new Map();
+    let totalSpent = 0;
+    flows.industries.forEach(item => {
+        const value = region => exiobaseRegionValue(item.regions[region], factor, flows.usdPerEur);
+        industries.set(item.code, { code: item.code, name: item.name, state: value("state"), restOfUS: value("restOfUS"), foreign: value("foreign") });
+        ["state", "restOfUS", "foreign"].forEach(region => { totalSpent += item.regions[region].amount * 1e6 * flows.usdPerEur; });
     });
     return Object.assign(rankIndustryRows(industries, new Set(targets)), {
         source: "un", state, sectorCode: targets.join(", "),
-        sectorName: targets.map(code => shared.names.get(code) || code).join(", "),
+        sectorName: targets.map(code => flows.names.get(code) || code).join(", "),
         factorKey, totalSpent
     });
 }
@@ -652,13 +1161,13 @@ function formatFactorShort(value, factor) {
 // How the selected factor's values were found, shown below the legend
 function supportingIndustriesFactorNote(factor, source) {
     if (factor.amount) {
-        return source === "un" ? `Amounts are millions of euros in the Exiobase ${EXIOBASE_STATE_YEAR} tables,
-            shown in US dollars at the ${EXIOBASE_STATE_YEAR} exchange rate. Foreign imports are the national
+        return source === "un" ? `Amounts are millions of euros in the Exiobase ${exiobaseTablesYear()} tables,
+            shown in US dollars at the ${exiobaseTablesYear()} exchange rate. Foreign imports are the national
             imports of each industry pair, placed in the state by its share of US GDP in the buying industry's
             category.` : "";
     }
     if (source === "un") {
-        return `${factor.label} totals the ${factor.note} that the Exiobase ${EXIOBASE_STATE_YEAR} trade_factor
+        return `${factor.label} totals the ${factor.note} that the Exiobase ${exiobaseTablesYear()} trade_factor
             tables carry on each purchase, for US producers and for each importing country. The factor_id values
             are in that year's factor.csv in ModelEarth/trade-data.`;
     }
@@ -730,7 +1239,7 @@ function supportingIndustriesHTML(result, options) {
     // getState (localsite.js) is a fixed list, unlike getStateNameFromID, which reads #state_select once it loads
     const stateName = (typeof getState === "function" && getState(state)) || state;
     if (isUN && top.length === 0) {
-        return `<div class="supporting-industries-status">The Exiobase ${EXIOBASE_STATE_YEAR} trade tables place no
+        return `<div class="supporting-industries-status">The Exiobase ${exiobaseTablesYear()} trade tables place no
             purchases by ${sectorName} in ${stateName}${factor.amount ? "" : " with " + factorName}.</div>`;
     }
     if (!isUN && (!(output > 0) || top.length === 0)) {
@@ -756,7 +1265,7 @@ function supportingIndustriesHTML(result, options) {
         <div class="si-row-tip" role="tooltip">
             <strong>${sectorName} (${sectorCode}) in ${stateName}</strong><br>
             ${isUN
-                ? `Its purchases from industries in ${stateName}, other states and abroad in the Exiobase ${EXIOBASE_STATE_YEAR}
+                ? `Its purchases from industries in ${stateName}, other states and abroad in the Exiobase ${exiobaseTablesYear()}
                     tables total ${formatUsdShort(totalSpent)}${topText}`
                 : `${formatUsdShort(output)} annual output, the estimated value of everything this industry
                     produced in ${stateName} in 2020. Its direct purchases of materials and services total
@@ -796,7 +1305,7 @@ function supportingIndustriesHTML(result, options) {
                 ${ownTip}
                 <div class="si-own-label">${ownRank > 0
                     ? `${ownLabel}: ranked #${ownRank} of ${ranked} supplying industries`
-                    : `${ownLabel}: not ranked (no direct purchases from it in the ${isUN ? "Exiobase " + EXIOBASE_STATE_YEAR + " tables" : "2020 model"})`}</div>
+                    : `${ownLabel}: not ranked (no direct purchases from it in the ${isUN ? "Exiobase " + exiobaseTablesYear() + " tables" : "2020 model"})`}</div>
                 <div class="si-row-head">
                     <span class="si-name" title="${ownIndustry.code}">${ownRank > 0 ? `<span class="si-rank">#${ownRank}</span>` : ""}${ownIndustry.name} (${ownIndustry.code})${ownStar}</span>
                     ${ownRank > 0 ? `<span class="si-value">${format(ownIndustry.total)}</span>` : ""}
