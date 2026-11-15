@@ -107,16 +107,21 @@ Scripts in this file don't run there, so the page's scripts go in js/footprint.j
   #template-footprint .footprint-hidden { display: none !important; }
   /* Section menu at the top right, like #widgetList in localsite/info/template-charts.html */
   #footprintWidgetHolder { float: right; position: relative; margin-left: 10px; z-index: 5; }
-  #footprintWidgetToggle { position: relative; right: auto; top: auto; padding: 2px; }
-  #footprintWidgetToggle .material-icons { -webkit-text-stroke: 1.5px currentColor; border-radius: 50%; border: 2px solid currentColor; padding: 2px; }
-  #footprintWidgetList { right: 0; top: 34px; }
+  /* A checklist icon, since the header's location filter uses the 3-dot (more_horiz) toggle */
+  /* 32px square with the border of the trade link buttons to its left (.trade-viz-link in ../trade-viz-links.js) */
+  #footprintWidgetToggle { position: relative; right: auto; top: auto; box-sizing: border-box; width: 32px; height: 32px; padding: 3px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; cursor: pointer; }
+  .dark #footprintWidgetToggle { border-color: var(--border-subtle); background: var(--bg-card); }
+  #footprintWidgetToggle:hover, #footprintWidgetToggle[aria-expanded="true"] { background: #f1f5fb; border-color: #94a3b8; }
+  .dark #footprintWidgetToggle:hover, .dark #footprintWidgetToggle[aria-expanded="true"] { background: #444; border-color: #777; }
+  #footprintWidgetToggle .material-icons { display: block; font-size: 24px; }
+  #footprintWidgetList { right: 0; top: 36px; }
   #footprintWidgetList .menuToggleItem { padding-right: 36px; white-space: nowrap; }
 </style>
 
 <!-- Section menu: shows and hides the sections below (js/footprint-layout.js) -->
 <div id="footprintWidgetHolder" class="noprint">
   <div id="footprintWidgetToggle" class="menuToggleHolder" role="button" tabindex="0" title="Sections" aria-label="Sections" aria-haspopup="true" aria-expanded="false">
-    <i class="material-icons">more_horiz</i>
+    <i class="material-icons">checklist</i>
   </div>
   <div id="footprintWidgetList" class="menuToggleMenu" style="display:none">
     <div class="menuToggleItem" data-section="tradeVizSection">Trade Visualizations<span class="material-icons menuToggleCheck">check</span></div>
