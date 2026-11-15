@@ -127,15 +127,16 @@ const FOOTPRINT_TOP_COUNTRIES = EXIOBASE_PROCESSED_REGIONS.filter(region => regi
 window.geoviewCountries = FOOTPRINT_TOP_COUNTRIES;
 if (typeof setGeoviewCountries === 'function') setGeoviewCountries(FOOTPRINT_TOP_COUNTRIES);
 
-// The country dropdown: World, the countries with yearly Exiobase data, then all countries, from localsite's
-// list (loadCountryNames in localsite.js). Choosing one sets country=, including country=US, since no country is the World.
+// The country dropdown in the matrix toolbar: "Country..." (the World), the countries with yearly Exiobase data, then all
+// countries, from localsite's list (loadCountryNames in localsite.js). Choosing one sets country=, including country=US,
+// since no country is the World.
 function setupCountrySelect() {
   const select = document.getElementById('footprintCountry');
   if (!select || select.dataset.ready || typeof loadCountryNames !== 'function') return;
   select.dataset.ready = '1';
   loadCountryNames().then(names => {
     const option = (code, name) => new Option(name, code);
-    select.add(option('all', 'World'));
+    select.add(option('all', 'Country...')); // The World
     const top = document.createElement('optgroup');
     top.label = 'Exiobase data every year';
     FOOTPRINT_TOP_COUNTRIES.map(code => [code, names.get(code) || code])

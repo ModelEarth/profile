@@ -14,7 +14,9 @@ Scripts in this file don't run there, so the page's scripts go in js/footprint.j
   #profileTopBar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; }
   #profileTopSelects { display: flex; flex-wrap: wrap; gap: 7px; }
   #profileTopPlace { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; }
-  #footprintCountry { max-width: 220px; }
+  /* In the matrix toolbar, the height of the #matrixRank buttons */
+  #footprintCountry { max-width: 220px; box-sizing: border-box; height: 30px; min-height: 30px; padding: 0 28px 0 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; }
+  .dark #footprintCountry { border-color: var(--border-subtle); }
   /* US Regions, US Map and the state menu don't apply to a country outside the US or the World */
   #relocatedStateMenu.outside-us { display: none !important; }
   #supportingIndustries { max-width: 640px; margin: 8px 0 0; }
@@ -145,8 +147,6 @@ Scripts in this file don't run there, so the page's scripts go in js/footprint.j
 <div id="placeSection">
   <div id="profileTopBar">
     <div id="profileTopPlace">
-      <!-- Country from the hash's first country, filled from localsite's country list (setupCountrySelect) -->
-      <select id="footprintCountry" class="select-med" aria-label="Country"></select>
       <!-- Own parent, since navigation.js shows and hides #relocatedStateMenu's parent -->
       <div><div id="relocatedStateMenu"></div></div>
     </div>
@@ -204,6 +204,8 @@ Scripts in this file don't run there, so the page's scripts go in js/footprint.j
     <div id="matrixToolbarLeft">
     <!-- UN / EPA toggle from ../item/js/supporting-industries.js, shared with the Top 10 panel (source=un in the hash) -->
     <span id="matrixSource"></span>
+    <!-- Country from the hash's first country, filled from localsite's country list (setupCountrySelect in js/footprint.js) -->
+    <select id="footprintCountry" aria-label="Country"></select>
     <div id="matrixDirection" class="matrix-toggle" role="group" aria-label="Show sellers or buyers">
       <button type="button" data-direction="sellers" title="Sectors this industry buys from, with what it spends on each">Suppliers</button>
       <button type="button" data-direction="buyers" title="Sectors that buy from this industry, with what each spends on it">Buyers</button>
