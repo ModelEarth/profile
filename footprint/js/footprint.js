@@ -152,7 +152,13 @@ function setupCountrySelect() {
     select.style.display = 'none';
   });
   select.addEventListener('change', () => {
-    goHash({ country: select.value });
+    const code = select.value;
+    const hash = { country: code };
+    // A country without yearly Exiobase data is only in the years with all regions (2018), so switch to the newest of them
+    if (code !== 'all' && !FOOTPRINT_TOP_COUNTRIES.includes(code) && !EXIOBASE_ALL_REGIONS_YEARS.includes(getExiobaseYear())) {
+      hash.year = EXIOBASE_ALL_REGIONS_YEARS.slice().sort().pop();
+    }
+    goHash(hash);
   });
 }
 // Selects the hash's first country (World for country=all or world and without a place, United States for a US state)
@@ -567,7 +573,11 @@ async function showRegionView(region, run) {
     info.innerHTML = regionInfoHTML();
     showIndicatorYearNote();
     if (data.place && !data.place.shownRegions.length) { // Not in the year's files: only the note above
-      ['indicatorToolbar', 'matrixSection', 'dataSourcesSection'].forEach(id => { document.getElementById(id).style.display = 'none'; });
+      ['indicatorToolbar', 'dataSourcesSection'].forEach(id => { document.getElementById(id).style.display = 'none'; });
+      // The matrix keeps its toolbar's country dropdown, to choose another country
+      const matrixSection = document.getElementById('matrixSection');
+      matrixSection.classList.add('matrix-place-missing');
+      matrixSection.style.display = 'block';
       if (mainTable) { mainTable.destroy(); mainTable = null; }
       document.getElementById('indicatorBarChart').innerHTML = '';
       document.getElementById('impactPointer').style.display = 'none';
@@ -854,7 +864,14 @@ async function showRegionMatrix(run) {
   setupMatrixToggles(true);
   showMatrixBarrier();
   showMatrixInfo();
-  document.getElementById('matrixSection').style.display = 'block';
+  showMatrixSection();
+}
+
+// Shows the matrix with its treemap and table (a place missing from the year's files shows only the toolbar)
+function showMatrixSection() {
+  const matrixSection = document.getElementById('matrixSection');
+  matrixSection.classList.remove('matrix-place-missing');
+  matrixSection.style.display = 'block';
 }
 
 // The treemap's description for a place
@@ -1225,11 +1242,11 @@ async function loadMatrixData(sector, analysis) {
       matrixTableDiv.innerHTML = '<p>No significant technical coefficients found for this sector.</p>';
     }
     
-    matrixSection.style.display = 'block';
+    showMatrixSection();
   } catch (error) {
     console.error('Error loading matrix data:', error);
     document.getElementById('matrixInfo').innerHTML = `<em>Error loading matrix data: ${error.message}</em>`;
-    document.getElementById('matrixSection').style.display = 'block';
+    showMatrixSection();
   }
 }
 

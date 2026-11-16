@@ -92,6 +92,9 @@ Scripts in this file don't run there, so the page's scripts go in js/footprint.j
   #matrixBarrier { max-width: 760px; margin-top: 12px; }
   .si-barrier ul { margin: 4px 0 10px; padding-left: 20px; }
   #matrixToolbarLeft { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  /* A place missing from the year's files: only the source and country menus, to choose another */
+  #matrixSection.matrix-place-missing > :not(#matrixToolbar), #matrixSection.matrix-place-missing #matrixDirection,
+  #matrixSection.matrix-place-missing #matrixRank { display: none !important; }
   #matrixToolbar { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; }
   .matrix-toggle { display: inline-flex; border: 1px solid #ccc; border-radius: 6px; overflow: hidden; }
   .matrix-toggle button { border: 0; padding: 6px 14px; font-size: 14px; background: #fff; color: #333; cursor: pointer; }
