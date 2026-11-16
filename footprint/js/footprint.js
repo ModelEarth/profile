@@ -890,7 +890,9 @@ function regionTagline(matrixData) {
       : `Amounts are each industry's ${unSalesPhrase(view.region.location)} in the Exiobase ${view.data.year} files, in US dollars.`;
   }
   const split = matrixRegions.length > 1 ? ' Each industry is split into its regions, largest first; later sections are darker.' : '';
-  const click = view.outside ? '' : ' Click an industry for its own profile.';
+  const click = !view.outside ? ' Click an industry for its own profile.'
+    : view.region.kind === 'world' ? ' Click an industry name for its US profile, or a country for its industries.'
+    : ' Click an industry name for its US profile.';
   return `${who}, ranked by ${area}: rectangle area = ${impactView ? 'impact' : area}; color = normalized magnitude (low → high). ${amounts}${split}${click}`;
 }
 
@@ -1269,6 +1271,29 @@ async function showMatrixSector(code) {
   if (demand !== hash.demand) goHash({ demand: demand });
 }
 
+// An industry's own profile from the treemap. For the World or another country, whose Exiobase industries
+// have no profile there, the industry's first detail sector in the US national model (country=US, no state).
+async function showMatrixIndustry(code) {
+  if (!code) return;
+  if (!regionView || !regionView.outside) return showMatrixSector(code);
+  const demand = await exiobaseNationalDemand(code);
+  if (!demand) { console.warn(`No USEEIO detail sector for Exiobase industry ${code}`); return; }
+  goHash({ country: 'US', demand: demand }, ['state']);
+}
+// An Exiobase industry as a demand in the US national model: its first detail sector there, e.g. 622000/US
+async function exiobaseNationalDemand(code) {
+  const codes = new Set((await getModelByName('USEEIOv2.0.1-411').sectors()).map(s => s.code));
+  const detail = (await exiobaseDetailsFor(code).catch(() => [])).find(c => codes.has(c));
+  return detail ? `${detail}/US` : null;
+}
+// A country under an industry in the World treemap: that country, keeping the industry as the demand
+// (national model, so no state). With no matching USEEIO sector, any earlier demand is dropped.
+async function showMatrixCountry(country, code) {
+  const demand = code ? await exiobaseNationalDemand(code) : null;
+  if (demand) goHash({ country: country, demand: demand }, ['state']);
+  else goHash({ country: country }, ['demand']);
+}
+
 // Columns for the matrix table. Region columns show dollars spent, or the indicator's impact in the Impact view.
 function matrixTableColumns() {
   const shownImpact = matrixImpactShown();
@@ -1291,7 +1316,7 @@ function matrixTableColumns() {
         const name = String(cell.getValue() || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
         return `<span title="Show the ${name} profile">${name}</span>`;
       },
-      cellClick: (e, cell) => showMatrixSector(cell.getRow().getData().sectorCode)
+      cellClick: (e, cell) => showMatrixIndustry(cell.getRow().getData().sectorCode)
     },
     { title: "Code", field: "sectorCode", width: 80 },
     // One column per region when the model has more than one, or the largest of the World's regions
@@ -1624,6 +1649,40 @@ function treemapHeatmapStops(el) {
   return dark ? stops.slice().reverse() : stops;
 }
 
+// Legend beside #matrixInfo for the three tones within a tile: its regional sections, largest first, with
+// the second and later darkened by overlayAlpha (see drawTile). No legend for tiles with a single region.
+function showMatrixToneLegend(color, overlayAlpha) {
+  const el = document.getElementById('matrixToneLegend');
+  if (!el) return;
+  if (!color) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const shade = a => a ? `background-image:linear-gradient(rgba(0,0,0,${a}),rgba(0,0,0,${a}));` : '';
+  const labels = ['Largest region', '2nd', matrixRegions.length > 3 ? '3rd and later' : '3rd'];
+  const alphas = [0, overlayAlpha[0], overlayAlpha[1]];
+  el.innerHTML = labels.slice(0, Math.min(3, matrixRegions.length)).map((label, k) =>
+    `<span class="tone" title="Section tone for the ${k ? label : 'largest'} region share within each tile"><i style="background-color:${color};${shade(alphas[k])}"></i>${label}</span>`).join('');
+  el.style.display = '';
+}
+
+// Link to profile/footprint/ with the current hash (country, state, demand, year...), shown on other pages such as /engine
+function updateFootprintPageLink() {
+  const link = document.getElementById('footprintPageLink');
+  if (!link) return;
+  const footprintPath = new URL(FOOTPRINT_BASE).pathname;
+  const onFootprint = window.location.pathname.replace(/index\.html$/, '') === footprintPath;
+  link.style.display = onFootprint ? 'none' : '';
+  if (onFootprint) return;
+  const hash = typeof getHash === 'function' ? getHash() : {};
+  const query = Object.keys(hash)
+    .filter(k => hash[k] !== '' && hash[k] != null && typeof hash[k] !== 'object')
+    .map(k => `${k}=${String(hash[k]).replace(/&/g, '%26')}`).join('&');
+  link.href = FOOTPRINT_BASE + (query ? '#' + query : '');
+}
+updateFootprintPageLink();
+window.addEventListener('hashchange', updateFootprintPageLink);
+document.addEventListener('hashChangeEvent', updateFootprintPageLink);
+// A quiet hash change (replaceState) sends no event, so refresh again just before the link is used
+['mousedown', 'focus', 'touchstart'].forEach(type => document.getElementById('footprintPageLink')?.addEventListener(type, updateFootprintPageLink));
+
 // Dark text on light tiles, white text on dark tiles
 function treemapLabelColor(color) {
   const [r, g, b] = echarts.color.parse(color) || [0, 0, 0];
@@ -1694,6 +1753,7 @@ function renderMatrixTreemap(matrixData) {
       el.style.display = 'none';
       if (titleEl) titleEl.style.display = 'none';
       if (taglineEl) taglineEl.style.display = 'none';
+      showMatrixToneLegend(null);
       if (matrixTreemapChart) { try{ matrixTreemapChart.dispose(); }catch(e){} matrixTreemapChart=null; }
       return;
     }
@@ -1771,12 +1831,19 @@ function renderMatrixTreemap(matrixData) {
     const maxValue = Math.max(...values, 0) || 1;
     // Overlay opacity for the second and third sections (dark tiles need more to show the step)
     const overlayAlpha = dark ? [0.3, 0.5] : [0.15, 0.3];
+    const worldLinks = !!(regionView && regionView.region.kind === 'world');
+    showMatrixToneLegend(multiRegion ? echarts.color.lerp(0.6, stops) : null, overlayAlpha);
     const tiles = matrixData.map((d, i) => {
       const color = echarts.color.lerp(Math.min(values[i] / maxValue, 1), stops);
       const parts = d.regions
         .map(r => ({ r: r, share: regionShare(d, r) }))
         .sort((a, b) => b.share - a.share);
       const regionLines = parts.map(({ r }) => multiRegion ? `${r.label} ${amountText(r)}` : amountText(r));
+      // Clickable lines: the industry (its demand), and in the World view each country (country in the hash)
+      const regionLinks = parts.map(({ r }) => {
+        const location = worldLinks && (matrixRegions.find(x => x.key === r.key) || {}).location;
+        return location ? { country: location, industry: d.sectorCode } : null;
+      });
       return {
         key: String(d.sectorCode || d.sector), // Matches the same industry between views
         sectorCode: d.sectorCode,
@@ -1785,6 +1852,7 @@ function renderMatrixTreemap(matrixData) {
         textColor: treemapLabelColor(color),
         shares: parts.map(p => p.share),
         lines: [d.sector, ...regionLines],
+        links: [d.sectorCode ? { industry: d.sectorCode } : null, ...regionLinks],
         tip: `<b>${d.sector}</b><br/>`
           + (impactView && d.impact != null ? `${shownImpact.name}: ${treemapQuantity(d.impact, shownImpact.unit)}<br/>`
             + (multiRegion ? parts.map(({ r }) => `${r.label}: ${treemapQuantity(r.impact, shownImpact.unit)}`).join('<br/>') + '<br/>' : '') : '')
@@ -1812,6 +1880,8 @@ function renderMatrixTreemap(matrixData) {
     const waiting = matrixTreemapAnim && !matrixTreemapAnim.cancelled ? matrixTreemapAnim.done.splice(0) : [];
     if (matrixTreemapAnim) matrixTreemapAnim.cancelled = true;
     const anim = { progress: Object.keys(prev).length ? 0 : 1, done: waiting };
+    matrixTreemapLinks.boxes = new Map();
+    matrixTreemapLinks.hovered = null;
     matrixTreemapAnim = anim;
     const tileKeys = new Set(tiles.map(t => t.key));
     // Leaving industries first, so they sit beneath the tiles that grow over them
@@ -1843,18 +1913,36 @@ function renderMatrixTreemap(matrixData) {
         offset += size;
       });
       if (!tile) return { type: 'group', children: children };
+      tile.links.forEach((link, k) => matrixTreemapLinks.boxes.delete(`${tile.key}|${k}`)); // Re-added for lines that fit
       // As many centered lines as fit: sector (larger title), then each region
       const lineHeight = 15, titleSize = 15, titleLineHeight = 19;
       const lineCount = h - 4 < titleLineHeight ? 0 : Math.min(tile.lines.length, 1 + Math.floor((h - 4 - titleLineHeight) / lineHeight));
       if (lineCount > 0 && w > 24) {
-        children.push({
-          type: 'text', silent: true,
-          style: {
-            text: tile.lines.slice(0, lineCount).map((line, k) => k === 0 ? `{b|${line}}` : line).join('\n'),
-            x: x0 + w / 2, y: y0 + h / 2, align: 'center', verticalAlign: 'middle', opacity: opacity,
-            width: w - 8, overflow: 'truncate', fill: tile.textColor, fontSize: 12, lineHeight: lineHeight,
-            rich: { b: { fontWeight: 'bold', fontSize: titleSize, lineHeight: titleLineHeight, fill: tile.textColor } }
+        // Truncated here rather than with a fixed text width, so a link's hover background fits its text
+        let top = y0 + (h - (titleLineHeight + (lineCount - 1) * lineHeight)) / 2;
+        tile.lines.slice(0, lineCount).forEach((line, k) => {
+          const title = k === 0;
+          const height = title ? titleLineHeight : lineHeight;
+          const font = title ? `bold ${titleSize}px sans-serif` : '12px sans-serif';
+          const link = tile.links[k];
+          const text = echarts.format.truncateText(String(line), w - 16, font, '…');
+          // Link lines: their bounds, for the click and hover handlers below, and the dark hover look
+          const linkKey = link ? `${tile.key}|${k}` : null;
+          const hovered = linkKey && matrixTreemapLinks.hovered === linkKey;
+          if (link) {
+            const textWidth = treemapTextWidth(text, font) + 8;
+            matrixTreemapLinks.boxes.set(linkKey, { x: x0 + w / 2 - textWidth / 2, y: top, w: textWidth, h: height, link: link });
           }
+          children.push({
+            type: 'text', silent: true,
+            style: {
+              text: text,
+              x: x0 + w / 2, y: top + height / 2, align: 'center', verticalAlign: 'middle', opacity: opacity,
+              fill: hovered ? '#fff' : tile.textColor, font: font, padding: [1, 4], borderRadius: 3,
+              backgroundColor: hovered ? 'rgba(17, 24, 39, 0.92)' : 'transparent'
+            }
+          });
+          top += height;
         });
       } else if (w >= 8 && h >= 10) {
         // Too small for the lines: just the first letter of the sector name (the hover has the rest)
@@ -1919,9 +2007,42 @@ function renderMatrixTreemap(matrixData) {
     // Clicking a tile switches the page to that sector
     chart.off('click');
     chart.on('click', params => {
+      if (params.event && linkAt(params.event.offsetX, params.event.offsetY)) return; // The canvas handler below has it
       const item = items[params.dataIndex];
       if (item && item.tile != null) showMatrixSector(tiles[item.tile].sectorCode);
     });
+
+    // Link lines (the industry name, and each country in the World view), found by the bounds drawTile
+    // recorded, since the text itself is silent so the tile keeps its popup. A hovered line redraws dark.
+    const linkAt = (x, y) => {
+      for (const [key, box] of matrixTreemapLinks.boxes) {
+        if (x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h) return { key, link: box.link };
+      }
+      return null;
+    };
+    let hoverRedraws = 0;
+    const setHovered = key => {
+      if (matrixTreemapLinks.hovered === key) return;
+      matrixTreemapLinks.hovered = key;
+      try { chart.setOption({ series: [{ data: items.map((item, i) => [i, -(++hoverRedraws)]) }] }); } catch (err) { console.error('treemap hover failed', err); }
+    };
+    const zr = chart.getZr();
+    if (matrixTreemapLinks.handlers) Object.entries(matrixTreemapLinks.handlers).forEach(([type, fn]) => zr.off(type, fn));
+    matrixTreemapLinks.handlers = {
+      click: e => {
+        const hit = linkAt(e.offsetX, e.offsetY);
+        if (!hit) return;
+        if (hit.link.country) showMatrixCountry(hit.link.country, hit.link.industry);
+        else if (hit.link.industry) showMatrixIndustry(hit.link.industry);
+      },
+      mousemove: e => {
+        const hit = linkAt(e.offsetX, e.offsetY);
+        setHovered(hit ? hit.key : null);
+        if (hit) zr.setCursorStyle('pointer');
+      },
+      globalout: () => setHovered(null)
+    };
+    Object.entries(matrixTreemapLinks.handlers).forEach(([type, fn]) => zr.on(type, fn));
 
     // Already drawn: tween from the current tiles to the new ones, one setOption per animation frame
     if (reuse) {
@@ -2324,6 +2445,15 @@ let matrixTreemapData = null;
 // so the next view's transition starts from there; and the running transition
 let matrixTreemapDrawn = {};
 let matrixTreemapAnim = null;
+// The treemap's link lines: their bounds in pixels by tile and line, the hovered one, and the canvas handlers
+let matrixTreemapLinks = { boxes: new Map(), hovered: null, handlers: null };
+// Width of a line of treemap text in the given CSS font, to size its link area
+let treemapMeasureContext = null;
+function treemapTextWidth(text, font) {
+  if (!treemapMeasureContext) treemapMeasureContext = document.createElement('canvas').getContext('2d');
+  treemapMeasureContext.font = font;
+  return treemapMeasureContext.measureText(text).width;
+}
 
 // localsite.js sets "dark" and the theme class (maestro, georgia...) on body
 (function watchTreemapLook() {

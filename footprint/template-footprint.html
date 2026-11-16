@@ -48,6 +48,13 @@ Scripts in this file don't run there, so the page's scripts go in js/footprint.j
   .dark #matrixTreemap { background: var(--bg-card); }
   #matrixTreemapTagline { font-size: 13px; color: #444; margin-top: 4px; }
   .dark #matrixTreemapTagline { color: var(--text-muted); }
+  #matrixInfoRow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin: 8px 0 0; }
+  #matrixInfo { flex: 1 1 300px; margin: 0; }
+  #matrixInfoRight { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin-left: auto; font-size: 13px; }
+  #matrixToneLegend { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+  #matrixToneLegend .tone { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  #matrixToneLegend .tone i { display: inline-block; width: 0.75em; height: 0.75em; border-radius: 2px; } /* About the text's height */
+  #footprintPageLink { white-space: nowrap; }
   #indicatorToolbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin: 4px 0 10px; clear: both; container-type: inline-size; }
   #impactSetHolder { margin-left: auto; }
   /* Narrow: the impact set dropdown moves to its own line above the Suppliers / Industry / Buyers buttons, at the left */
@@ -225,7 +232,15 @@ Scripts in this file don't run there, so the page's scripts go in js/footprint.j
   <div id="matrixTreemapTitle" style="display:none"></div>
   <div id="matrixTreemapTagline" style="display:none">Rectangles sized by total spent; color indicates normalized magnitude (low → high).</div>
   <div id="matrixTreemap" style="display:none"></div>
-  <p id="matrixInfo" style="margin: 8px 0 0">Loading matrix data...</p>
+  <div id="matrixInfoRow">
+    <p id="matrixInfo">Loading matrix data...</p>
+    <div id="matrixInfoRight">
+      <!-- The three tile tones, filled by renderMatrixTreemap when tiles have regional sections -->
+      <span id="matrixToneLegend" style="display:none"></span>
+      <!-- To the Profile Footprint page with the current hash (updateFootprintPageLink), hidden on that page -->
+      <a id="footprintPageLink" href="" style="display:none">Profile Footprint</a>
+    </div>
+  </div>
   <div id="matrixTable"></div>
 </div>
 
