@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Footprint Layout</title>
+</head>
+<body>
+<!-- The footprint layout, shared by profile/footprint/index.html and engine/index.html.
+js/footprint-layout.js loads the #template-footprint div into a page, then js/footprint.js and the scripts it uses fill it.
+Scripts in this file don't run there, so the page's scripts go in js/footprint.js. -->
+<div id="template-footprint">
+<style>
+  /* With space-between, the dropdowns wrapped onto their own line sit at its left */
+  #profileTopBar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; }
+  #profileTopSelects { display: flex; flex-wrap: wrap; gap: 7px; }
+  #profileTopPlace { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; }
+  /* In the matrix toolbar, the height of the #matrixRank buttons */
+  #footprintCountry { max-width: 220px; box-sizing: border-box; height: 30px; min-height: 30px; padding: 0 28px 0 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; }
+  .dark #footprintCountry { border-color: var(--border-subtle); }
+  /* US Regions, US Map and the state menu don't apply to a country outside the US or the World */
+  #relocatedStateMenu.outside-us { display: none !important; }
+  #supportingIndustries { max-width: 640px; margin: 8px 0 0; }
+  #supportingIndustries .section-header h4 { margin: 0; font-size: 16px; }
+  #supportingIndustriesHeading { margin: 0; font-size: 18px; font-weight: 600; }
+  #matrixTreemapTitle { font-size: 18px; font-weight: 600; margin-top: 16px; }
+  /* 4px more than Tabulator's 4px padding to the left of the first column (as in localsite/css/base-tabulator.css, which this page doesn't load) */
+  .tabulator-row .tabulator-cell:first-child,
+  .tabulator .tabulator-header .tabulator-col:first-child .tabulator-col-content { padding-left: 8px; }
+  #matrixTable { margin-top: 16px; }
+  #matrixTable .tabulator-cell.matrix-sector-cell { cursor: pointer; }
+  #matrixTable .tabulator-cell.matrix-sector-cell:hover { background: rgba(3,102,214,0.1); }
+  .dark #matrixTable .tabulator-cell.matrix-sector-cell:hover { background: #222; }
+  #indicatorBarChart .tabulator-row .tabulator-cell:first-child:hover { background: rgba(3,102,214,0.1); }
+  .dark #indicatorBarChart .tabulator-row .tabulator-cell:first-child:hover { background: #222; }
+  /* Impacts chart: rows choose the indicator for the treemap's Impact view */
+  #indicatorBarChart .tabulator-row { cursor: pointer; }
+  #indicatorBarChart .tabulator-row.impact-selected { box-shadow: inset 4px 0 0 #0366d6; background: rgba(3, 102, 214, 0.08); }
+  /* Triangle outside the table's left edge, pointing at the selected indicator, so the column text stays aligned */
+  #indicatorBarChartWrap { position: relative; clear: both; }
+  /* Narrow table: the indicator name shows above its bar in the Impacts column (sortable by impact) */
+  #indicatorBarChart .indicator-name-narrow { overflow: hidden; text-overflow: ellipsis; }
+  #indicatorBarChart .indicator-bar-narrow { margin-top: 4px; }
+  #impactPointer { display: none; position: absolute; left: -13px; width: 0; height: 0; transform: translateY(-50%); pointer-events: none;
+    border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-left: 9px solid #0366d6; }
+  .dark #impactPointer { border-left-color: var(--accent, #3a8fd9); }
+  .dark #indicatorBarChart .tabulator-row.impact-selected { box-shadow: inset 4px 0 0 var(--accent, #3a8fd9); background: rgba(58, 143, 217, 0.18); }
+  #matrixTreemap { width: 100%; height: 468px; background: #fff; border-radius: 8px; overflow: hidden; margin-top: 8px; }
+  .dark #matrixTreemap { background: var(--bg-card); }
+  #matrixTreemapTagline { font-size: 13px; color: #444; margin-top: 4px; }
+  .dark #matrixTreemapTagline { color: var(--text-muted); }
+  #matrixInfoRow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin: 8px 0 0; }
+  #matrixInfo { flex: 1 1 300px; margin: 0; }
+  #matrixInfoRight { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin-left: auto; font-size: 13px; }
+  #matrixToneLegend { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+  #matrixToneLegend .tone { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  #matrixToneLegend .tone i { display: inline-block; width: 0.75em; height: 0.75em; border-radius: 2px; } /* About the text's height */
+  #footprintPageLink { white-space: nowrap; }
+  #indicatorToolbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin: 4px 0 10px; clear: both; container-type: inline-size; }
+  #impactSetHolder { margin-left: auto; }
+  /* Narrow: the impact set dropdown moves to its own line above the Suppliers / Industry / Buyers buttons, at the left */
+  @container (max-width: 700px) {
+    #impactSetHolder { order: -1; flex-basis: 100%; margin-left: 0; }
+  }
+  #indicatorParts { margin-right: 5px; }
+  /* Part colors, also used for the bar sections */
+  #indicatorParts label[data-part-label="supplier"] { --part: #7cc3ee; --part-text: #1f2937; }
+  #indicatorParts label[data-part-label="industry"] { --part: #9b6dd6; --part-text: #fff; }
+  #indicatorParts label[data-part-label="buyers"] { --part: #f27ab6; --part-text: #1f2937; }
+  #indicatorParts label { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 14px; background: color-mix(in srgb, var(--part) 18%, #fff); color: #333; cursor: pointer; user-select: none; }
+  #indicatorParts label + label { border-left: 1px solid #ccc; }
+  #indicatorParts label.active { background: var(--part); color: var(--part-text); }
+  /* Checked Buyers uses the light pink tint; unchecked Buyers goes lighter so the two still differ */
+  #indicatorParts label[data-part-label="buyers"].active { background: color-mix(in srgb, var(--part) 18%, #fff); color: #333; }
+  #indicatorParts label[data-part-label="buyers"]:not(.active) { background: color-mix(in srgb, var(--part) 6%, #fff); }
+  #indicatorParts label.disabled { opacity: 0.5; cursor: default; }
+  #indicatorParts input { margin: 0; }
+  .indicator-swatch { display: inline-flex; width: 18px; height: 12px; border-radius: 3px; overflow: hidden; }
+  .indicator-swatch i { flex: 1; align-self: stretch; }
+  #indicatorRegionNote { font-size: 13px; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 22px; }
+  .indicator-legend-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+  .indicator-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+  .indicator-legend-item .indicator-swatch + .indicator-swatch { margin-left: -2px; } /* State with both Suppliers and Buyers colors */
+  .dark #indicatorParts label { background: color-mix(in srgb, var(--part) 18%, var(--bg-card, #222)); color: var(--text-main); }
+  .dark #indicatorParts label + label { border-left-color: var(--border-subtle); }
+  .dark #indicatorParts label.active { background: var(--part); color: var(--part-text); }
+  .dark #indicatorParts label[data-part-label="buyers"].active { background: #fbd7e9; color: #333; }
+  .dark #indicatorParts label[data-part-label="buyers"]:not(.active) { background: color-mix(in srgb, var(--part) 6%, var(--bg-card, #222)); }
+  #commoditySourceBar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 8px; }
+  #commodityUNRegions { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  #commodityUNRegions button { padding: 3px 12px; border: 1px solid #ccc; border-radius: 999px; background: #fff; color: #333; font-size: 13px; cursor: pointer; }
+  #commodityUNRegions button[aria-pressed="true"] { background: #0366d6; border-color: #0366d6; color: #fff; }
+  .dark #commodityUNRegions button { background: var(--bg-card); color: var(--text-main); border-color: var(--border-subtle); }
+  .dark #commodityUNRegions button[aria-pressed="true"] { background: var(--accent, #3a8fd9); border-color: var(--accent, #3a8fd9); color: #fff; }
+  /* UN: the largest regions or industries under each indicator, spanning the table */
+  #indicatorBarChart .region-shares-row { display: block; padding: 0 10px 7px; font-size: 13px; line-height: 1.5; white-space: normal; }
+  #indicatorBarChart .region-shares-label { opacity: 0.7; margin-right: 4px; }
+  #indicatorBarChart .region-share { display: inline-block; margin-right: 16px; }
+  #indicatorBarChart .region-share i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+  /* The line sits on the row, which Tabulator keeps white, so it matches the dark cells (base.css) */
+  .dark #indicatorBarChart .region-shares-row { background-color: #333; color: #ddd; border-bottom: 1px solid #555; }
+  #matrixBarrier { max-width: 760px; margin-top: 12px; }
+  .si-barrier ul { margin: 4px 0 10px; padding-left: 20px; }
+  #matrixToolbarLeft { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  /* A place missing from the year's files: only the source and country menus, to choose another */
+  #matrixSection.matrix-place-missing > :not(#matrixToolbar), #matrixSection.matrix-place-missing #matrixDirection,
+  #matrixSection.matrix-place-missing #matrixRank { display: none !important; }
+  #matrixToolbar { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; }
+  .matrix-toggle { display: inline-flex; border: 1px solid #ccc; border-radius: 6px; overflow: hidden; }
+  .matrix-toggle button { border: 0; padding: 6px 14px; font-size: 14px; background: #fff; color: #333; cursor: pointer; }
+  .matrix-toggle button + button { border-left: 1px solid #ccc; }
+  .matrix-toggle button.active { background: #0366d6; color: #fff; }
+  .matrix-toggle button:disabled { opacity: 0.5; cursor: default; }
+  .dark .matrix-toggle { border-color: var(--border-subtle); }
+  .dark .matrix-toggle button { background: var(--bg-card); color: var(--text-main); }
+  .dark .matrix-toggle button + button { border-left-color: var(--border-subtle); }
+  .dark .matrix-toggle button.active { background: var(--accent, #3a8fd9); color: #fff; }
+  /* Sections, each with its margin at the bottom. The menu (js/footprint-layout.js) hides a section with footprint-hidden. */
+  #tradeVizSection, #placeSection { margin-bottom: 10px; }
+  #industriesSection, #supportingSection { margin-bottom: 16px; }
+  #impactsSection, #matrixSection, #dataSourcesSection { margin-bottom: 40px; }
+  #template-footprint .footprint-hidden { display: none !important; }
+  /* Section menu at the top right, like #widgetList in localsite/info/template-charts.html */
+  #footprintWidgetHolder { float: right; position: relative; margin-left: 10px; z-index: 5; }
+  /* A checklist icon, since the header's location filter uses the 3-dot (more_horiz) toggle */
+  /* 32px square with the border of the trade link buttons to its left (.trade-viz-link in ../trade-viz-links.js) */
+  #footprintWidgetToggle { position: relative; right: auto; top: auto; box-sizing: border-box; width: 32px; height: 32px; padding: 3px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; cursor: pointer; }
+  .dark #footprintWidgetToggle { border-color: var(--border-subtle); background: var(--bg-card); }
+  #footprintWidgetToggle:hover, #footprintWidgetToggle[aria-expanded="true"] { background: #f1f5fb; border-color: #94a3b8; }
+  .dark #footprintWidgetToggle:hover, .dark #footprintWidgetToggle[aria-expanded="true"] { background: #444; border-color: #777; }
+  #footprintWidgetToggle .material-icons { display: block; font-size: 24px; }
+  #footprintWidgetList { right: 0; top: 36px; }
+  #footprintWidgetList .menuToggleItem { padding-right: 36px; white-space: nowrap; }
+</style>
+
+<!-- Section menu: shows and hides the sections below (js/footprint-layout.js) -->
+<div id="footprintWidgetHolder" class="noprint">
+  <div id="footprintWidgetToggle" class="menuToggleHolder" role="button" tabindex="0" title="Sections" aria-label="Sections" aria-haspopup="true" aria-expanded="false">
+    <i class="material-icons">checklist</i>
+  </div>
+  <div id="footprintWidgetList" class="menuToggleMenu" style="display:none">
+    <div class="menuToggleItem" data-section="tradeVizSection">Trade Visualizations<span class="material-icons menuToggleCheck">check</span></div>
+    <div class="menuToggleItem" data-section="placeSection">Place and Year<span class="material-icons menuToggleCheck">check</span></div>
+    <div class="menuToggleItem" data-section="industriesSection">Industries<span class="material-icons menuToggleCheck">check</span></div>
+    <div class="menuToggleItem" data-section="supportingSection">Supporting Industries<span class="material-icons menuToggleCheck">check</span></div>
+    <div class="menuToggleItem" data-section="impactsSection">Impacts<span class="material-icons menuToggleCheck">check</span></div>
+    <div class="menuToggleItem" data-section="matrixSection">Suppliers and Buyers<span class="material-icons menuToggleCheck">check</span></div>
+    <div class="menuToggleItem" data-section="dataSourcesSection">Data Sources<span class="material-icons menuToggleCheck">check</span></div>
+    <div class="menuToggleItem" data-section="aboutSection">Model Datasets<span class="material-icons menuToggleCheck">check</span></div>
+    <div id="footprintWidgetListShowAll" class="menuToggleItem" data-action="show-all" style="display:none">Show All Sections</div>
+  </div>
+</div>
+
+<!-- Trade visualization buttons (renderTradeVizLinks in ../trade-viz-links.js) -->
+<div id="tradeVizSection" class="noprint">
+  <div id="trade-viz-links"></div>
+</div>
+
+<!-- State menu first. The dropdowns sit at the right, or wrap below it at the left when narrow. -->
+<div id="placeSection">
+  <div id="profileTopBar">
+    <div id="profileTopPlace">
+      <!-- Own parent, since navigation.js shows and hides #relocatedStateMenu's parent -->
+      <div><div id="relocatedStateMenu"></div></div>
+    </div>
+    <div id="profileTopSelects">
+      <select id="year-select" aria-label="Model year"></select>
+      <select id="locale-select"></select>
+      <select id="number-format-select"></select>
+    </div>
+  </div>
+</div>
+
+<div id="industriesSection">
+  <!-- UN / EPA toggle (../item/js/supporting-industries.js), and for UN the US and state buttons -->
+  <div id="commoditySourceBar"><span id="commoditySource"></span><span id="commodityUNRegions" role="group" aria-label="Region" style="display:none"></span></div>
+  <!-- Commodities report from js/commodities-report.js, also on commodities.html. Its .commodity-report-footer goes after the table. -->
+  <div id="commodityEPA"><div id="commodityTable"></div></div>
+  <!-- UN list of Exiobase industries, through the same report, with its sources below -->
+  <div id="commodityUN" style="display:none">
+    <div id="commodityUNLoading" style="display:none">Loading the Exiobase trade tables...</div>
+    <div id="commodityTableUN"></div>
+    <div id="commodityUNStatus" style="font-size:13px"></div>
+    <p id="commodityUNNote" style="font-size:13px; margin:8px 0 0"></p>
+    <div id="commodityUNSources" style="display:none; margin-top:8px"></div>
+  </div>
+</div>
+
+<!-- Top 10 Industries Supplying Production, shared with the product label (profile/item) -->
+<div id="supportingSection">
+  <h3 id="supportingIndustriesHeading" style="display:none"></h3>
+  <div id="supportingIndustries"></div>
+</div>
+
+<!-- The place or sector title, and its impacts chart -->
+<div id="impactsSection">
+  <p id="info">Loading ...</p>
+  <div id="indicatorToolbar" style="display:none">
+    <div id="indicatorParts" class="matrix-toggle" role="group" aria-label="Impacts to include">
+      <label data-part-label="supplier" title="The industry's whole supply chain, without the industry itself. Click to show only Suppliers; use the checkbox to add or remove it."><input type="checkbox" data-part="supplier">Suppliers</label>
+      <label data-part-label="industry" title="The industry's own operations (direct impacts). Click to show only Industry; use the checkbox to add or remove it."><input type="checkbox" data-part="industry">Industry</label>
+      <label data-part-label="buyers" title="A share of the buyers' own direct impacts, matching the share of their costs spent on this industry. Not part of the model's standard footprint. Click to show only Buyers; use the checkbox to add or remove it."><input type="checkbox" data-part="buyers">Buyers</label>
+    </div>
+    <div id="indicatorRegionNote"></div>
+    <div id="impactSetHolder"><select id="impact-set-select"></select></div>
+  </div>
+  <div id="indicatorBarChartWrap">
+    <span id="impactPointer" aria-hidden="true"></span>
+    <div id="indicatorBarChart"></div>
+  </div>
+  <p id="indicatorYearNote" style="display:none; font-size:14px; margin:8px 0 0"></p><!-- Exiobase years without some factors (showIndicatorYearNote) -->
+</div>
+
+<!-- Treemap and matrix of the suppliers or buyers. Shown once its data loads. -->
+<div id="matrixSection" style="display: none;">
+  <div id="matrixToolbar">
+    <div id="matrixToolbarLeft">
+    <!-- UN / EPA toggle from ../item/js/supporting-industries.js, shared with the Top 10 panel (source=un in the hash) -->
+    <span id="matrixSource"></span>
+    <!-- Country from the hash's first country, filled from localsite's country list (setupCountrySelect in js/footprint.js) -->
+    <select id="footprintCountry" aria-label="Country"></select>
+    <div id="matrixDirection" class="matrix-toggle" role="group" aria-label="Show sellers or buyers">
+      <button type="button" data-direction="sellers" title="Sectors this industry buys from, with what it spends on each">Suppliers</button>
+      <button type="button" data-direction="buyers" title="Sectors that buy from this industry, with what each spends on it">Buyers</button>
+    </div>
+    </div>
+    <div id="matrixRank" class="matrix-toggle" role="group" aria-label="Rank and size by">
+      <button type="button" data-rank="spent" title="Rank the top 25 and size rectangles by total dollars spent">Total Spent</button>
+      <button type="button" data-rank="coefficient" title="Rank the top 25 and size rectangles by the amount per $1 of output">Per $1</button>
+      <button type="button" data-rank="impact" title="Rank the top 25 and size rectangles by one indicator's impact. Click a row in the impacts chart above to choose the indicator.">Impact</button>
+    </div>
+  </div>
+  <!-- Why UN can't show this sector, when UN is chosen -->
+  <div id="matrixBarrier" style="display:none"></div>
+  <div id="matrixTreemapTitle" style="display:none"></div>
+  <div id="matrixTreemapTagline" style="display:none">Rectangles sized by total spent; color indicates normalized magnitude (low → high).</div>
+  <div id="matrixTreemap" style="display:none"></div>
+  <div id="matrixInfoRow">
+    <p id="matrixInfo">Loading matrix data...</p>
+    <div id="matrixInfoRight">
+      <!-- The three tile tones, filled by renderMatrixTreemap when tiles have regional sections -->
+      <span id="matrixToneLegend" style="display:none"></span>
+      <!-- To the Profile Footprint page with the current hash (updateFootprintPageLink), hidden on that page -->
+      <a id="footprintPageLink" href="" style="display:none">Profile Footprint</a>
+    </div>
+  </div>
+  <div id="matrixTable"></div>
+</div>
+
+<div id="dataSourcesSection" style="display: none;">
+  <h3>Data Sources</h3>
+  <p id="dataSourcesInfo">Loading data sources...</p>
+  <div id="dataSourcesTable"></div>
+</div>
+
+<!-- sector_profile_info.md -->
+<div id="aboutSection">
+  <div id="infoDiv"></div>
+</div>
+
+</div>
+</body>
+</html>

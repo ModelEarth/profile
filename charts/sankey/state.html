@@ -979,7 +979,7 @@ function readHashState() {
     return cache[key] || "";
   }
   return {
-    state: normalizeCode(pick("state")),
+    state: normalizeCode(TradeVizHash.first(pick("state"))), // state=GA,TX shows GA
     partnerState: normalizeCode(pick("partner")),
     direction: normalizeCode(pick("direction")) || "outbound",
     flowType: normalizeCode(pick("trade_type")),
@@ -992,7 +992,9 @@ function readHashState() {
 
 function buildHashParams(selection) {
   const params = new URLSearchParams();
-  if (selection.state) params.set("state", selection.state);
+  // A list such as state=GA,TX stays while its first state is shown, for links that pass it on
+  const hashState = new URLSearchParams(window.location.hash.replace(/^#/, "")).get("state");
+  if (selection.state) params.set("state", TradeVizHash.keepList(hashState, selection.state));
   if (selection.partnerState) params.set("partner", selection.partnerState);
   if (selection.direction && selection.direction !== "outbound") params.set("direction", selection.direction);
   if (selection.flowType) params.set("trade_type", selection.flowType);

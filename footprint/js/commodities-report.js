@@ -1,7 +1,7 @@
 // Commodities report shared by commodities.html and profile/footprint/: the commodity table, and below it
 // the State Total and Rest of US outputs (or US Total) with details, left of round buttons for how many
 // rows to show, ranked by Output.
-// Requires Tabulator, js/useeio.js, js/config.js (model, getModelState) and formatCell() from localsite.js.
+// Requires Tabulator, js/useeio.js, js/config.js (model, getModelState, getModelKey) and formatCell() from localsite.js.
 
 const CommoditiesReport = (function() {
 
@@ -114,8 +114,8 @@ const CommoditiesReport = (function() {
   }
 
   // One line of outputs with a details link, or a line per region with jobs, GHG and CO2e
-  function totalsHtml(regions, detailsOpen) {
-    if (detailsOpen) return regions.map(r => totalsLine(r.label, r.totals)).join('<br>');
+  function totalsHtml(regions, detailsOpen, line) {
+    if (detailsOpen) return regions.map(r => (line || totalsLine)(r.label, r.totals)).join('<br>');
     return regions.map(r => `<strong>${r.label}:</strong> $${formatCell(r.totals.output)}`).join(', ')
       + ' <a href="#" class="commodity-totals-details" title="Jobs, GHG and CO2e totals">details</a>';
   }
@@ -236,7 +236,12 @@ const CommoditiesReport = (function() {
 
   // options: table and loading element ids, rows (0 for all), onRender(rows) after each render,
   // filter(row) for the rows the table lists (totals use all rows), linkNames (false for plain names),
-  // and to make rows selectable: onRowClick(row, selected) and selected(), the selected row's code/location
+  // and to make rows selectable: onRowClick(row, selected) and selected(), the selected row's code/location,
+  // or isSelected(row) to select several rows.
+  // Another source of rows (e.g. the UN list on profile/footprint) replaces the model's with:
+  // loadRows() (a Promise of rows with code, location, name and output), cacheKey() (rows are reused
+  // while it's unchanged; default: the model), regionTotals(rows), columns(locale, formatType, narrow),
+  // totalsLine(label, totals), noun ("commodities") and rankLabel ("Output") for the row buttons.
   function create(options) {
     addStyles();
     const report = {
@@ -262,7 +267,9 @@ const CommoditiesReport = (function() {
     const limitsEl = document.createElement('div');
     limitsEl.className = 'commodity-row-limits';
     limitsEl.setAttribute('role', 'group');
-    limitsEl.setAttribute('aria-label', 'Commodities to show, ranked by Output');
+    const noun = options.noun || 'commodities';
+    const rankLabel = options.rankLabel || 'Output';
+    limitsEl.setAttribute('aria-label', `${noun.charAt(0).toUpperCase() + noun.slice(1)} to show, ranked by ${rankLabel}`);
     footerEl.appendChild(totalsEl);
     footerEl.appendChild(limitsEl);
     tableEl.insertAdjacentElement('afterend', footerEl);
@@ -300,12 +307,12 @@ const CommoditiesReport = (function() {
     });
 
     function renderFooter() {
-      totalsEl.innerHTML = report.regions.length ? totalsHtml(report.regions, report.detailsOpen) : '';
+      totalsEl.innerHTML = report.regions.length ? totalsHtml(report.regions, report.detailsOpen, options.totalsLine) : '';
       footerEl.style.alignItems = report.detailsOpen ? 'flex-start' : '';
       const count = listedRows().length;
       const shown = shownLimit();
-      const buttons = rowLimits.filter(n => n < count).map(n => ({ rows: n, label: n, title: `Top ${n} by Output` }))
-        .concat({ rows: 0, label: count, title: `All ${count} commodities` });
+      const buttons = rowLimits.filter(n => n < count).map(n => ({ rows: n, label: n, title: `Top ${n} by ${rankLabel}` }))
+        .concat({ rows: 0, label: count, title: `All ${count} ${noun}` });
       limitsEl.innerHTML = buttons
         .filter(b => !report.detailsOpen || b.rows === shown)
         .map(b => `<button type="button" data-rows="${b.rows}" class="${shown === b.rows ? 'active' : ''}" title="${report.detailsOpen ? 'Close details' : b.title}">${b.label}</button>`)
@@ -331,6 +338,7 @@ const CommoditiesReport = (function() {
     }
 
     function isSelected(row) {
+      if (options.isSelected) return options.isSelected(row);
       return !!options.selected && options.selected() === rowKey(row);
     }
 
@@ -377,7 +385,9 @@ const CommoditiesReport = (function() {
       if (!report.rows.length) return;
       const state = getModelState();
       report.narrow = isNarrow();
-      const columns = tableColumns(getCurrentLocale(), getCurrentNumberFormat(), state, options.linkNames, report.narrow);
+      const columns = options.columns
+        ? options.columns(getCurrentLocale(), getCurrentNumberFormat(), report.narrow)
+        : tableColumns(getCurrentLocale(), getCurrentNumberFormat(), state, options.linkNames, report.narrow);
       const data = shownRows();
       renderFooter();
 
@@ -415,22 +425,25 @@ const CommoditiesReport = (function() {
       if (options.onRender) options.onRender(report.rows);
     }
 
-    // Loads the current model's commodities, then renders. Reuses the rows while the model is unchanged.
+    // Loads the current model's commodities (or options.loadRows), then renders. Reuses the rows while
+    // the model (or options.cacheKey) is unchanged.
     async function load() {
-      const modelName = getModelFolderName();
+      const modelName = options.cacheKey ? options.cacheKey() : getModelKey(); // Year and model folder
       if (modelName === report.modelName && report.rows.length) {
         render();
         return;
       }
       const run = ++report.run;
       try {
-        const rows = await loadRows(model);
+        if (options.loadRows && loadingEl) loadingEl.style.display = 'block';
+        const rows = options.loadRows ? await options.loadRows() : await loadRows(model);
         // A newer hash change started another load; let it render instead
         if (run !== report.run) return;
         report.rows = rows;
         report.modelName = modelName;
         console.log("Commodities loaded, length:", rows.length);
-        report.regions = regionTotals(rows, getModelState());
+        report.regions = options.regionTotals ? options.regionTotals(rows) : regionTotals(rows, getModelState());
+        if (loadingEl) loadingEl.style.display = 'none';
         render();
       } catch (error) {
         console.error("Error loading commodities:", error.stack);
@@ -449,5 +462,5 @@ const CommoditiesReport = (function() {
     };
   }
 
-  return { create: create };
+  return { create: create, numberColumn: numberColumn };
 })();

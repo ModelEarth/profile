@@ -20,13 +20,28 @@ const model = useeio.modelOf({
   asJsonFiles: false,
 });
 */
-// Folder holding the model folders and sectorcrosswalk.csv. Declared before getModel() runs on the next lines.
-//const useeioJsonEndpoint = 'http://localhost:8887/useeio-json/models/2020';
+// Folder holding one folder per year, each with the model folders and sectorcrosswalk.csv.
+// Declared before getModel() runs below.
+//const useeioJsonModels = 'http://localhost:8887/useeio-json/models';
 // To use a local copy, clone the useeio-json repo into the same webroot:
-//const useeioJsonEndpoint = '/useeio-json/models/2020';
+//const useeioJsonModels = '/useeio-json/models';
 // CORS error:
-//const useeioJsonEndpoint = 'https://model.earth/useeio-json/main/models/2020';
-const useeioJsonEndpoint = 'https://raw.githubusercontent.com/ModelEarth/useeio-json/main/models/2020';
+//const useeioJsonModels = 'https://model.earth/useeio-json/main/models';
+const useeioJsonModels = 'https://raw.githubusercontent.com/ModelEarth/useeio-json/main/models';
+
+// Year folders in useeio-json/models that hold JSON models, newest first. Add a year once its folder is published.
+// (models/2018 holds only an xlsx.) The 2020 folder's state models use 2020 data, and its national model USEEIOv2.0.1-411 uses 2012 data.
+const USEEIO_MODEL_YEARS = ['2020'];
+
+// The model year from the hash, e.g. #year=2020. A year without models falls back to the newest.
+function getModelYear() {
+    const year = String(getUrlHash().year || '').trim();
+    return USEEIO_MODEL_YEARS.includes(year) ? year : USEEIO_MODEL_YEARS[0];
+}
+// The year's folder, e.g. .../models/2020
+function getUseeioJsonEndpoint() {
+    return `${useeioJsonModels}/${getModelYear()}`;
+}
 
 let model = getModel();
 // The state whose model is shown: the first in the hash, e.g. TX for state=TX,GA. Blank for the US model.
@@ -41,14 +56,18 @@ function getModelFolderName() {
     }
     return theModel;
 }
+// The year and model folder, e.g. 2020/GAEEIOv1.0-s-20, for noticing when the model changes
+function getModelKey() {
+    return `${getModelYear()}/${getModelFolderName()}`;
+}
 function getModel() {
     return getModelByName(getModelFolderName());
 }
 
-// A model by folder name, e.g. USEEIOv2.0.1-411 (national) or GAEEIOv1.0-s-20 (Georgia)
+// A model by folder name in the hash's year, e.g. USEEIOv2.0.1-411 (national) or GAEEIOv1.0-s-20 (Georgia)
 function getModelByName(theModel) {
     return useeio.modelOf({ // Calls the getJson() method set in webapi.ts
-      endpoint: useeioJsonEndpoint,
+      endpoint: getUseeioJsonEndpoint(),
       model: theModel,
       asJsonFiles: true,
     });
@@ -119,6 +138,50 @@ function applyCachedPreferences() {
 
   // Attach event listeners after setting values
   attachDropdownListeners();
+}
+
+// True when the page shows UN (Exiobase) data: the UN / EPA toggle in ../item/js/supporting-industries.js,
+// or on profile/footprint/ a country or the World in the hash, which only UN covers (footprintOutsideUS)
+function showsExiobase() {
+  if (typeof getSupportingIndustriesSource !== 'function' || typeof EXIOBASE_YEARS === 'undefined') return false;
+  return getSupportingIndustriesSource() === 'un' || (typeof footprintOutsideUS === 'function' && footprintOutsideUS());
+}
+// The year the page shows: the Exiobase year for UN (2018 to 2024), otherwise the USEEIO model year
+function shownDataYear() {
+  return showsExiobase() ? getExiobaseYear() : getModelYear();
+}
+
+// Year dropdown, driven by the hash: choosing a year calls goHash({year}), and a hash change
+// (including Back) moves the dropdown. The page's own hashChangeEvent listener reloads the data.
+// For EPA it lists the USEEIO model years. For UN it lists the Exiobase years; a note under the impacts
+// chart (indicatorYearNote, filled by js/footprint.js) names the years without greenhouse gas and jobs factors. The two share year=.
+function setupModelYearSelect(selectId) {
+  const select = document.getElementById(selectId);
+  if (!select || select.dataset.ready) return;
+  select.dataset.ready = '1';
+  const fill = () => {
+    const un = showsExiobase();
+    const years = un ? EXIOBASE_YEARS : USEEIO_MODEL_YEARS;
+    const key = (un ? 'un:' : 'epa:') + years.join(',');
+    if (select.dataset.years !== key) {
+      select.dataset.years = key;
+      select.innerHTML = '';
+      years.forEach(year => {
+        const note = un && typeof EXIOBASE_YEAR_NOTES !== 'undefined' && EXIOBASE_YEAR_NOTES[year];
+        const option = new Option(year, year);
+        if (note) option.title = note;
+        select.add(option);
+      });
+      select.title = un ? 'Exiobase trade data year (UN)' : 'USEEIO model year';
+    }
+    select.value = shownDataYear();
+  };
+  fill();
+  select.addEventListener('change', () => {
+    if (select.value !== shownDataYear()) goHash({ year: select.value });
+  });
+  document.addEventListener('hashChangeEvent', fill);
+  document.addEventListener('supportingIndustriesSource', fill);
 }
 
 // Legacy function for profile/footprint/ compatibility
