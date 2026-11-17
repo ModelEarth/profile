@@ -96,6 +96,8 @@ Scripts in this file don't run there, so the page's scripts go in js/footprint.j
   #indicatorBarChart .region-shares-label { opacity: 0.7; margin-right: 4px; }
   #indicatorBarChart .region-share { display: inline-block; margin-right: 16px; }
   #indicatorBarChart .region-share i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+  /* The line sits on the row, which Tabulator keeps white, so it matches the dark cells (base.css) */
+  .dark #indicatorBarChart .region-shares-row { background-color: #333; color: #ddd; border-bottom: 1px solid #555; }
   #matrixBarrier { max-width: 760px; margin-top: 12px; }
   .si-barrier ul { margin: 4px 0 10px; padding-left: 20px; }
   #matrixToolbarLeft { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
