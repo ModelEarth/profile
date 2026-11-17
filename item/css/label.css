@@ -1893,10 +1893,19 @@ input[type=number]::-webkit-outer-spin-button {
    ============================================ */
 
 .product-main-content {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   gap: 24px;
   align-items: flex-start;
+}
+/* EPA / UN calculation cards beside the open Top 10 panel, in the label column's empty space */
+.si-method-aside {
+  position: absolute;
+  z-index: 1;
+}
+.si-method-aside .si-method {
+  margin: 0;
 }
 
 .product-label-wrapper {
@@ -3753,7 +3762,8 @@ input[type=number]::-webkit-outer-spin-button {
   background: #f8fafc;
 }
 .supporting-industries-inline .section-header h4 {
-  font-size: 0.9em;
+  font-size: 18px;
+  font-weight: 600;
 }
 .dark .supporting-industries.supporting-industries-inline {
   background: #0f172a;
@@ -3778,11 +3788,12 @@ input[type=number]::-webkit-outer-spin-button {
 /* Which kind of location the open chart is for */
 .si-role {
   margin: 0 0 8px;
-  padding: 6px 8px;
+  padding: 8px 10px;
   border-radius: 6px;
   border-left: 3px solid #94a3b8;
   background: #f1f5f9;
-  font-size: 0.75em;
+  font-size: 13px;
+  line-height: 1.5;
   color: #475569;
 }
 .si-role.si-role-manufacturing {
@@ -3790,8 +3801,17 @@ input[type=number]::-webkit-outer-spin-button {
   background: #f5f3ff;
 }
 .si-role-tag {
+  margin-bottom: 2px;
+  font-size: 14px;
   font-weight: 600;
-  margin-right: 4px;
+  color: #1e293b;
+}
+.si-role-note {
+  font-size: 13px;
+  font-weight: 400;
+}
+.dark .si-role-tag {
+  color: #f1f5f9;
 }
 .dark .si-role {
   background: #1e293b;
