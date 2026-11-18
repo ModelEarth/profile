@@ -46,10 +46,29 @@ const SUPPORTING_INDUSTRIES_FACTORS = {
 const SUPPORTING_INDUSTRIES_DEFAULT_FACTOR = "amt";
 // The UN and EPA toggle left of the factor dropdown, keyed by the "source" hash value, in button order
 const SUPPORTING_INDUSTRIES_SOURCES = {
-    un: { label: "UN", title: "Exiobase trade tables (UN), split among states by BEA GDP by state" },
+    un: { label: "UN", title: "Exiobase 2018 to 2024 trade tables, split among states by BEA GDP by state" },
     epa: { label: "EPA", title: "US EPA USEEIO 2020 state models" }
 };
 const SUPPORTING_INDUSTRIES_DEFAULT_SOURCE = "epa";
+
+// Year dropdown beside the factor, keyed by the "year" hash value (as on the trade map). EPA has
+// state models for 2020 only. UN has Exiobase trade tables for 2018 to 2024, but the 2023 and 2024
+// tables carry only amounts and metals and minerals (factor_id 909), so a UN factor with
+// lastYear stops there.
+const SUPPORTING_INDUSTRIES_YEARS = {
+    epa: ["2020"],
+    un: ["2018", "2019", "2020", "2021", "2022", "2023", "2024"]
+};
+const SUPPORTING_INDUSTRIES_DEFAULT_YEAR = "2020";
+const SUPPORTING_INDUSTRIES_UN_FACTOR_LAST_YEAR = "2022";
+
+// The years a source offers for a factor
+function supportingIndustriesYears(source, factorKey) {
+    const years = SUPPORTING_INDUSTRIES_YEARS[source] || [SUPPORTING_INDUSTRIES_DEFAULT_YEAR];
+    const factor = SUPPORTING_INDUSTRIES_FACTORS[factorKey];
+    const allYears = source !== "un" || !factor || factor.amount || factorKey === "material";
+    return allYears ? years : years.filter(year => year <= SUPPORTING_INDUSTRIES_UN_FACTOR_LAST_YEAR);
+}
 
 // A factor's settings for a source: the UN settings replace the EPA ones they share
 function supportingIndustriesFactor(factorKey, source) {
@@ -110,20 +129,23 @@ function markSourceButtons(container, source, unNote, unExplained) {
 // purchases (from US producers and imports) in US/domestic/trade-us.csv, placed in states with
 // the BEA weights in US/domestic/category_state.csv and the categories in
 // US/domestic/industry_category.csv. exiobase/tradeflow/bea/category_state.py writes all three.
-// 2019 matches the interstate map and is the default year.
-const EXIOBASE_STATE_YEAR = "2019";
+// The Year dropdown picks the tables' year. This default year's industry.csv lists the
+// Exiobase industries (the same 200 every year) for exiobaseIndustriesForSummary, and it is the
+// year shown when the hash has none, matching the Top 10 panel's default.
+const EXIOBASE_STATE_YEAR = SUPPORTING_INDUSTRIES_DEFAULT_YEAR;
 // Years in trade-data/year with US trade tables, newest first. Their status is on exiobase/tradeflow/.
 const EXIOBASE_YEARS = ["2024", "2023", "2022", "2021", "2020", "2019", "2018"];
-// Years with the state tables (trade-us.csv, industry_category.csv and category_state.csv). Other
-// years use the nearest one's state weights, and the Top 10 and matrix use its trade-us.csv.
-const EXIOBASE_STATE_YEARS = ["2019", "2022"];
+// Years with the state tables (trade-us.csv, industry_category.csv and category_state.csv): every
+// year in trade-data/year now has its own. A year missing from this list would use the nearest
+// one's state weights, and the Top 10 and matrix would use its trade-us.csv.
+const EXIOBASE_STATE_YEARS = ["2018", "2019", "2020", "2021", "2022", "2023", "2024"];
 // Years whose trade_factor.csv lacks factors, shown in the year dropdown and notes
 const EXIOBASE_YEAR_NOTES = {
     "2023": "trade amounts and material use only, no greenhouse gas or jobs factors",
     "2024": "trade amounts and material use only, no greenhouse gas or jobs factors"
 };
 
-// The Exiobase year from the hash (year=2022), otherwise 2019. The hash's year is shared with the
+// The Exiobase year from the hash (year=2022), otherwise 2020. The hash's year is shared with the
 // USEEIO model year (profile/footprint/js/config.js), which only has 2020.
 function getExiobaseYear() {
     const year = String(((typeof getHash === "function") ? getHash() : {}).year || "").trim();
@@ -171,6 +193,14 @@ function createSupportingIndustriesPanel(options) {
     const hash = (typeof getHash === "function") ? getHash() : {};
     let source = getSupportingIndustriesSource();
     let factorKey = Object.prototype.hasOwnProperty.call(SUPPORTING_INDUSTRIES_FACTORS, hash.factor) ? hash.factor : SUPPORTING_INDUSTRIES_DEFAULT_FACTOR;
+    let year = String(hash.year || SUPPORTING_INDUSTRIES_DEFAULT_YEAR);
+    // A year the source and factor lack goes back to the default (2020, which both sources have)
+    const fixYear = () => {
+        if (!supportingIndustriesYears(source, factorKey).includes(year)) year = SUPPORTING_INDUSTRIES_DEFAULT_YEAR;
+    };
+    const yearOptions = () => supportingIndustriesYears(source, factorKey)
+        .map(y => `<option value="${y}"${y === year ? " selected" : ""}>${y}</option>`)
+        .join("");
     const factorOptions = () => Object.keys(SUPPORTING_INDUSTRIES_FACTORS)
         .filter(key => factorHasSource(key, source))
         .map(key => `<option value="${key}"${key === factorKey ? " selected" : ""}>${SUPPORTING_INDUSTRIES_FACTORS[key].label}</option>`)
@@ -178,13 +208,43 @@ function createSupportingIndustriesPanel(options) {
     const product = manufacturer ? ", not only this product" : "";
     const noteText = () => (source === "un" && !exiobaseIndustries.length ? "" : source === "un"
         ? `Ranks the purchases made by the state's broader industry (all producers in ${exiobaseIndustries.join(", ")}${product})
-            in the Exiobase ${exiobaseTablesYear()} trade tables${getExiobaseYear() !== exiobaseTablesYear()
-                ? ` (${getExiobaseYear()} has no state tables, so the nearest year with them is shown)` : ""}. They are split among states
+            in the Exiobase ${year} trade tables. They are split among states
             by each state's share of US GDP in the supplying and buying industries' categories (BEA), as the
             interstate tables are, so in-state supply is an estimate, not a survey of shipments.`
         : `Ranks the estimated direct materials and services supplied to the state's broader industry (all
             producers in the sector${product}), from the 2020 USEEIO state model.`) +
         (manufacturer ? ` These are not the actual suppliers of ${manufacturer}${manufacturer.endsWith(".") ? "" : "."}` : "");
+    // How each source is calculated: a card per source below the toggle. The selected source's
+    // card is open with its steps and explanation; the other is collapsed and switches to it.
+    const METHODS = {
+        epa: { title: "EPA (USEEIO)", steps: ["State model", "Direct purchases"],
+            text: () => `Uses the state's own 2020 USEEIO model, which adjusts national US economic tables using
+                state-specific industry statistics, including output, value added, employment, and interstate
+                trade. It estimates purchases from each supplier industry, distinguishing between in-state
+                suppliers, suppliers from other US states, and foreign imports.` },
+        un: { title: "UN (EXIOBASE)", steps: ["US purchases", "× State GDP share"],
+            text: () => `Starts with national US purchases for each EXIOBASE ${year} industry and scales them
+                by the state's share of US GDP in that industry's broader category (e.g., manufacturing). Each
+                purchase is then split between in-state and out-of-state suppliers using the state's share of the
+                supplier's category.` }
+    };
+    const methodHTML = () => Object.keys(METHODS).map(key => {
+        const m = METHODS[key];
+        const active = key === source;
+        const disabled = key === "un" && !exiobaseIndustries.length;
+        const steps = m.steps.map(step => `<span class="si-step">${step}</span>`).join('<span class="si-step-arrow" aria-hidden="true">&rarr;</span>') +
+            `<span class="si-step-arrow" aria-hidden="true">&rarr;</span><span class="si-step si-step-split">
+                <i class="si-swatch si-state"></i>In-state <i class="si-swatch si-rous"></i>Other states <i class="si-swatch si-foreign"></i>Imports</span>`;
+        return `<div class="si-method-card${active ? " is-active" : ""}${disabled ? " is-disabled" : ""}" data-source="${key}"
+                ${active || disabled ? "" : `role="button" tabindex="0" aria-label="Show ${m.title}"`}>
+            <div class="si-method-head">
+                <span class="si-method-title">${m.title}</span>
+                ${active ? '<span class="si-method-badge">Showing</span>' : disabled ? "" : '<span class="si-method-switch">Compare &rarr;</span>'}
+            </div>
+            <div class="si-steps">${steps}</div>
+            ${active ? `<div class="si-method-label">How it is calculated</div><p class="si-method-text">${m.text()}</p>` : ""}
+        </div>`;
+    }).join("");
     const div = opts.element || document.createElement("div");
     div.classList.add("supporting-industries");
     div.style.display = "none";
@@ -197,44 +257,61 @@ function createSupportingIndustriesPanel(options) {
             <label class="si-factor">Factor:
                 <select class="si-factor-select" aria-label="Factor used to rank the supplying industries"></select>
             </label>
+            <label class="si-factor si-year">Year:
+                <select class="si-factor-select si-year-select" aria-label="Year of the data"></select>
+            </label>
         </div>
-        <div class="supporting-industries-state"></div>
+        <div class="si-body">
+            <div class="supporting-industries-state"></div>
+            <div class="si-method"></div>
+        </div>
         <p class="supporting-industries-note"></p>
     `;
     const stateDiv = div.querySelector(".supporting-industries-state");
-    const factorSelect = div.querySelector(".si-factor-select");
+    const factorSelect = div.querySelector(".si-factor-select:not(.si-year-select)");
+    const yearSelect = div.querySelector(".si-year-select");
     const noteP = div.querySelector(".supporting-industries-note");
+    const methodP = div.querySelector(".si-method");
     const sourceGroup = div.querySelector(".si-source");
     let shownKey = null;
     let shownState = null;
 
-    // The toggle, dropdown and note for the current source and sector
+    // The toggle, dropdowns, note and method cards for the current source and sector
     function updateControls() {
         markSourceButtons(sourceGroup, source, exiobaseIndustries.length ? "" : "No Exiobase industry matches this sector", true);
         factorSelect.innerHTML = factorOptions();
+        fixYear();
+        yearSelect.innerHTML = yearOptions();
+        yearSelect.title = source === "un"
+            ? (supportingIndustriesYears(source, factorKey).length < SUPPORTING_INDUSTRIES_YEARS.un.length
+                ? `Exiobase ${SUPPORTING_INDUSTRIES_YEARS.un[0]} to ${SUPPORTING_INDUSTRIES_UN_FACTOR_LAST_YEAR} for this factor (later tables have amounts and Material Use only)`
+                : `Exiobase ${SUPPORTING_INDUSTRIES_YEARS.un[0]} to ${SUPPORTING_INDUSTRIES_YEARS.un.slice(-1)[0]}`)
+            : "EPA USEEIO state models are available for 2020 only";
         noteP.innerHTML = noteText();
+        methodP.innerHTML = methodHTML();
     }
 
-    // Ranks the shown state by the selected source and factor. A newer state, source or
-    // factor choice made while this one loads leaves its result unused.
+    // Ranks the shown state by the selected source, factor and year. A newer state, source,
+    // factor or year choice made while this one loads leaves its result unused.
     function showRanking(state, key) {
         const factor = factorKey;
         const from = source;
+        const forYear = year;
         // UN without Exiobase industries for the sector: why, with related industries to see instead
         if (from === "un" && !exiobaseIndustries.length) {
-            stateDiv.innerHTML = `<div class="supporting-industries-status">Loading the Exiobase ${exiobaseTablesYear()} industries...</div>`;
+            stateDiv.innerHTML = `<div class="supporting-industries-status">Loading the Exiobase ${forYear} industries...</div>`;
             return exiobaseBarrierHTML({ sectorCode, state, linkFor: opts.unLinkFor }).then(html => {
                 if (shownKey === key && source === from) stateDiv.innerHTML = html;
             });
         }
-        const loading = from === "un" ? "Exiobase " + exiobaseTablesYear() + " trade data for " + state
+        const loading = from === "un" ? "Exiobase " + forYear + " trade data for " + state
             : SUPPORTING_INDUSTRIES_FACTORS[factor].national ? "national energy data" : state + " state model";
         stateDiv.innerHTML = `<div class="supporting-industries-status">Loading ${loading}...</div>`;
         const ranking = from === "un"
-            ? rankExiobaseInputs(state, exiobaseIndustries, factor)
+            ? rankExiobaseInputs(state, exiobaseIndustries, factor, forYear)
             : loadSupportingIndustries(state, sectorCode).then(result => rankSupportingIndustries(result, factor));
         return ranking.then(result => {
-            if (shownKey === key && factorKey === factor && source === from) stateDiv.innerHTML = supportingIndustriesHTML(result, opts);
+            if (shownKey === key && factorKey === factor && source === from && year === forYear) stateDiv.innerHTML = supportingIndustriesHTML(result, opts);
         });
     }
 
@@ -245,7 +322,16 @@ function createSupportingIndustriesPanel(options) {
         const remove = [];
         if (source === SUPPORTING_INDUSTRIES_DEFAULT_SOURCE) remove.push("source"); else add.source = source;
         if (factorKey === SUPPORTING_INDUSTRIES_DEFAULT_FACTOR) remove.push("factor"); else add.factor = factorKey;
+        if (year === SUPPORTING_INDUSTRIES_DEFAULT_YEAR) remove.push("year"); else add.year = year;
         goHashQuiet(add, remove.join(","));
+    }
+
+    // A hash year the source or factor lacks (e.g. year=2024&factor=co2) was replaced by the
+    // default, so the hash is corrected to match the dropdown. Run when the panel opens, since
+    // the page rewrites the hash while it is still loading.
+    function syncHashYear() {
+        const hashYear = (typeof getHash === "function") ? getHash().year : undefined;
+        if (hashYear !== undefined && String(hashYear) !== year) updateHashQuietly();
     }
 
     function rerank() {
@@ -255,10 +341,28 @@ function createSupportingIndustriesPanel(options) {
         showRanking(shownState, key).catch(error => rankingFailed(shownState, key, error));
     }
 
+    // A factor change also narrows or widens the UN years (other factors stop at 2022)
     factorSelect.addEventListener("change", () => {
         factorKey = factorSelect.value;
+        updateControls();
         rerank();
     });
+
+    yearSelect.addEventListener("change", () => {
+        year = yearSelect.value;
+        updateControls();
+        rerank();
+    });
+
+    // A collapsed method card switches to its source, as its toggle button does
+    const switchFromCard = event => {
+        const card = event.target.closest(".si-method-card[role=button]");
+        if (!card || (event.type === "keydown" && event.key !== "Enter" && event.key !== " ")) return;
+        event.preventDefault();
+        if (card.dataset.source !== source) setSupportingIndustriesSource(card.dataset.source);
+    };
+    methodP.addEventListener("click", switchFromCard);
+    methodP.addEventListener("keydown", switchFromCard);
 
     // EPA or UN, from this toggle or another on the page (setSupportingIndustriesSource).
     // A factor the other source lacks goes back to Amount Spent.
@@ -278,7 +382,7 @@ function createSupportingIndustriesPanel(options) {
         console.warn("Top industries: could not rank " + state + " by " + factorKey + " (" + source + ")", error);
         if (shownKey !== key) return;
         stateDiv.innerHTML = source === "un"
-            ? `<div class="supporting-industries-status">The Exiobase ${exiobaseTablesYear()} trade tables could not be
+            ? `<div class="supporting-industries-status">The Exiobase ${year} trade tables could not be
                 loaded. Choose EPA for this state.</div>`
             : `<div class="supporting-industries-status">${SUPPORTING_INDUSTRIES_FACTORS[factorKey].label}
                 could not be loaded for ${state}. Choose another factor.</div>`;
@@ -302,6 +406,7 @@ function createSupportingIndustriesPanel(options) {
         shownKey = key;
         shownState = state;
         div.style.display = "";
+        syncHashYear();
         if (source === "un") {
             showRanking(state, key).catch(error => rankingFailed(state, key, error));
             return;
@@ -1060,8 +1165,9 @@ async function exiobaseCountryRows(year, locations) {
 //   or other states (o times (1 - d)). Factors are the buyer's own direct factors on what it spends.
 // Resolves with {industries: Map of code -> {code, name, regions: {state, restOfUS, foreign}}, names,
 // usdPerEur}, where each region holds amount (millions of euros) and factors (factor_id -> value).
-async function exiobaseStateFlows(state, targets, direction) {
-    const year = exiobaseTablesYear();
+// year (optional): the Top 10 panel's Year dropdown; otherwise the hash's year (exiobaseTablesYear).
+async function exiobaseStateFlows(state, targets, direction, year) {
+    year = year ? exiobaseStateTablesYear(year) : exiobaseTablesYear();
     const [shared, flows] = await Promise.all([loadExiobaseShared(year), loadExiobaseFlows(year)]);
     const weight = (code, type) => shared.weights.get((shared.categories.get(code) || "services") + "|" + type + "|" + state) || 0;
     const industries = new Map();
@@ -1124,10 +1230,11 @@ function exiobaseRegionValue(region, factor, usdPerEur) {
 
 // Ranks the industries supplying the product's Exiobase industries in the state (see
 // exiobaseStateFlows). Amounts are millions of euros, shown in US dollars at the year's rate;
-// factors sum their factor_id columns.
-async function rankExiobaseInputs(state, targets, factorKey) {
+// factors sum their factor_id columns. year (optional): the Top 10 panel's Year dropdown.
+async function rankExiobaseInputs(state, targets, factorKey, year) {
     const factor = supportingIndustriesFactor(factorKey, "un");
-    const flows = await exiobaseStateFlows(state, targets, "sellers");
+    year = year ? exiobaseStateTablesYear(year) : exiobaseTablesYear();
+    const flows = await exiobaseStateFlows(state, targets, "sellers", year);
     const industries = new Map();
     let totalSpent = 0;
     flows.industries.forEach(item => {
@@ -1138,7 +1245,7 @@ async function rankExiobaseInputs(state, targets, factorKey) {
     return Object.assign(rankIndustryRows(industries, new Set(targets)), {
         source: "un", state, sectorCode: targets.join(", "),
         sectorName: targets.map(code => flows.names.get(code) || code).join(", "),
-        factorKey, totalSpent
+        factorKey, year, totalSpent
     });
 }
 
@@ -1159,15 +1266,16 @@ function formatFactorShort(value, factor) {
 }
 
 // How the selected factor's values were found, shown below the legend
-function supportingIndustriesFactorNote(factor, source) {
+function supportingIndustriesFactorNote(factor, source, year) {
+    year = year || exiobaseTablesYear();
     if (factor.amount) {
-        return source === "un" ? `Amounts are millions of euros in the Exiobase ${exiobaseTablesYear()} tables,
-            shown in US dollars at the ${exiobaseTablesYear()} exchange rate. Foreign imports are the national
+        return source === "un" ? `Amounts are millions of euros in the Exiobase ${year} tables,
+            shown in US dollars at the ${year} exchange rate. Foreign imports are the national
             imports of each industry pair, placed in the state by its share of US GDP in the buying industry's
             category.` : "";
     }
     if (source === "un") {
-        return `${factor.label} totals the ${factor.note} that the Exiobase ${exiobaseTablesYear()} trade_factor
+        return `${factor.label} totals the ${factor.note} that the Exiobase ${year} trade_factor
             tables carry on each purchase, for US producers and for each importing country. The factor_id values
             are in that year's factor.csv in ModelEarth/trade-data.`;
     }
@@ -1233,13 +1341,14 @@ function supportingIndustriesHTML(result, options) {
     const { ownLabel, ownRankBox, footprintLink } = options;
     const { source, state, sectorCode, sectorName, output, factorKey, totalInputs, totalSpent, top, ranked, ownRank, ownIndustry, ownCodes, grid } = result;
     const isUN = source === "un";
+    const year = result.year || exiobaseTablesYear();
     const factor = supportingIndustriesFactor(factorKey, source);
     const format = value => formatFactorShort(value, factor);
     const factorName = factor.noun || "purchases";
     // getState (localsite.js) is a fixed list, unlike getStateNameFromID, which reads #state_select once it loads
     const stateName = (typeof getState === "function" && getState(state)) || state;
     if (isUN && top.length === 0) {
-        return `<div class="supporting-industries-status">The Exiobase ${exiobaseTablesYear()} trade tables place no
+        return `<div class="supporting-industries-status">The Exiobase ${year} trade tables place no
             purchases by ${sectorName} in ${stateName}${factor.amount ? "" : " with " + factorName}.</div>`;
     }
     if (!isUN && (!(output > 0) || top.length === 0)) {
@@ -1265,14 +1374,14 @@ function supportingIndustriesHTML(result, options) {
         <div class="si-row-tip" role="tooltip">
             <strong>${sectorName} (${sectorCode}) in ${stateName}</strong><br>
             ${isUN
-                ? `Its purchases from industries in ${stateName}, other states and abroad in the Exiobase ${exiobaseTablesYear()}
+                ? `Its purchases from industries in ${stateName}, other states and abroad in the Exiobase ${year}
                     tables total ${formatUsdShort(totalSpent)}${topText}`
                 : `${formatUsdShort(output)} annual output, the estimated value of everything this industry
                     produced in ${stateName} in 2020. Its direct purchases of materials and services total
                     ${formatUsdShort(totalSpent)}${topText}`}
         </div>`;
     const split = row => `${stateName} ${format(row.state)} · Rest of US ${format(row.restOfUS)} · Foreign ${format(row.foreign)}`;
-    const factorNote = supportingIndustriesFactorNote(factor, source);
+    const factorNote = supportingIndustriesFactorNote(factor, source, year);
 
     return `
         <div class="supporting-industries-legend">
@@ -1305,7 +1414,7 @@ function supportingIndustriesHTML(result, options) {
                 ${ownTip}
                 <div class="si-own-label">${ownRank > 0
                     ? `${ownLabel}: ranked #${ownRank} of ${ranked} supplying industries`
-                    : `${ownLabel}: not ranked (no direct purchases from it in the ${isUN ? "Exiobase " + exiobaseTablesYear() + " tables" : "2020 model"})`}</div>
+                    : `${ownLabel}: not ranked (no direct purchases from it in the ${isUN ? "Exiobase " + year + " tables" : "2020 model"})`}</div>
                 <div class="si-row-head">
                     <span class="si-name" title="${ownIndustry.code}">${ownRank > 0 ? `<span class="si-rank">#${ownRank}</span>` : ""}${ownIndustry.name} (${ownIndustry.code})${ownStar}</span>
                     ${ownRank > 0 ? `<span class="si-value">${format(ownIndustry.total)}</span>` : ""}

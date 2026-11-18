@@ -67,6 +67,10 @@
   color: inherit;
   max-width: 100%;
 }
+/* Year dropdown: styled as the factor dropdown, sized to a four-digit year */
+.si-year-select {
+  min-width: 5.5em;
+}
 .si-factor-note {
   margin-bottom: 8px;
 }
@@ -252,6 +256,152 @@
   display: inline-block;
   font-size: 0.8em;
   color: #3b82f6;
+}
+.supporting-industries .section-header h4 {
+  font-size: 18px;
+  font-weight: 600;
+}
+/* How each source is calculated: a card per source in a column right of the ranking when the
+   panel is wide enough, above it when narrow. The selected one is open and first; the other
+   is collapsed and clickable. */
+.supporting-industries {
+  container-type: inline-size;
+}
+.si-body {
+  display: flex;
+  flex-direction: column;
+}
+.si-method {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  order: -1;
+  margin: 4px 0 12px;
+}
+.si-method-card:not(.is-active) { order: 2; }
+@container (min-width: 620px) {
+  .si-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 34%);
+    gap: 16px;
+    align-items: start;
+  }
+  .si-method {
+    order: 0;
+    position: sticky;
+    top: 12px;
+    margin: 8px 0 0;
+  }
+}
+.si-method-card {
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #334155;
+  transition: border-color 0.15s, background 0.15s;
+}
+.si-method-card.is-active {
+  border-color: #bfdbfe;
+  background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 70%);
+  box-shadow: inset 3px 0 0 #3b82f6;
+}
+.si-method-card[role="button"] {
+  cursor: pointer;
+  opacity: 0.8;
+}
+.si-method-card[role="button"]:hover,
+.si-method-card[role="button"]:focus-visible {
+  opacity: 1;
+  border-color: #93c5fd;
+  outline: none;
+}
+.si-method-card.is-disabled {
+  opacity: 0.5;
+}
+.si-method-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.si-method-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+}
+.si-method-badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #3b82f6;
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+}
+.si-method-switch {
+  font-size: 12px;
+  color: #3b82f6;
+}
+.si-steps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+.si-step {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.si-step-split .si-swatch {
+  margin-left: 4px;
+}
+.si-step-split .si-swatch:first-child {
+  margin-left: 0;
+}
+.si-step-arrow {
+  font-size: 12px;
+  color: #94a3b8;
+}
+.si-method-label {
+  margin-top: 10px;
+  font-size: 13px;
+  font-style: italic;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+.si-method-text {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+.dark .si-method-card {
+  border-color: #334155;
+  background: #0f172a;
+  color: #cbd5e1;
+}
+.dark .si-method-card.is-active {
+  border-color: #1e3a8a;
+  background: linear-gradient(135deg, #172554 0%, #0f172a 70%);
+}
+.dark .si-method-title {
+  color: #f1f5f9;
+}
+.dark .si-method-label {
+  color: #94a3b8;
+}
+.dark .si-step {
+  background: #1e293b;
+  border-color: #334155;
+}
+.dark .si-method-switch {
+  color: #60a5fa;
 }
 .supporting-industries-note {
   margin: 8px 0 0;

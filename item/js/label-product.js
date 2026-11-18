@@ -1839,12 +1839,53 @@ function renderSupportingIndustries(data) {
         anchorRow.after(panel.element);
         const info = SUPPORTING_INDUSTRIES_ROLES[role] || SUPPORTING_INDUSTRIES_ROLES["Other Locations"];
         roleDiv.className = "si-role si-role-" + info.kind;
-        roleDiv.innerHTML = `<span class="si-role-tag">${role} &middot; ${state}</span> ${info.note}`;
+        roleDiv.innerHTML = `<div class="si-role-tag">${role} &middot; ${state}</div><div class="si-role-note">${info.note}</div>`;
         panel.show(state, key, onUnavailable);
         return true;
     }
 
+    placeSupportingIndustriesMethod(panel.element);
     return { element: panel.element, sectorCode: mapping.sector, statesByRole, toggle };
+}
+
+// The EPA / UN "how it is calculated" cards go in the empty space below the label card, level
+// with the panel, while the ranking stays in Geolocations. When the columns stack (narrow
+// page) or the panel is closed, the cards return to the panel. A ResizeObserver repositions
+// them when the panel opens, closes or changes size, or the page layout changes.
+function placeSupportingIndustriesMethod(panelElement) {
+    const method = panelElement.querySelector(".si-method");
+    const methodHome = method && method.parentElement;
+    if (!method || typeof ResizeObserver !== "function") return;
+    const aside = document.createElement("div");
+    aside.className = "si-method-aside";
+    aside.setAttribute("aria-label", "How EPA and UN are calculated");
+
+    function place() {
+        const main = panelElement.closest(".product-main-content");
+        const label = main && main.querySelector(".product-label-wrapper");
+        const shown = panelElement.isConnected && panelElement.style.display !== "none";
+        let fits = false;
+        if (main && label && shown) {
+            const mainBox = main.getBoundingClientRect();
+            const labelBox = label.getBoundingClientRect();
+            const panelBox = panelElement.getBoundingClientRect();
+            // Side by side: the label column is left of the panel and ends above it
+            fits = labelBox.right <= panelBox.left && labelBox.bottom + 16 <= panelBox.top;
+            if (fits) {
+                if (aside.parentElement !== main) main.appendChild(aside);
+                aside.style.top = (panelBox.top - mainBox.top) + "px";
+                aside.style.left = (labelBox.left - mainBox.left) + "px";
+                aside.style.width = labelBox.width + "px";
+                if (method.parentElement !== aside) aside.appendChild(method);
+            }
+        }
+        aside.style.display = fits ? "" : "none";
+        if (!fits && method.parentElement !== methodHome) methodHome.appendChild(method);
+    }
+
+    const observer = new ResizeObserver(place);
+    observer.observe(panelElement);
+    observer.observe(document.body);
 }
 
 // ============================================
