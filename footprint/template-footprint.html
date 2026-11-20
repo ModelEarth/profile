@@ -116,8 +116,53 @@ Scripts in this file don't run there, so the page's scripts go in js/footprint.j
   .dark .matrix-toggle button.active { background: var(--accent, #3a8fd9); color: #fff; }
   /* Sections, each with its margin at the bottom. The menu (js/footprint-layout.js) hides a section with footprint-hidden. */
   #tradeVizSection, #placeSection { margin-bottom: 10px; }
+  #cornerstoneSection { margin-bottom: 30px; }
   #industriesSection, #supportingSection { margin-bottom: 16px; }
   #impactsSection, #matrixSection, #dataSourcesSection { margin-bottom: 40px; }
+  /* Industry ID and its origin above the sector's H3 (sectorIdSubheader in js/footprint.js) */
+  /* Styled by craft-eyebrow (localsite/css/craft.css). The model name keeps its case: USEEIOv2.0.1, not USEEIOV2.0.1 */
+  #impactsSection .sectorIdSubheader { margin-bottom: 0; }
+  #impactsSection .sectorIdSubheader .sectorIdModel { text-transform: none; }
+  /* craft-title (localsite/css/craft.css), smaller than codechat's 36-76px since sector names run long */
+  #impactsSection .sectorHeading .craft-title { font-size: clamp(26px, 4vw, 40px); line-height: 1.05; margin: 0 0 10px 0; }
+  #impactsSection .sectorHeading { font-family: inherit; color: inherit; } /* Only the eyebrow and title take craft fonts */
+  /* Cornerstone emission factors (js/cornerstone-report.js), above the industries */
+  #cornerstoneHeading { font-family: inherit; color: inherit; } /* craft.css fonts for the eyebrow and title only */
+  #cornerstoneHeading .craft-title { font-size: clamp(22px, 3vw, 30px); line-height: 1.1; margin: 0 0 8px 0; }
+  #cornerstoneHeading .cs-case { text-transform: none; }
+  #cornerstoneToolbar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 8px; }
+  #cornerstonePlace, #cornerstoneFilter { box-sizing: border-box; height: 30px; padding: 0 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; }
+  #cornerstonePlace { max-width: 240px; }
+  #cornerstoneFilter { width: 220px; }
+  .dark #cornerstonePlace, .dark #cornerstoneFilter { border-color: var(--border-subtle); background: var(--bg-card); color: var(--text-main); }
+  #cornerstoneSummary, #cornerstoneStatus { font-size: 14px; margin: 0 0 10px; }
+  /* The inflation toggle and its info icon, whose panel holds the statement and the logic, in the map's panel (adjustControl) */
+  .cs-adjust { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 13px; margin: 0 0 10px; }
+  .cs-adjust[hidden] { display: none; }
+  .cs-adjust .cs-info-body .cs-adjust-text { font-weight: 600; }
+  .cs-adjust .cs-info-button { display: inline-flex; align-items: center; padding: 2px; border: 0; background: transparent; color: #0366d6; cursor: pointer; border-radius: 50%; }
+  .cs-adjust .cs-info-button:hover, .cs-adjust .cs-info-button[aria-expanded="true"] { background: rgba(3, 102, 214, 0.12); }
+  .dark .cs-adjust .cs-info-button { color: var(--accent, #3a8fd9); }
+  .cs-adjust .cs-info-body { flex-basis: 100%; max-width: 760px; padding: 8px 12px; border-left: 3px solid #0366d6; background: rgba(3, 102, 214, 0.06); font-size: 13px; line-height: 1.45; }
+  .cs-adjust .cs-info-body[hidden] { display: none; }
+  .cs-adjust .cs-info-body p, .cs-adjust .cs-info-body ol { margin: 0 0 6px; }
+  .cs-adjust .cs-info-body ol { padding-left: 20px; }
+  #cornerstoneSummary .cs-note { font-weight: 600; }
+  #cornerstoneNote { font-size: 13px; margin: 8px 0 0; }
+  #cornerstoneSection .cs-bar { display: inline-block; height: 10px; margin-right: 6px; vertical-align: middle; border-radius: 2px; background: #e8833a; }
+  #cornerstoneSection .cs-muted { opacity: 0.65; }
+  #cornerstoneTable .tabulator-row.cs-selected { box-shadow: inset 4px 0 0 #0366d6; background: rgba(3, 102, 214, 0.08); }
+  .dark #cornerstoneTable .tabulator-row.cs-selected { box-shadow: inset 4px 0 0 var(--accent, #3a8fd9); background: rgba(58, 143, 217, 0.18); }
+  /* World regions, or a region's countries: click a row to show that place */
+  #cornerstonePlaces { max-height: 300px; overflow-y: auto; margin-bottom: 12px; max-width: 900px; }
+  .cs-places { border-collapse: collapse; width: 100%; font-size: 13px; }
+  .cs-places th, .cs-places td { padding: 4px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+  .cs-places th { position: sticky; top: 0; background: #f8fafc; font-weight: 600; }
+  .cs-places .cs-num { text-align: right; white-space: nowrap; }
+  .cs-places tbody tr { cursor: pointer; }
+  .cs-places tbody tr:hover { background: rgba(3, 102, 214, 0.08); }
+  .dark .cs-places th { background: var(--bg-card); }
+  .dark .cs-places th, .dark .cs-places td { border-bottom-color: var(--border-subtle); }
   #template-footprint .footprint-hidden { display: none !important; }
   /* Section menu at the top right, like #widgetList in localsite/info/template-charts.html */
   #footprintWidgetHolder { float: right; position: relative; margin-left: 10px; z-index: 5; }
@@ -140,6 +185,7 @@ Scripts in this file don't run there, so the page's scripts go in js/footprint.j
   <div id="footprintWidgetList" class="menuToggleMenu" style="display:none">
     <div class="menuToggleItem" data-section="tradeVizSection">Trade Visualizations<span class="material-icons menuToggleCheck">check</span></div>
     <div class="menuToggleItem" data-section="placeSection">Place and Year<span class="material-icons menuToggleCheck">check</span></div>
+    <div class="menuToggleItem" data-section="cornerstoneSection">Cornerstone Emission Factors<span class="material-icons menuToggleCheck">check</span></div>
     <div class="menuToggleItem" data-section="industriesSection">Industries<span class="material-icons menuToggleCheck">check</span></div>
     <div class="menuToggleItem" data-section="supportingSection">Supporting Industries<span class="material-icons menuToggleCheck">check</span></div>
     <div class="menuToggleItem" data-section="impactsSection">Impacts<span class="material-icons menuToggleCheck">check</span></div>
@@ -168,6 +214,24 @@ Scripts in this file don't run there, so the page's scripts go in js/footprint.j
       <select id="number-format-select"></select>
     </div>
   </div>
+</div>
+
+<!-- Cornerstone GHG emission factors for the World, a world region, a country, or the US with its margins (js/cornerstone-report.js) -->
+<div id="cornerstoneSection">
+  <div id="cornerstoneHeading" class="craft"></div>
+  <div id="cornerstoneToolbar">
+    <select id="cornerstonePlace" aria-label="Place for the emission factors"></select>
+    <div id="cornerstonePrice" class="matrix-toggle" role="group" aria-label="Price">
+      <button type="button" data-price="PRO" title="The cost to the producer plus their profits and taxes paid">Producer price</button>
+      <button type="button" data-price="PUR" title="Producer price plus sales and distribution. For the US, adds the margins.">Purchaser price</button>
+    </div>
+    <input id="cornerstoneFilter" type="search" placeholder="Filter by sector or NAICS" aria-label="Filter sectors by name, Cornerstone code or NAICS code">
+  </div>
+  <p id="cornerstoneStatus"></p>
+  <p id="cornerstoneSummary"></p>
+  <div id="cornerstonePlaces" style="display:none"></div>
+  <div id="cornerstoneTable"></div>
+  <p id="cornerstoneNote"></p>
 </div>
 
 <div id="industriesSection">

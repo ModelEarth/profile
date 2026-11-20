@@ -1,0 +1,98 @@
+/* Shared choropleth map styles for the profile pages (../js/profile-map.js):
+   trade/advantage/ and footprint/. Floating glass panels, the legend and the tooltip. */
+:root {
+    --map-surface: rgba(255, 255, 255, 0.94);
+    --map-border: rgba(15, 23, 42, 0.08);
+    --map-border-strong: rgba(15, 23, 42, 0.16);
+    --map-text: #0f172a;
+    --map-muted: #64748b;
+    --map-hover: #f1f5f9;
+    --map-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+.dark {
+    --map-surface: rgba(32, 32, 34, 0.94);
+    --map-border: rgba(255, 255, 255, 0.08);
+    --map-border-strong: rgba(255, 255, 255, 0.18);
+    --map-text: #f1f5f9;
+    --map-muted: #a1a1aa;
+    --map-hover: #333336;
+    --map-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* Floating panels over the map */
+.glass {
+    background: var(--map-surface);
+    border: 1px solid var(--map-border);
+    border-radius: var(--panel-radius, 16px);
+    box-shadow: var(--map-shadow);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    color: var(--map-text);
+}
+
+.leaflet-container { font-family: inherit; }
+/* The zoom buttons sit at the lower right (ProfileMap.createMap). localsite's map.css hides that corner and its leaflet.css
+   drops the corner's right:0, so both are restored here. The attribution there stays hidden, as on other localsite maps. */
+.profile-map .leaflet-control-container > .leaflet-bottom.leaflet-right { display: block; right: 0; }
+.profile-map .leaflet-bottom.leaflet-right .leaflet-control-attribution { display: none; }
+/* localsite's map.css makes the zoom buttons 36px tall with a 26px line height, which leaves + and - near their tops. Center them.
+   map.css loads after this file, so its .leaflet-touch .leaflet-bar a { display: block } wins any tie: these selectors are more specific.
+   The monospace font draws + and - below the middle of their line, so the bottom padding lifts them 2px. */
+.profile-map .leaflet-bar a.leaflet-control-zoom-in,
+.profile-map .leaflet-bar a.leaflet-control-zoom-out {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0 4px;
+    line-height: 1 !important;
+}
+
+/* Legend at the map's upper right */
+.map-legend {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 1000;
+    width: 260px;
+    padding: 10px 12px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--map-muted);
+    cursor: default; /* Not Leaflet's grab hand: drags on the legend don't move the map (ProfileMap.keepOffMap) */
+}
+.map-legend .legend-title { font-weight: 700; color: var(--map-text); margin-bottom: 6px; }
+.legend-ramp { height: 8px; border-radius: 999px; }
+.legend-scale { display: flex; justify-content: space-between; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.legend-keys { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.legend-key { display: inline-flex; align-items: center; gap: 6px; }
+.legend-key i { display: inline-block; width: 16px; height: 3px; border-radius: 3px; }
+
+/* Labels drawn over the shapes */
+.state-label {
+    fill: #1f2937;
+    font-size: 10px;
+    font-weight: 700;
+    paint-order: stroke;
+    stroke: rgba(255, 255, 255, 0.9);
+    stroke-width: 2.5px;
+    pointer-events: none;
+}
+.dark .state-label { fill: #f4f4f5; stroke: rgba(0, 0, 0, 0.7); }
+
+/* Tooltip following the pointer */
+.map-tooltip {
+    position: fixed;
+    z-index: 2000;
+    display: none;
+    max-width: 300px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.94);
+    color: #fff;
+    font-size: 12px;
+    line-height: 1.5;
+    pointer-events: none;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+.map-tooltip b { font-weight: 700; }
+.map-tooltip .tt-muted { color: rgba(255, 255, 255, 0.7); }

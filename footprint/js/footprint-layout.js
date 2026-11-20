@@ -13,7 +13,8 @@
 
   const styles = [
     'https://unpkg.com/tabulator-tables@5.2.7/dist/css/tabulator.min.css',
-    base + '../item/css/supporting-industries.css' // Top 10 Industries Supplying Production, shared with the product label
+    base + '../item/css/supporting-industries.css', // Top 10 Industries Supplying Production, shared with the product label
+    base + '../../localsite/css/craft.css' // craft-eyebrow and craft-title in the sector and Cornerstone headings, as in codechat
   ];
   // In order: each one uses the ones before it
   const scripts = [
@@ -25,7 +26,9 @@
     base + 'js/commodities-report.js',
     base + '../item/js/supporting-industries.js',
     base + '../../localsite/js/impact-sets.js',
-    base + 'js/footprint.js'
+    base + 'js/footprint.js',
+    base + 'js/cornerstone-report.js', // Cornerstone emission factors from eeio-data/csv
+    base + 'js/footprint-map.js' // World map of those factors, on pages with #footprintMap (index.html)
   ];
 
   // Full address with ".." resolved, so a file the page already loads (such as ../trade-viz-links.js) is matched

@@ -44,6 +44,9 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://d3js.org/d3.v7.min.js" id="localsite/js/d3.v5.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+    <!-- Map, basemap, tooltip, legend and state shapes, shared with ../../footprint/ -->
+    <link rel="stylesheet" href="../../css/profile-map.css" />
+    <script src="../../js/profile-map.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
     <style>
         :root {
@@ -111,16 +114,7 @@
         /* The Earth map's play button shows only with it, until the voice widget moves it into its own controls. */
         #fullscreen:not(.earthShown) > #earthPlayPauseButton { display: none; }
 
-        /* Floating panels over the map */
-        .glass {
-            background: var(--dep-surface);
-            border: 1px solid var(--dep-border);
-            border-radius: var(--panel-radius, 16px);
-            box-shadow: var(--dep-shadow);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            color: var(--dep-text);
-        }
+        /* Floating panels over the map: .glass in ../../css/profile-map.css */
         /* Everything over the map's upper left: the trade buttons, the filter bar when it's above the map,
            and the side panel. Map drags pass through the gaps. */
         .map-overlay {
@@ -128,7 +122,7 @@
             top: 12px;
             left: 12px;
             right: 288px;
-            bottom: 100px; /* Above the zoom buttons */
+            bottom: 12px;
             z-index: 1000;
             display: flex;
             flex-direction: column;
@@ -421,26 +415,7 @@
             color: var(--dep-text);
         }
 
-        #map-legend {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            z-index: 1000;
-            width: 260px;
-            padding: 10px 12px;
-            font-size: 11px;
-            line-height: 1.4;
-            color: var(--dep-muted);
-            cursor: default; /* Not Leaflet's grab hand: drags on the legend don't move the map (disableClickPropagation) */
-        }
-        #legend-title { font-weight: 700; color: var(--dep-text); margin-bottom: 6px; }
-        .legend-ramp { height: 8px; border-radius: 999px; }
-        .legend-scale { display: flex; justify-content: space-between; margin-top: 4px; font-variant-numeric: tabular-nums; }
-        .legend-keys { display: flex; flex-wrap: wrap; gap: 4px 12px; }
-        .legend-key { display: inline-flex; align-items: center; gap: 6px; }
-        .legend-key i { display: inline-block; width: 16px; height: 3px; border-radius: 3px; }
-
-        .leaflet-container { font-family: inherit; }
+        /* The legend (.map-legend), tooltip (.map-tooltip) and .state-label are in ../../css/profile-map.css */
         /* The flow pane covers the map, so only the lines take the pointer and the states below stay clickable.
            .leaflet-pane > svg path.flow outranks Leaflet's .leaflet-pane > svg path { pointer-events: none }. */
         .leaflet-flow-pane > svg { pointer-events: none; }
@@ -451,34 +426,6 @@
             cursor: pointer;
             transition: opacity 0.18s ease;
         }
-        .state-label {
-            fill: #1f2937;
-            font-size: 10px;
-            font-weight: 700;
-            paint-order: stroke;
-            stroke: rgba(255, 255, 255, 0.9);
-            stroke-width: 2.5px;
-            pointer-events: none;
-        }
-        .dark .state-label { fill: #f4f4f5; stroke: rgba(0, 0, 0, 0.7); }
-
-        #map-tooltip {
-            position: fixed;
-            z-index: 2000;
-            display: none;
-            max-width: 300px;
-            padding: 10px 12px;
-            border-radius: 10px;
-            background: rgba(15, 23, 42, 0.94);
-            color: #fff;
-            font-size: 12px;
-            line-height: 1.5;
-            pointer-events: none;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-        }
-        #map-tooltip b { font-weight: 700; }
-        #map-tooltip .tt-muted { color: rgba(255, 255, 255, 0.7); }
-
         .state-report-button {
             display: inline-flex;
             align-items: center;
@@ -681,12 +628,12 @@
     </div>
 
     <div id="map" data-words-dim="0.7">
-        <div id="map-legend" class="glass">
-            <div id="legend-title"></div>
+        <div id="map-legend" class="map-legend glass">
+            <div id="legend-title" class="legend-title"></div>
             <div id="legend-body"></div>
         </div>
     </div>
-    <div id="map-tooltip" data-words-stay></div>
+    <div id="map-tooltip" class="map-tooltip" data-words-stay></div>
 </div>
 
 <div class="content contentpadding large-list dep-reports">
@@ -744,20 +691,10 @@
 const ALL = "ALL";
 const DATA_YEAR = StateFlows.YEAR;
 const TRADE_DATA_URLS = ["../../../trade-data/", "https://raw.githubusercontent.com/ModelEarth/trade-data/main/"];
-const TOPOJSON_URL = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json";
 const INITIAL_MAP_CENTER = [39.5, -98.35];
 const DEFAULT_MAP_ZOOM = 4;
 const CONTIGUOUS_BOUNDS = [[24.4, -124.8], [49.4, -66.9]];
 const TOP_LINKS = 6;
-const FIPS_TO_CODE = {
-    "01": "AL", "02": "AK", "04": "AZ", "05": "AR", "06": "CA", "08": "CO", "09": "CT", "10": "DE",
-    "11": "DC", "12": "FL", "13": "GA", "15": "HI", "16": "ID", "17": "IL", "18": "IN", "19": "IA",
-    "20": "KS", "21": "KY", "22": "LA", "23": "ME", "24": "MD", "25": "MA", "26": "MI", "27": "MN",
-    "28": "MS", "29": "MO", "30": "MT", "31": "NE", "32": "NV", "33": "NH", "34": "NJ", "35": "NM",
-    "36": "NY", "37": "NC", "38": "ND", "39": "OH", "40": "OK", "41": "OR", "42": "PA", "44": "RI",
-    "45": "SC", "46": "SD", "47": "TN", "48": "TX", "49": "UT", "50": "VT", "51": "VA", "53": "WA",
-    "54": "WV", "55": "WI", "56": "WY"
-};
 
 const pct = function (value) {
     if (!Number.isFinite(value)) return "-";
@@ -1307,26 +1244,13 @@ function buildMeasureView() {
 }
 
 function measureScale(defn, values) {
-    const min = d3.min(values);
-    const max = d3.max(values);
-    const interpolator = d3.interpolateRgbBasis(defn.colors);
-    if (min == null) return function () { return null; };
-    if (defn.diverging) {
-        const low = Math.min(min, defn.center - 1e-9);
-        const high = Math.max(max, defn.center + 1e-9);
-        return d3.scaleDiverging(interpolator).domain([low, defn.center, high]);
-    }
-    return d3.scaleSequential(interpolator).domain([min, max === min ? min + 1e-9 : max]);
+    return ProfileMap.colorScale(defn.colors, values, defn);
 }
 
 // ---- Map ----
 
-const map = L.map("map", {
-    scrollWheelZoom: false,
-    zoomSnap: 0.25,
-    minZoom: 3,
-    zoomControl: false
-}).setView(INITIAL_MAP_CENTER, DEFAULT_MAP_ZOOM);
+// Zoom buttons at the lower left (ProfileMap in ../../js/profile-map.js). .map-overlay ends above them.
+const map = ProfileMap.createMap("map", { leaflet: { minZoom: 3 } }).setView(INITIAL_MAP_CENTER, DEFAULT_MAP_ZOOM);
 
 // Fill the map with the lower 48 states, clear of the trade buttons at the top
 function fitContiguousStates() {
@@ -1342,32 +1266,12 @@ if (typeof ResizeObserver === "function") {
         if (!mapMovedByUser) fitContiguousStates();
     }).observe(map.getContainer());
 }
-// Lower left, since localsite hides Leaflet's lower right corner. .map-overlay ends above it.
-L.control.zoom({ position: "bottomleft" }).addTo(map);
 
-// CARTO light and dark basemaps with localsite's key, or Esri gray canvas tiles when the key fails (cartoOrEsri in localsite.js)
-const basemaps = {};
-let basemap = null;
-
-function basemapFor(dark) {
-    const key = dark ? "dark" : "light";
-    if (!basemaps[key]) {
-        basemaps[key] = typeof cartoOrEsri === "function"
-            ? cartoOrEsri(dark ? "dark_all" : "light_all", dark
-                ? ["World_Dark_Gray_Base", "World_Dark_Gray_Reference"]
-                : ["World_Light_Gray_Base", "World_Light_Gray_Reference"], { attributionPrefix: "Data: ModelEarth trade-data | " })
-            : L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "OpenStreetMap contributors | Data: ModelEarth trade-data" });
-    }
-    return basemaps[key];
-}
-
+// CARTO light and dark basemaps, or Esri gray canvas tiles when localsite's key fails
+const tiles = ProfileMap.basemap(map, { attributionPrefix: "Data: ModelEarth trade-data | " });
 function syncTiles() {
-    const next = basemapFor(isDark());
-    if (next === basemap) return;
-    if (basemap) map.removeLayer(basemap);
-    basemap = next.addTo(map);
+    tiles.sync();
 }
-syncTiles();
 
 // Flow lines and labels in their own pane above the state shapes (overlayPane, z-index 400)
 const flowPane = map.createPane("flowPane");
@@ -1403,33 +1307,17 @@ function arrowMarker(direction, size) {
     }
     return "url(#" + id + ")";
 }
-L.DomEvent.disableClickPropagation(document.getElementById("map-legend"));
-L.DomEvent.disableScrollPropagation(document.getElementById("map-legend"));
+ProfileMap.keepOffMap(document.getElementById("map-legend"));
 
 const stateLayerByCode = new Map();
 const stateCenterByCode = new Map();
 const tooltip = document.getElementById("map-tooltip");
 let currentView = null;
 
-function showTooltip(event, html) {
-    tooltip.innerHTML = html;
-    tooltip.style.display = "block";
-    moveTooltip(event);
-}
-
-function moveTooltip(event) {
-    const source = event && event.originalEvent ? event.originalEvent : event;
-    if (!source || typeof source.clientX !== "number") return;
-    const pad = 14;
-    const x = source.clientX + pad + tooltip.offsetWidth > window.innerWidth ? source.clientX - tooltip.offsetWidth - pad : source.clientX + pad;
-    const y = source.clientY + tooltip.offsetHeight + pad > window.innerHeight ? source.clientY - tooltip.offsetHeight - pad : source.clientY + pad;
-    tooltip.style.left = x + "px";
-    tooltip.style.top = y + "px";
-}
-
-function hideTooltip() {
-    tooltip.style.display = "none";
-}
+const mapTooltip = ProfileMap.tooltip(tooltip);
+const showTooltip = mapTooltip.show;
+const moveTooltip = mapTooltip.move;
+const hideTooltip = mapTooltip.hide;
 
 // An arch rising 10% of the line's length (at least 10px) at its middle. A cubic curve with its control points a
 // quarter of the way in from each end, rather than a third as a plain quadratic curve would have, so it's fuller.
@@ -1467,30 +1355,17 @@ function stateTooltip(code) {
     return lines.join("");
 }
 
-// The middle of a state's bounds, where its label and lines go. Alaska's Aleutian Islands cross the 180th meridian,
-// which stretches its bounds around the globe and puts their middle near Norway, so for a state that spans more than
-// half the globe use the bounds of its largest piece instead.
-function stateCenter(layer) {
-    const bounds = layer.getBounds();
-    if (bounds.getEast() - bounds.getWest() <= 180) return bounds.getCenter();
-    let largest = null;
-    let largestArea = -1;
-    layer.getLatLngs().forEach(function (polygon) {
-        const pieceBounds = L.latLngBounds(Array.isArray(polygon[0]) ? polygon[0] : polygon);
-        const area = (pieceBounds.getEast() - pieceBounds.getWest()) * (pieceBounds.getNorth() - pieceBounds.getSouth());
-        if (area > largestArea) { largest = pieceBounds; largestArea = area; }
-    });
-    return largest ? largest.getCenter() : bounds.getCenter();
-}
+// The middle of a state's bounds, where its label and lines go (Alaska uses its largest piece, since the
+// Aleutian Islands cross the 180th meridian)
+const stateCenter = ProfileMap.shapeCenter;
 
-function buildStateMap(topoData) {
-    const geojson = topojson.feature(topoData, topoData.objects.states);
-    L.geoJSON(geojson, {
+function buildStateMap(features) {
+    L.geoJSON(features, {
         style: function () {
             return { color: "#94a3b8", weight: 0.7, fillColor: "#e2e8f0", fillOpacity: 0.3 };
         },
         onEachFeature: function (feature, layer) {
-            const code = FIPS_TO_CODE[String(feature.id).padStart(2, "0")];
+            const code = feature.properties.code;
             if (!code || !appState.stateNames.has(code)) return;
             stateLayerByCode.set(code, layer);
             stateCenterByCode.set(code, stateCenter(layer));
@@ -1703,12 +1578,10 @@ function renderLegend(view) {
         return;
     }
     const domain = view.scale.domain ? view.scale.domain() : [];
-    const stops = view.defn.colors.join(", ");
     title.textContent = view.defn.label + " | " + industryLabel(appState.industry);
     // Without the duplicate when a diverging scale's end is its center
     const labels = Array.from(new Set(domain.map(view.defn.format)));
-    body.innerHTML = '<div class="legend-ramp" style="background:linear-gradient(90deg,' + stops + ')"></div>' +
-        '<div class="legend-scale">' + labels.map(function (label) { return "<span>" + label + "</span>"; }).join("") + "</div>" +
+    body.innerHTML = ProfileMap.legendRamp(view.defn.colors, labels) +
         '<div class="legend-keys" style="margin-top:6px"><span class="legend-key"><i style="background:' +
         cssVar(appState.report === "dependency" ? "--inbound" : "--outbound") + '"></i>' +
         (appState.report === "dependency" ? "Largest supplying states" : "Largest buying states") + "</span></div>";
@@ -2243,16 +2116,13 @@ function renderAll() {
 async function init() {
     try {
         const files = StateFlows.FILES;
-        const [tradeUsText, industryCategoryText, categoryStateText, ratesText, stateCodesText, topoData] = await Promise.all([
+        const [tradeUsText, industryCategoryText, categoryStateText, ratesText, stateCodesText, stateFeatures] = await Promise.all([
             fetchTradeData(files.tradeUs),
             fetchTradeData(files.industryCategory),
             fetchTradeData(files.categoryState),
             fetchTradeData(files.eurRates).catch(function () { return ""; }),
             fetchTradeData(files.stateCodes),
-            fetch(TOPOJSON_URL).then(function (response) {
-                if (!response.ok) throw new Error("Unable to load state geometry");
-                return response.json();
-            })
+            ProfileMap.stateFeatures()
         ]);
         d3.csvParse(stateCodesText).forEach(function (row) {
             const code = normalizeCode(row.state_code);
@@ -2267,7 +2137,7 @@ async function init() {
         writeFilterCache();
         pushFiltersToHash();
         syncTiles();
-        buildStateMap(topoData);
+        buildStateMap(stateFeatures);
         addReportMenus();
         document.addEventListener("hashChangeEvent", handleHashChange);
         renderAll();

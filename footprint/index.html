@@ -8,11 +8,82 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <script type="text/javascript" src="/localsite/js/localsite.js?showheader=true&showsearch=true"></script>
+
+  <!-- World map of the emission factors (js/footprint-map.js), on the map shared with ../trade/advantage/ -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://d3js.org/d3.v7.min.js" id="localsite/js/d3.v5.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+  <link rel="stylesheet" href="../css/profile-map.css" />
+  <script src="../js/profile-map.js"></script>
+
   <!-- Loads template-footprint.html and the scripts that fill it (Tabulator, ECharts, useeio.js, config.js, footprint.js...) -->
   <script src="js/footprint-layout.js"></script>
+
+  <style>
+    /* The map spans the window, above the page's content. Its panel and legend float over it, or stack below it when narrow. */
+    /* The map area is localsite's #fullscreen (base.css), the window's height below the header and search filters,
+       as on ../trade/advantage/. "Open Earth View" puts the Earth map (#mainEarthDisplay) in it over this map. */
+    #fullscreen.footprint-map-wrap { position: relative; display: flex; flex-direction: column; height: auto;
+      min-height: max(480px, var(--fullscreen-height)); }
+    #fullscreen > #mainEarthDisplay { position: absolute !important; inset: 0; }
+    #fullscreen.earthShown > #footprintMap { visibility: hidden; }
+    #fullscreen:not(.earthShown) > #earthPlayPauseButton { display: none; }
+    #footprintMap { position: relative; flex: 1 1 auto; width: 100%; container-type: inline-size; }
+    #footprintMapCanvas { position: absolute; inset: 0; background: var(--bg-primary, #f8fafc); }
+    #footprintMapPanel { position: absolute; top: 12px; left: 12px; z-index: 1000; width: 250px; max-height: calc(100% - 110px);
+      overflow-y: auto; padding: 10px 12px; font-size: 13px; box-sizing: border-box; }
+    #footprintMapPanel .fm-title { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+    #footprintMapPanel .fm-subtitle { font-weight: 700; margin: 10px 0 4px; }
+    #footprintMapPanel .fm-field, #footprintMapLegend .fm-field { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; color: var(--map-muted); font-size: 11px; }
+    #footprintMapPanel select, #footprintMapLegend select { width: 100%; height: 28px; padding: 0 6px; font-size: 13px; border: 1px solid var(--map-border-strong); border-radius: 6px;
+      background: transparent; color: var(--map-text); }
+    .dark #footprintMapPanel select option, .dark #footprintMapLegend select option { background: #262628; }
+    #footprintMapPanel .fm-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0; }
+    #footprintMapPanel .fm-row:first-child { margin: 0 0 8px; }
+    #footprintMapPanel .fm-toggle {display: inline-flex; border: 1px solid var(--map-border-strong); border-radius: 6px; overflow: hidden; }
+    #footprintMapPanel .fm-toggle button { border: 0; padding: 4px 8px; font-size: 12px; background: transparent; color: var(--map-text); cursor: pointer; }
+    #footprintMapPanel .fm-toggle button + button { border-left: 1px solid var(--map-border-strong); }
+    #footprintMapPanel .fm-toggle button.active { background: #0366d6; color: #fff; }
+    #footprintMapPanel .fm-check { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer; white-space: nowrap; }
+    #footprintMapPanel .fm-note { font-size: 12px; color: #b45309; }
+    #footprintMapPanel .fm-note:empty { display: none; }
+    .fm-region { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
+    .fm-region:hover { background: var(--map-hover); }
+    .fm-region.is-selected { font-weight: 700; box-shadow: inset 3px 0 0 #0366d6; }
+    .fm-region i { flex: 0 0 12px; height: 12px; border-radius: 3px; border: 1px solid var(--map-border-strong); }
+    .fm-region span { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fm-region b { font-weight: 600; font-variant-numeric: tabular-nums; }
+    .fm-region em { flex: 0 0 16px; font-style: normal; text-align: right; color: var(--map-muted); font-variant-numeric: tabular-nums; }
+    #footprintMapPanel .fm-radios { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--map-text); }
+    #footprintMapPanel .fm-radios label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+    #footprintMapPanel .fm-hint { font-size: 11px; color: var(--map-muted); margin-bottom: 4px; }
+    #footprintMapPanel .fm-hint:empty, #footprintMapRanked:empty { display: none; }
+    #footprintMapRanked { margin-bottom: 4px; }
+    .fm-rank-badge { display: flex; align-items: center; justify-content: center; border-radius: 999px; background: #0f172a; color: #fff;
+      font-size: 11px; font-weight: 700; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35); box-sizing: border-box; }
+    .dark .fm-rank-badge { background: #f8fafc; color: #0f172a; border-color: #18181b; }
+    #footprintMapPanel .cs-adjust { font-size: 12px; gap: 4px 6px; margin: 6px 0; }
+    #footprintMapPanel .cs-info-body { font-size: 12px; padding: 6px 8px; }
+    #footprintMapLegend { width: 270px; font-size: 13px; max-height: calc(100% - 110px); overflow-y: auto; box-sizing: border-box; }
+    #footprintMapLegend .fm-field { margin-bottom: 8px; font-size: 12px; }
+    #footprintMapLegend .legend-title { font-size: 14px; line-height: 1.3; }
+    @media (max-width: 760px) { #fullscreen.footprint-map-wrap { min-height: 0; } }
+    @container (max-width: 760px) {
+      #footprintMap { height: auto; }
+      #footprintMapCanvas { position: relative; height: 380px; }
+      #footprintMapPanel, #footprintMapLegend { position: static; width: auto; max-height: none; margin: 8px 12px; }
+    }
+  </style>
 </head>
 
 <body>
+
+<!-- Cornerstone emission factors by country, world region or US state, across the window (js/footprint-map.js).
+     In localsite's #fullscreen, which fills the window below the header and search filters, as on ../trade/advantage/. -->
+<div id="fullscreen" class="footprint-map-wrap">
+  <div id="footprintMap"></div>
+</div>
 
 <div class="content contentpadding">
   <!-- template-footprint.html, also shown on engine/index.html -->

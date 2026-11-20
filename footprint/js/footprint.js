@@ -986,6 +986,16 @@ function footprintUnLink(code) {
 
 // A newer main() run, from a hash change, takes over from an earlier one still loading
 let mainRun = 0;
+// Subheader above the sector's H3: its ID and where that ID comes from, since the site mixes industry IDs
+// (BEA Detail in the US model, BEA Summary in state models, NAICS and Exiobase elsewhere). "BEA Detail · 531HSO/US · USEEIOv2.0.1-411"
+function sectorIdSubheader(sector) {
+  const modelName = getModelFolderName();
+  const scheme = /-s-/.test(modelName) ? 'BEA Summary' : 'BEA Detail'; // State models (e.g. GAEEIOv1.0-s-20) use BEA Summary sectors
+  const title = `${scheme} sector code from the EPA ${modelName} model (${getModelYear()}). The impacts below come from this model.`;
+  // craft-eyebrow from localsite/css/craft.css, as in codechat. The .craft wrapper (sectorHeading) supplies its colors and fonts.
+  return `<div class="craft-eyebrow sectorIdSubheader" title="${title}"><b>${scheme}</b> / ${sector.code}/${sector.location} / <span class="sectorIdModel">${modelName}</span></div>`;
+}
+
 async function main() {
   const run = ++mainRun;
   let hash = getHash();
@@ -1154,7 +1164,8 @@ async function main() {
   indicatorScaleMax = Math.max(...fullTableData.map(d =>
     Math.max(0, d.supplierValue) + Math.max(0, d.directValue) + Math.max(0, d.buyersValue || 0)), 0) || 1;
 
-  info.innerHTML = `<h3 style="font-size:22px">${sector.name}</h3>Environmental profile based on ${demandId} for <b>${sector.id}</b>`;
+  // The ID subheader and the sector's title in the craft.css styles of codechat
+  info.innerHTML = `<div class="craft sectorHeading">${sectorIdSubheader(sector)}<h3 class="craft-title">${sector.name}</h3></div>Environmental profile based on ${demandId} for <b>${sector.id}</b>`;
   
   // Filter according to the selected impact filter and create the table
   filterTableData();

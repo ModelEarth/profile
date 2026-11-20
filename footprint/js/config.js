@@ -154,31 +154,39 @@ function shownDataYear() {
 // Year dropdown, driven by the hash: choosing a year calls goHash({year}), and a hash change
 // (including Back) moves the dropdown. The page's own hashChangeEvent listener reloads the data.
 // For EPA it lists the USEEIO model years. For UN it lists the Exiobase years; a note under the impacts
-// chart (indicatorYearNote, filled by js/footprint.js) names the years without greenhouse gas and jobs factors. The two share year=.
+// chart (indicatorYearNote, filled by js/footprint.js) names the years without greenhouse gas and jobs factors.
+// It also lists the Cornerstone EEIO years (2024 to 2026) for the Cornerstone report and the world map
+// (js/cornerstone-report.js, js/footprint-map.js), which call select.refreshYears once they load. All share year=.
+// Without a year in the hash it shows the newest year (2026), the one the report and map show.
 function setupModelYearSelect(selectId) {
   const select = document.getElementById(selectId);
   if (!select || select.dataset.ready) return;
   select.dataset.ready = '1';
+  const hashYear = () => String(getUrlHash().year || '').trim();
   const fill = () => {
     const un = showsExiobase();
-    const years = un ? EXIOBASE_YEARS : USEEIO_MODEL_YEARS;
+    const dataYears = un ? EXIOBASE_YEARS : USEEIO_MODEL_YEARS;
+    const cornerstoneYears = (window.CornerstoneData && CornerstoneData.YEARS) || [];
+    const years = [...new Set([...dataYears, ...cornerstoneYears])].sort((a, b) => b - a);
     const key = (un ? 'un:' : 'epa:') + years.join(',');
     if (select.dataset.years !== key) {
       select.dataset.years = key;
       select.innerHTML = '';
       years.forEach(year => {
-        const note = un && typeof EXIOBASE_YEAR_NOTES !== 'undefined' && EXIOBASE_YEAR_NOTES[year];
+        let note = un && typeof EXIOBASE_YEAR_NOTES !== 'undefined' && EXIOBASE_YEAR_NOTES[year];
+        if (!dataYears.includes(year)) note = `Cornerstone emission factors only. ${un ? 'Exiobase' : 'USEEIO'} shows ${un ? getExiobaseYear() : getModelYear()}.`;
         const option = new Option(year, year);
         if (note) option.title = note;
         select.add(option);
       });
-      select.title = un ? 'Exiobase trade data year (UN)' : 'USEEIO model year';
+      select.title = un ? 'Year: Exiobase trade data (UN) and Cornerstone emission factors' : 'Year: USEEIO model and Cornerstone emission factors';
     }
-    select.value = shownDataYear();
+    select.value = years.includes(hashYear()) ? hashYear() : years[0];
   };
   fill();
+  select.refreshYears = fill;
   select.addEventListener('change', () => {
-    if (select.value !== shownDataYear()) goHash({ year: select.value });
+    if (select.value !== hashYear()) goHash({ year: select.value });
   });
   document.addEventListener('hashChangeEvent', fill);
   document.addEventListener('supportingIndustriesSource', fill);
