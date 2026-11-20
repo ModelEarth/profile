@@ -19,21 +19,65 @@
 // next is the estimated change in emissions: (1 + real GDP growth) x (change in the 2024-dollar factor) - 1, with the
 // growth from eeio-data/gdp/real-gdp-growth.csv (see eeio-data/gdp/README.md). The map (js/footprint-map.js) shares the toggle.
 (function () {
-  // eeio-data sits beside profile/ in the webroot
+  // The eeio-data .csv and .json files load directly from GitHub. When Settings sets Online to false (the onlinemode
+  // cookie that localsite/js/localsite.js reads into #onlinemode), they load from the local eeio-data beside profile/ in the webroot.
   const scriptSrc = document.currentScript ? document.currentScript.src : window.location.href;
-  const CS_DATA = new URL('../../../eeio-data/csv/', scriptSrc).href;
+  const CS_RAW_GITHUB = 'https://raw.githubusercontent.com/ModelEarth/eeio-data/main/';
+  function csOffline() {
+    let mode;
+    if (typeof Cookies !== 'undefined') {
+      mode = Cookies.get('onlinemode');
+    } else {
+      const match = document.cookie.match(/(?:^|;\s*)onlinemode=([^;]*)/);
+      mode = match ? decodeURIComponent(match[1]) : undefined;
+    }
+    return mode === 'false';
+  }
+  // A path within the eeio-data repo, e.g. 'csv/2026PRO.csv', as a URL to fetch
+  function eeioDataUrl(path) {
+    return csOffline() ? new URL('../../../eeio-data/' + path, scriptSrc).href : CS_RAW_GITHUB + path;
+  }
+  // A line in the Console Log (#logText in #log_display, localsite/info/template-main.html), which shows when Online is false
+  function csLog(text) {
+    console.log(text);
+    const append = elm => elm.appendChild(document.createTextNode(text + '\n'));
+    const logText = document.getElementById('logText');
+    if (logText) append(logText);
+    else if (typeof waitForElm === 'function') waitForElm('#logText').then(append);
+  }
+  // Fetch a path within the eeio-data repo. When offline, log each file loaded locally, or that the local eeio-data is missing.
+  let csMissingLogged = false;
+  async function eeioDataFetch(path) {
+    const url = eeioDataUrl(path);
+    if (!csOffline()) return fetch(url);
+    const missing = reason => {
+      if (csMissingLogged) return;
+      csMissingLogged = true;
+      csLog(`eeio-data is not available locally (${path} ${reason}). Clone ModelEarth/eeio-data into the webroot, or set Online in Settings.`);
+    };
+    let response;
+    try {
+      response = await fetch(url);
+    } catch (error) {
+      missing(error.message);
+      throw error;
+    }
+    if (response.ok) csLog(`eeio-data/${path} loaded locally`);
+    else missing(response.status);
+    return response;
+  }
   const CS_GITHUB = 'https://github.com/ModelEarth/eeio-data/blob/main/csv/';
   const CS_YEARS = ['2024', '2025', '2026'];
   const CS_GASES = ['CO2', 'CH4', 'N2O', 'HFCs', 'PFCs', 'SF6', 'NF3'];
   const CS_PRICE_NAMES = { PRO: 'Producer price', PUR: 'Purchaser price' };
   const CS_WORLD = 'GLOB';
   const CS_BASE_YEAR = '2024'; // The year of the emissions data. 2025 and 2026 are inflation adjusted from it.
-  const CS_GROWTH = new URL('../../../eeio-data/gdp/real-gdp-growth.csv', scriptSrc).href;
+  const CS_GROWTH = 'gdp/real-gdp-growth.csv';
   // Each sector's price change since 2024, from eeio-data/gdp/price-index.py, so removing inflation doesn't need the 2024 factors
-  const CS_PRICE_INDEX = new URL('../../../eeio-data/gdp/price-index.csv', scriptSrc).href;
+  const CS_PRICE_INDEX = 'gdp/price-index.csv';
   // Each location's average factor over all sectors, by year, price and basis (eeio-data/averages/location-averages.py),
   // for the map's "All sectors (average)" and the report's change line without each year's 5 MB of factors
-  const CS_AVERAGES = new URL('../../../eeio-data/averages/location-averages.csv', scriptSrc).href;
+  const CS_AVERAGES = 'averages/location-averages.csv';
   const CS_GROWTH_GITHUB = 'https://github.com/ModelEarth/eeio-data/tree/main/gdp';
 
   // Cornerstone's 3-letter country codes (Locations.csv) with the 2-letter codes the hash uses, e.g. IND IN
@@ -57,7 +101,7 @@
   const textCache = {};
   function loadText(path) {
     if (!textCache[path]) {
-      textCache[path] = fetch(CS_DATA + path).then(response => {
+      textCache[path] = eeioDataFetch('csv/' + path).then(response => {
         if (!response.ok) throw new Error(`eeio-data/csv/${path} ${response.status}`);
         return response.text();
       }).catch(error => { delete textCache[path]; throw error; });
@@ -159,7 +203,7 @@
   }
   function loadPriceIndexFile() {
     return once('priceIndexFile', async () => {
-      const response = await fetch(CS_PRICE_INDEX);
+      const response = await eeioDataFetch(CS_PRICE_INDEX);
       if (!response.ok) throw new Error(`price-index.csv ${response.status}`);
       const rows = parseCsv(await response.text());
       const header = rows.shift() || [];
@@ -214,7 +258,7 @@
   }
   function loadAveragesFile() {
     return once('averagesFile', async () => {
-      const response = await fetch(CS_AVERAGES);
+      const response = await eeioDataFetch(CS_AVERAGES);
       if (!response.ok) throw new Error(`location-averages.csv ${response.status}`);
       const rows = parseCsv(await response.text());
       const header = rows.shift() || [];
@@ -224,7 +268,7 @@
   // location -> {name, source2025, 2025: 0.0216 (2.16%), ...}, the change in production with inflation removed
   function loadGrowth() {
     return once('growth', async () => {
-      const response = await fetch(CS_GROWTH);
+      const response = await eeioDataFetch(CS_GROWTH);
       if (!response.ok) throw new Error(`real-gdp-growth.csv ${response.status}`);
       const rows = parseCsv(await response.text());
       const header = rows.shift() || [];
