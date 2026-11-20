@@ -6,6 +6,7 @@
 //
 // Hash: gas=CO2 (one of the 8 emission columns, TotalGHGs when absent), mapview=region | change | level | world | share (region when absent),
 // year=2025 (2024 to 2026, otherwise 2026, from the page's #year-select), maprank=top | bottom (the 10 highest or lowest in the view, all when absent),
+// fill=region (fill each country with its world region's value, the Countries | By region toggle; each country's own when absent),
 // adjust=published (the factors as released; shared with the report. By default inflation is removed: factors in 2024 dollars,
 // and "Change" is the estimated change in emissions, real GDP growth times the change in the 2024-dollar factor; see js/cornerstone-report.js),
 // and the place (country=, worldregion=, state=) shared with the rest of the page.
@@ -39,15 +40,16 @@
   holder.innerHTML = `
     <div id="footprintMapCanvas"></div>
     <div id="footprintMapPanel" class="glass">
-      <div class="fm-row">
-        <label class="fm-check" title="Fill each country with its world region's value"><input type="checkbox" id="footprintMapByRegion"> By region</label>
-      </div>
       <div class="fm-title">Emission factors map</div>
       <label class="fm-field"><span>Show</span><select id="footprintMapView"></select></label>
       <label class="fm-field"><span>Sector</span><select id="footprintMapSector"><option value="">All sectors (average)</option></select></label>
       <div id="footprintMapAdjust"></div>
       <div id="footprintMapNote" class="fm-note"></div>
-      <div class="fm-field"><span>Countries</span>
+      <div class="fm-field">
+        <div id="footprintMapByRegion" class="fm-toggle" role="group" aria-label="Fill the map by">
+          <button type="button" data-byregion="0" aria-pressed="true" class="active" title="Fill each country with its own value">Countries</button>
+          <button type="button" data-byregion="1" aria-pressed="false" title="Fill each country with its world region's value">By region</button>
+        </div>
         <div id="footprintMapRank" class="fm-radios" role="radiogroup" aria-label="Countries shown">
           <label><input type="radio" name="footprintMapRank" value=""> All</label>
           <label><input type="radio" name="footprintMapRank" value="top"> Top 10</label>
@@ -74,7 +76,7 @@
   // ---- State ----
   let sector = '';           // Cornerstone code, or '' for the average of all sectors
   let sectorFromDemand = null; // The hash's demand when the sector was last set from it
-  let byRegion = false;
+  let byRegion = false;      // fill=region in the hash
   let countryLayers = null;  // iso3 -> [layers]
   let stateLayer = null;
   let rankLayer = null;      // Numbered badges on the top or bottom 10
@@ -84,6 +86,7 @@
   let run = 0;
 
   const hashGas = () => { const g = String(getHash().gas || ''); return GAS_OPTIONS.some(o => o[0] === g) ? g : 'TotalGHGs'; };
+  const hashFill = () => String(getHash().fill || '') === 'region';
   const hashRank = () => { const r = String(getHash().maprank || ''); return r === 'top' || r === 'bottom' ? r : ''; };
   const prevYear = year => { const y = String(Number(year) - 1); return CD.YEARS.includes(y) ? y : null; };
   function hashView(year) {
@@ -421,6 +424,7 @@
 
   // ---- Render ----
   async function render() {
+    byRegion = hashFill();
     const thisRun = ++run;
     const year = CD.year();
     const view = hashView(year);
@@ -437,7 +441,11 @@
     const place = CD.place();
     document.getElementById('footprintMapGas').value = gas;
     fillViewOptions(year, view, CD.adjusted());
-    document.getElementById('footprintMapByRegion').checked = byRegion;
+    document.querySelectorAll('#footprintMapByRegion button').forEach(button => {
+      const on = (button.dataset.byregion === '1') === byRegion;
+      button.classList.toggle('active', on);
+      button.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
     // The year comes from the page's year dropdown (#year-select), which also lists the USEEIO and Exiobase years
     const note = document.getElementById('footprintMapNote');
     const asked = String(getHash().year || '').trim();
@@ -557,7 +565,12 @@
   });
   document.getElementById('footprintMapView').addEventListener('change', event => goHash({ mapview: event.target.value }));
   document.getElementById('footprintMapSector').addEventListener('change', event => { sector = event.target.value; render(); });
-  document.getElementById('footprintMapByRegion').addEventListener('change', event => { byRegion = event.target.checked; render(); });
+  document.getElementById('footprintMapByRegion').addEventListener('click', event => {
+    const button = event.target.closest('button[data-byregion]');
+    if (!button || (button.dataset.byregion === '1') === byRegion) return;
+    if (button.dataset.byregion === '1') goHash({ fill: 'region' });
+    else goHash({}, ['fill']);
+  });
   document.getElementById('footprintMapRank').addEventListener('change', event => {
     if (event.target.value) goHash({ maprank: event.target.value });
     else goHash({}, ['maprank']);
