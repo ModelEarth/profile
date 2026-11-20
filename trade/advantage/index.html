@@ -83,7 +83,7 @@
 
         /* The map area is localsite's #fullscreen (base.css), the window's height below the header and search
            filters, as on engine. "Open Earth View" puts the Earth map (#mainEarthDisplay) in it over the trade map,
-           and the voice widget's words and controls (.claude-voice-words, .claude-voice-ui) fill it.
+           and the voice widget's words and controls (.voice-chat-words, .voice-chat-ui) fill it.
            A min-height, so the side panel can stack above the map in narrow views. */
         #fullscreen.dep-map-wrap {
             position: relative;
@@ -554,7 +554,7 @@
 <!-- #fullscreen (localsite/css/base.css): localsite's showGlobalMap() puts the Earth map (#mainEarthDisplay) here
      over the trade map, with this play/pause button at its lower right. -->
 <div id="fullscreen" class="dep-map-wrap">
-<!-- While the voice widget's (engine/claude-voice.js) words float over the map, the trade map fades only 30% (data-words-dim),
+<!-- While the voice widget's (engine/js/voice-chat.js) words float over the map, the trade map fades only 30% (data-words-dim),
      staying in view and clickable, and the tooltip stays as it is. -->
 <div id="earthPlayPauseButton" class="earthPlay playPauseButton" role="button" tabindex="0" title="Play" aria-label="Play"><i class="material-icons play-pause-icon" aria-hidden="true">play_arrow</i></div>
     <div class="map-overlay" data-words-dim="0.7">
