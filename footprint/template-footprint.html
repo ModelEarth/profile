@@ -54,7 +54,9 @@ Scripts in this file don't run there, so the page's scripts go in js/footprint.j
   #matrixToneLegend { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
   #matrixToneLegend .tone { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
   #matrixToneLegend .tone i { display: inline-block; width: 0.75em; height: 0.75em; border-radius: 2px; } /* About the text's height */
-  #footprintPageLink { white-space: nowrap; }
+  #footprintPageLink, #matrixDatasetsLink { white-space: nowrap; }
+  #matrixDatasets { margin: 8px 0 16px; }
+  #matrixDatasets h1 { font-size: 22px; }
   #indicatorToolbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin: 4px 0 10px; clear: both; container-type: inline-size; }
   #impactSetHolder { margin-left: auto; }
   /* Narrow: the impact set dropdown moves to its own line above the Suppliers / Industry / Buyers buttons, at the left */
@@ -155,7 +157,10 @@ Scripts in this file don't run there, so the page's scripts go in js/footprint.j
   #cornerstoneTable .tabulator-row.cs-selected { box-shadow: inset 4px 0 0 #0366d6; background: rgba(3, 102, 214, 0.08); }
   .dark #cornerstoneTable .tabulator-row.cs-selected { box-shadow: inset 4px 0 0 var(--accent, #3a8fd9); background: rgba(58, 143, 217, 0.18); }
   /* World regions, or a region's countries: click a row to show that place */
-  #cornerstonePlaces { max-height: 300px; overflow-y: auto; margin-bottom: 12px; max-width: 900px; }
+  #cornerstonePlaces { max-height: 300px; overflow-y: auto; margin-bottom: 28px; max-width: 900px; }
+  /* Title of the sector table, sized as #commodityUNTitle */
+  #cornerstoneTableTitle { font-size: 22px; margin: 0 0 10px; }
+  #cornerstoneTableTitle:empty { display: none; }
   .cs-places { border-collapse: collapse; width: 100%; font-size: 13px; }
   .cs-places th, .cs-places td { padding: 4px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
   .cs-places th { position: sticky; top: 0; background: #f8fafc; font-weight: 600; }
@@ -192,7 +197,6 @@ Scripts in this file don't run there, so the page's scripts go in js/footprint.j
     <div class="menuToggleItem" data-section="impactsSection">Impacts<span class="material-icons menuToggleCheck">check</span></div>
     <div class="menuToggleItem" data-section="matrixSection">Suppliers and Buyers<span class="material-icons menuToggleCheck">check</span></div>
     <div class="menuToggleItem" data-section="dataSourcesSection">Data Sources<span class="material-icons menuToggleCheck">check</span></div>
-    <div class="menuToggleItem" data-section="aboutSection">Model Datasets<span class="material-icons menuToggleCheck">check</span></div>
     <div id="footprintWidgetListShowAll" class="menuToggleItem" data-action="show-all" style="display:none">Show All Sections</div>
   </div>
 </div>
@@ -231,6 +235,7 @@ Scripts in this file don't run there, so the page's scripts go in js/footprint.j
   <p id="cornerstoneStatus"></p>
   <p id="cornerstoneSummary"></p>
   <div id="cornerstonePlaces" style="display:none"></div>
+  <h3 id="cornerstoneTableTitle"></h3>
   <div id="cornerstoneTable"></div>
   <p id="cornerstoneNote"></p>
 </div>
@@ -314,6 +319,10 @@ Scripts in this file don't run there, so the page's scripts go in js/footprint.j
       <a id="footprintPageLink" href="" style="display:none">Profile Footprint</a>
     </div>
   </div>
+  <!-- The model's matrices and datasets (sector_profile_info.md), revealed by the Matrix Datasets link at the end of #matrixInfo (withDatasetsLink in js/footprint.js) -->
+  <div id="matrixDatasets" hidden>
+    <div id="infoDiv"></div>
+  </div>
   <div id="matrixTable"></div>
 </div>
 
@@ -323,10 +332,6 @@ Scripts in this file don't run there, so the page's scripts go in js/footprint.j
   <div id="dataSourcesTable"></div>
 </div>
 
-<!-- sector_profile_info.md -->
-<div id="aboutSection">
-  <div id="infoDiv"></div>
-</div>
 
 </div>
 </body>

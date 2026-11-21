@@ -486,7 +486,7 @@
       formatter: cell => csNumber(cell.getValue()) });
     const columns = [
       { title: 'Code', field: 'code', width: 84, headerTooltip: 'Cornerstone sector code, based on BEA Detail commodity codes' },
-      { title: 'Sector', field: 'name', minWidth: 220, widthGrow: 3, // Tabulator 5.2 passes (event, cell), earlier versions (cell)
+      { title: 'Sector', field: 'name', width: 320, // Longer names end in an ellipsis. Tabulator 5.2 passes (event, cell), earlier versions (cell)
         tooltip: (e, cell) => ((cell && cell.getRow) ? cell : e).getRow().getData().description,
         formatter: cell => escapeHtml(cell.getValue()) },
       { title: 'Greenhouse Gases (all)', field: 'total', hozAlign: 'left', sorter: 'number', minWidth: 130, formatter: totalFormatter,
@@ -630,7 +630,9 @@
     places.innerHTML = placesHtml(place, placeSummaries(place, reference, factors));
     places.style.display = places.innerHTML ? '' : 'none';
 
-    // Sector table
+    // Sector table, with its title
+    document.getElementById('cornerstoneTableTitle').textContent =
+      `${name} Emission Factors by Sector (${rows.length} sectors, ${shownPrice === 'PUR' ? 'purchaser' : 'producer'} price)`;
     const columns = tableColumns(place, !!margins, compare.filter(c => c.data));
     const options = {
       data: rows, columns, layout: 'fitDataStretch', height: '460px', index: 'code',

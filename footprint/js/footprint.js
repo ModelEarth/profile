@@ -1232,7 +1232,7 @@ async function loadMatrixData(sector, analysis) {
     const stateCode = (getUrlHash().state || '').split(',')[0].toUpperCase();
     const placeName = stateCode ? ((typeof getState === 'function' && getState(stateCode)) || stateCode) : 'US';
     matrixEpaInfo = `<small>${placeName} Coefficient A Matrix (<a href="${dataSourceUrl}" target="_blank">${modelName}</a>)</small>`;
-    matrixInfo.innerHTML = matrixEpaInfo;
+    matrixInfo.innerHTML = withDatasetsLink(matrixEpaInfo);
     
     // Get matrix data from the model
     const sectors = await model.sectors();
@@ -1735,6 +1735,26 @@ window.addEventListener('hashchange', updateFootprintPageLink);
 document.addEventListener('hashChangeEvent', updateFootprintPageLink);
 // A quiet hash change (replaceState) sends no event, so refresh again just before the link is used
 ['mousedown', 'focus', 'touchstart'].forEach(type => document.getElementById('footprintPageLink')?.addEventListener(type, updateFootprintPageLink));
+// The Matrix Datasets link at the end of #matrixInfo shows and hides the model's matrix datasets (#matrixDatasets)
+// just below, above the matrix table. Delegated, since #matrixInfo is rewritten (withDatasetsLink).
+document.addEventListener('click', event => {
+  const link = event.target.closest && event.target.closest('#matrixDatasetsLink');
+  if (!link) return;
+  event.preventDefault();
+  const datasets = document.getElementById('matrixDatasets');
+  datasets.hidden = !datasets.hidden;
+  link.setAttribute('aria-expanded', String(!datasets.hidden));
+});
+// #matrixInfo's text followed by the Matrix Datasets link, which replaces "matrices." when the text ends with it
+function withDatasetsLink(html) {
+  if (!html) return html;
+  const datasets = document.getElementById('matrixDatasets');
+  const link = `<a id="matrixDatasetsLink" href="" role="button" aria-controls="matrixDatasets" `
+    + `aria-expanded="${datasets ? String(!datasets.hidden) : 'false'}">Matrix Datasets</a>`;
+  const end = html.endsWith('</small>') ? '</small>' : '';
+  const text = html.slice(0, html.length - end.length);
+  return (text.endsWith('matrices.') ? text.slice(0, -'matrices.'.length) + link : text + ' ' + link) + end;
+}
 
 // Dark text on light tiles, white text on dark tiles
 function treemapLabelColor(color) {
@@ -2424,16 +2444,16 @@ function markMatrixSource() {
 function showMatrixInfo() {
   const info = document.getElementById('matrixInfo');
   if (!info) return;
-  if (regionView) { info.innerHTML = regionMatrixInfoHTML(); return; }
-  if (matrixSource !== 'un') { info.innerHTML = matrixEpaInfo; return; }
+  if (regionView) { info.innerHTML = withDatasetsLink(regionMatrixInfoHTML()); return; }
+  if (matrixSource !== 'un') { info.innerHTML = withDatasetsLink(matrixEpaInfo); return; }
   const ex = matrixExiobase;
   if (!ex || ex.unavailable) { info.innerHTML = ''; return; }
   const year = exiobaseYear();
   const placeName = (typeof getState === 'function' && getState(ex.state)) || ex.state;
   const url = `https://github.com/ModelEarth/trade-data/tree/main/year/${year}/US/domestic`;
-  info.innerHTML = `<small>${placeName} share of the Exiobase industries ${ex.targets.join(', ')} in the `
+  info.innerHTML = withDatasetsLink(`<small>${placeName} share of the Exiobase industries ${ex.targets.join(', ')} in the `
     + `<a href="${url}" target="_blank">Exiobase ${year} trade tables</a> (trade-us.csv), split among states by BEA GDP by state, as in the Top 10 panel.`
-    + (getExiobaseYear() !== year ? ` ${getExiobaseYear()} has no state tables, so the nearest year with them is shown.` : '') + '</small>';
+    + (getExiobaseYear() !== year ? ` ${getExiobaseYear()} has no state tables, so the nearest year with them is shown.` : '') + '</small>');
 }
 
 // When UN is chosen but can't show the sector, say why in place of the treemap and table. With no Exiobase
