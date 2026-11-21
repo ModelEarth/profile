@@ -44,10 +44,9 @@
     #footprintMapPanel .fm-toggle {display: inline-flex; border: 1px solid var(--map-border-strong); border-radius: 6px; overflow: hidden; }
     #footprintMapPanel .fm-toggle button { border: 0; padding: 4px 8px; font-size: 12px; background: transparent; color: var(--map-text); cursor: pointer; }
     #footprintMapPanel .fm-toggle button + button { border-left: 1px solid var(--map-border-strong); }
-    #footprintMapPanel .fm-toggle button.active { background: #0366d6; color: #fff; }
+    #footprintMapPanel .fm-toggle button.active { background: #4a0012; color: #fff; }
     #footprintMapPanel .fm-check { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer; white-space: nowrap; }
     #footprintMapByRegion { align-self: flex-start; margin: 8px 0 4px; }
-    #footprintMapPanel #footprintMapByRegion button.active { background: #4a0012; color: #fff; }
     #footprintMapPanel .fm-note { font-size: 12px; color: #b45309; }
     #footprintMapPanel .fm-note:empty { display: none; }
     .fm-region { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
@@ -62,11 +61,19 @@
     #footprintMapPanel .fm-hint { font-size: 11px; color: var(--map-muted); margin-bottom: 4px; }
     #footprintMapPanel .fm-hint:empty, #footprintMapRanked:empty { display: none; }
     #footprintMapRanked { margin-bottom: 4px; }
+    /* The top or bottom 10: rows reach into the panel's left padding, with a narrower rank column, so the color squares sit 20px further left */
+    #footprintMapRanked .fm-region { margin-left: -12px; padding-left: 2px; }
+    #footprintMapRanked .fm-region em { flex-basis: 12px; margin-right: -2px; font-size: 11px; }
     .fm-rank-badge { display: flex; align-items: center; justify-content: center; border-radius: 999px; background: #0f172a; color: #fff;
       font-size: 11px; font-weight: 700; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35); box-sizing: border-box; }
     .dark .fm-rank-badge { background: #f8fafc; color: #0f172a; border-color: #18181b; }
     #footprintMapPanel .cs-adjust { font-size: 12px; gap: 4px 6px; margin: 6px 0; }
     #footprintMapPanel .cs-info-body { font-size: 12px; padding: 6px 8px; }
+    /* While the inflation info (.cs-info-button) is open, the panel widens to the map's width, up to 600px */
+    #footprintMapPanel { transition: width 0.2s ease; }
+    @container (min-width: 761px) {
+      #footprintMapPanel:has(.cs-info-body:not([hidden])) { width: min(600px, calc(100% - 24px)); }
+    }
     #footprintMapLegend { width: 270px; font-size: 13px; max-height: calc(100% - 110px); overflow-y: auto; box-sizing: border-box; }
     #footprintMapLegend .fm-field { margin-bottom: 8px; font-size: 12px; }
     #footprintMapLegend .legend-title { font-size: 14px; line-height: 1.3; }

@@ -458,7 +458,9 @@ const CommoditiesReport = (function() {
       load: load,
       render: render,
       markSelected: markSelected,
-      rows: () => report.rows
+      rows: () => report.rows,
+      shownLimit: shownLimit,                     // The rows shown (5, 10, 20, 50), or 0 for all
+      listedCount: () => listedRows().length      // The rows the table lists
     };
   }
 

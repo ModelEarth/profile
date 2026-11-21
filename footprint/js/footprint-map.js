@@ -42,8 +42,8 @@
     <div id="footprintMapPanel" class="glass">
       <div class="fm-title">Emission factors map</div>
       <label class="fm-field"><span>Show</span><select id="footprintMapView"></select></label>
-      <label class="fm-field"><span>Sector</span><select id="footprintMapSector"><option value="">All sectors (average)</option></select></label>
       <div id="footprintMapAdjust"></div>
+      <label class="fm-field"><span>Sector</span><select id="footprintMapSector"><option value="">All sectors (average)</option></select></label>
       <div id="footprintMapNote" class="fm-note"></div>
       <div class="fm-field">
         <div id="footprintMapByRegion" class="fm-toggle" role="group" aria-label="Fill the map by">
@@ -395,11 +395,13 @@
   }
   function area(layer) { const b = layer.getBounds(); return (b.getEast() - b.getWest()) * (b.getNorth() - b.getSouth()); }
 
-  function fitPlace(place) {
-    const key = place.kind + ':' + place.code + ':' + (place.state || '');
+  // widen: zoom steps out from the fit, so the colors of the surrounding countries show (the change view, with a country in the hash)
+  function fitPlace(place, widen) {
+    const key = place.kind + ':' + place.code + ':' + (place.state || '') + ':' + widen;
     if (key === fittedPlace) return;
     fittedPlace = key;
-    const pad = { paddingTopLeft: [holder.clientWidth > 760 ? 280 : 20, 20], paddingBottomRight: [holder.clientWidth > 760 ? 280 : 20, 20] };
+    const padX = holder.clientWidth > 760 ? 280 : 20;
+    const pad = { paddingTopLeft: [padX, 20], paddingBottomRight: [padX, 20] };
     const boundsOf = layers => {
       let bounds = null;
       layers.forEach(layer => {
@@ -418,7 +420,14 @@
       const members = ((reference.regions.get(place.code) || {}).countries || []).flatMap(c => countryLayers.get(c) || []);
       if (members.length) bounds = boundsOf(members).pad(0.15);
     }
-    if (bounds) map.fitBounds(bounds, Object.assign({ maxZoom: 6 }, pad));
+    if (bounds && widen) {
+      // The padding is the same on both sides, so the fit centers on the bounds
+      const step = map.options.zoomDelta || 1;
+      const zoom = Math.max(Math.min(map.getBoundsZoom(bounds, false, L.point(padX * 2, 40)), 6) - widen * step, map.getMinZoom());
+      const center = map.unproject(map.project(bounds.getSouthWest(), zoom).add(map.project(bounds.getNorthEast(), zoom)).divideBy(2), zoom);
+      map.setView(center, zoom);
+    }
+    else if (bounds) map.fitBounds(bounds, Object.assign({ maxZoom: 6 }, pad));
     else map.fitBounds(WORLD_BOUNDS);
   }
 
@@ -555,7 +564,10 @@
     } else if (stateLayer && map.hasLayer(stateLayer)) {
       map.removeLayer(stateLayer);
     }
-    fitPlace(place);
+    // Factor (or emissions) change with a country in the hash: 1 zoom step wider for All, 2 for the top or bottom 10
+    const hashCountry = String(getHash().country || '');
+    const widen = view === 'change' && hashCountry && hashCountry !== 'all' ? (hashRank() ? 2 : 1) : 0;
+    fitPlace(place, widen);
   }
 
   // ---- Controls ----

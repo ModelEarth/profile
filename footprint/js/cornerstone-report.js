@@ -417,7 +417,13 @@
   const mean = values => values.reduce((sum, v) => sum + v, 0) / (values.length || 1);
 
   // ---- Report state ----
-  let price = null;   // PRO or PUR, chosen with the toggle. Defaults to PUR for the US, so its margins show.
+  // PRO or PUR, chosen with the toggle and kept in the browser for the next visit. Defaults to PUR for the US, so its margins show.
+  const CS_PRICE_KEY = 'footprint_price_preference';
+  let price = null;
+  try {
+    const saved = localStorage.getItem(CS_PRICE_KEY);
+    if (CS_PRICE_NAMES[saved]) price = saved;
+  } catch (e) { /* Storage blocked: use the default */ }
   let filterText = '';
   let table = null;
   let tableMax = 1;
@@ -660,6 +666,7 @@
       const button = event.target.closest('button[data-price]');
       if (!button) return;
       price = button.dataset.price;
+      try { localStorage.setItem(CS_PRICE_KEY, price); } catch (e) { /* Storage blocked: the choice lasts until reload */ }
       render();
     });
     document.getElementById('cornerstonePlace').addEventListener('change', async event => {

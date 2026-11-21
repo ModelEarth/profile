@@ -87,6 +87,7 @@ Scripts in this file don't run there, so the page's scripts go in js/footprint.j
   .dark #indicatorParts label[data-part-label="buyers"]:not(.active) { background: color-mix(in srgb, var(--part) 6%, var(--bg-card, #222)); }
   #commoditySourceBar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 8px; }
   #commodityUNRegions { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  #commodityUNTitle:empty { display: none; }
   #commodityUNRegions button { padding: 3px 12px; border: 1px solid #ccc; border-radius: 999px; background: #fff; color: #333; font-size: 13px; cursor: pointer; }
   #commodityUNRegions button[aria-pressed="true"] { background: #0366d6; border-color: #0366d6; color: #fff; }
   .dark #commodityUNRegions button { background: var(--bg-card); color: var(--text-main); border-color: var(--border-subtle); }
@@ -121,11 +122,11 @@ Scripts in this file don't run there, so the page's scripts go in js/footprint.j
   #impactsSection, #matrixSection, #dataSourcesSection { margin-bottom: 40px; }
   /* Industry ID and its origin above the sector's H3 (sectorIdSubheader in js/footprint.js) */
   /* Styled by craft-eyebrow (localsite/css/craft.css). The model name keeps its case: USEEIOv2.0.1, not USEEIOV2.0.1 */
-  #impactsSection .sectorIdSubheader { margin-bottom: 0; }
-  #impactsSection .sectorIdSubheader .sectorIdModel { text-transform: none; }
+  #impactsSection .sectorIdSubheader, #supportingIndustriesEyebrow { margin-bottom: 0; }
+  #impactsSection .sectorIdSubheader .sectorIdModel, #supportingIndustriesEyebrow .sectorIdModel { text-transform: none; }
   /* craft-title (localsite/css/craft.css), smaller than codechat's 36-76px since sector names run long */
-  #impactsSection .sectorHeading .craft-title { font-size: clamp(26px, 4vw, 40px); line-height: 1.05; margin: 0 0 10px 0; }
-  #impactsSection .sectorHeading { font-family: inherit; color: inherit; } /* Only the eyebrow and title take craft fonts */
+  #impactsSection .sectorHeading .craft-title, #supportingHeading .craft-title { font-size: clamp(22px, 3vw, 30px); line-height: 1.1; margin: 0 0 8px 0; }
+  #impactsSection .sectorHeading, #supportingHeading { font-family: inherit; color: inherit; } /* Only the eyebrow and title take craft fonts */
   /* Cornerstone emission factors (js/cornerstone-report.js), above the industries */
   #cornerstoneHeading { font-family: inherit; color: inherit; } /* craft.css fonts for the eyebrow and title only */
   #cornerstoneHeading .craft-title { font-size: clamp(22px, 3vw, 30px); line-height: 1.1; margin: 0 0 8px 0; }
@@ -237,6 +238,8 @@ Scripts in this file don't run there, so the page's scripts go in js/footprint.j
 <div id="industriesSection">
   <!-- UN / EPA toggle (../item/js/supporting-industries.js), and for UN the US and state buttons -->
   <div id="commoditySourceBar"><span id="commoditySource"></span><span id="commodityUNRegions" role="group" aria-label="Region" style="display:none"></span></div>
+  <!-- "Top 5 Georgia Industries" (UN) or "Top 5 Georgia Commodities" (EPA), following the count buttons below the table (showCommodityTitle in js/footprint.js) -->
+  <h3 id="commodityUNTitle" style="font-size:22px"></h3>
   <!-- Commodities report from js/commodities-report.js, also on commodities.html. Its .commodity-report-footer goes after the table. -->
   <div id="commodityEPA"><div id="commodityTable"></div></div>
   <!-- UN list of Exiobase industries, through the same report, with its sources below -->
@@ -251,7 +254,11 @@ Scripts in this file don't run there, so the page's scripts go in js/footprint.j
 
 <!-- Top 10 Industries Supplying Production, shared with the product label (profile/item) -->
 <div id="supportingSection">
-  <h3 id="supportingIndustriesHeading" style="display:none"></h3>
+  <!-- craft.css eyebrow (the UN or EPA source, following the toggle below) and title, as in #impactsSection (showSupportingIndustries in js/footprint.js) -->
+  <div id="supportingHeading" class="craft" style="display:none">
+    <div id="supportingIndustriesEyebrow" class="craft-eyebrow"></div>
+    <h3 id="supportingIndustriesHeading" class="craft-title"></h3>
+  </div>
   <div id="supportingIndustries"></div>
 </div>
 

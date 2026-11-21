@@ -80,6 +80,7 @@ function loadCommoditiesReport() {
       rows: 5,
       filter: isOwnRegion,
       linkNames: false,
+      onRender: showCommodityTitle,
       selected: () => getHash().demand || '',
       onRowClick: (row, selected) => {
         if (selected) goHash({}, ['demand']); // All of the place's industries
@@ -348,7 +349,7 @@ function loadCommoditiesReportUN() {
       totalsLine: unCommodityTotalsLine,
       isSelected: row => unSelectedIds.has(row.code),
       onRowClick: selectUnIndustry,
-      onRender: () => { showUnCommodityRegions(); showUnCommoditySources(); }
+      onRender: () => { showCommodityTitle(); showUnCommodityRegions(); showUnCommoditySources(); }
     });
   }
   showUnCommodityRegions();
@@ -356,16 +357,29 @@ function loadCommoditiesReportUN() {
   updateUnSelection();
 }
 
-// Buttons choosing the place the UN list shows
+// The title above the shown list, with the count chosen below the table ("All 163" when all show):
+// "Top 5 Georgia Industries" for UN's Exiobase industries, "Top 5 Georgia Commodities" for EPA's model commodities
+function showCommodityTitle() {
+  const el = document.getElementById('commodityUNTitle');
+  if (!el) return;
+  const un = showsUnCommodities();
+  const report = un ? commoditiesReportUN : commoditiesReport;
+  const count = report ? report.listedCount() : 0;
+  const limit = report ? report.shownLimit() : 0;
+  el.textContent = count ? `${limit ? `Top ${limit}` : `All ${count}`} ${unRegionName(unCommodityRegion())} ${un ? 'Industries' : 'Commodities'}` : '';
+}
+
+// Buttons choosing the place the UN or EPA list shows. For EPA, a state's button shows its state model and US the national model.
 function showUnCommodityRegions() {
   const el = document.getElementById('commodityUNRegions');
   if (!el) return;
   const locations = unCommodityLocations();
-  el.style.display = showsUnCommodities() && locations.length > 1 ? '' : 'none';
+  el.style.display = locations.length > 1 ? '' : 'none';
   const shown = unCommodityRegion();
+  const what = showsUnCommodities() ? 'Exiobase industries' : 'EPA commodities';
   el.innerHTML = locations.map(location =>
     `<button type="button" data-region="${location}" aria-pressed="${location === shown}"
-      title="Exiobase industries in ${unRegionName(location)}">${location === 'WORLD' ? 'World' : location.replace(/^US-/, '')}</button>`).join('');
+      title="${what} in ${unRegionName(location)}">${location === 'WORLD' ? 'World' : location.replace(/^US-/, '')}</button>`).join('');
 }
 
 // Why a place has no rows: not in the year's files (only 2018 has all 49 Exiobase regions), or not a
@@ -485,6 +499,7 @@ function showCommoditySource() {
   document.getElementById('commodityEPA').style.display = un ? 'none' : '';
   document.getElementById('commodityUN').style.display = un ? '' : 'none';
   // Each list loads while shown, so Tabulator sizes its columns
+  showCommodityTitle(); // Until the list renders: the shown report's title, or none while it first loads
   if (un) {
     loadCommoditiesReportUN();
   } else {
@@ -941,12 +956,37 @@ function showRegionDataSources() {
 // national model and when no commodity is selected.
 let supportingIndustriesPanel = null;
 let supportingIndustriesKey = null; // The newest request, so an older one still loading is dropped
+let supportingIndustriesShown = null; // { sector, state, industries } for the eyebrow
+
+// The eyebrow above the heading: the source the UN / EPA toggle below it shows, with the panel's year
+// "EPA / 2020 / 111CA/US-GA / GAEEIOv1.0-s-20" or "UN / Exiobase 2022 / TEXTI/US-GA"
+function showSupportingEyebrow() {
+  const el = document.getElementById('supportingIndustriesEyebrow');
+  const shown = supportingIndustriesShown;
+  if (!el || !shown) return;
+  const source = getSupportingIndustriesSource();
+  const yearSelect = document.querySelector('#supportingIndustries .si-year-select');
+  const year = (yearSelect && yearSelect.value) || SUPPORTING_INDUSTRIES_DEFAULT_YEAR;
+  const place = `US-${shown.state}`;
+  el.title = SUPPORTING_INDUSTRIES_SOURCES[source].title;
+  el.innerHTML = source === 'un'
+    ? `<b>UN</b> / Exiobase ${year} / ${shown.industries.length ? shown.industries.join(', ') : 'No Exiobase industries'}/${place}`
+    : `<b>EPA</b> / USEEIO ${year} / ${shown.sector.code}/${place} / <span class="sectorIdModel">${getModelFolderName()}</span>`;
+}
+// The UN / EPA toggle (setSupportingIndustriesSource) and the panel's dropdowns update the eyebrow. Queued so the
+// panel's own handlers set its year first (EPA has 2020 only, and a factor change can narrow the UN years).
+document.addEventListener('supportingIndustriesSource', () => queueMicrotask(showSupportingEyebrow));
+document.addEventListener('change', event => {
+  if (event.target.closest && event.target.closest('#supportingIndustries select')) queueMicrotask(showSupportingEyebrow);
+});
 async function showSupportingIndustries(sector) {
   const state = getModelState();
   const heading = document.getElementById('supportingIndustriesHeading');
+  const headingWrap = document.getElementById('supportingHeading');
   const hide = () => {
     supportingIndustriesKey = null;
-    heading.style.display = 'none';
+    supportingIndustriesShown = null;
+    headingWrap.style.display = 'none';
     if (supportingIndustriesPanel) supportingIndustriesPanel.hide();
   };
   if (!sector || !state || sector.location !== `US-${state}` || !USEEIO_STATE_MODELS.has(state)) {
@@ -971,8 +1011,10 @@ async function showSupportingIndustries(sector) {
   });
   if (supportingIndustriesKey !== key) return;
   heading.textContent = `${getState(state) || state} ${sector.name}`;
-  heading.style.display = '';
-  supportingIndustriesPanel.setSector(sector.code, industries);
+  supportingIndustriesShown = { sector, state, industries };
+  headingWrap.style.display = '';
+  supportingIndustriesPanel.setSector(sector.code, industries); // Fills the year dropdown the eyebrow reads
+  showSupportingEyebrow();
   supportingIndustriesPanel.show(state, key, hide); // A state model that fails to load hides both
 }
 
@@ -1165,7 +1207,7 @@ async function main() {
     Math.max(0, d.supplierValue) + Math.max(0, d.directValue) + Math.max(0, d.buyersValue || 0)), 0) || 1;
 
   // The ID subheader and the sector's title in the craft.css styles of codechat
-  info.innerHTML = `<div class="craft sectorHeading">${sectorIdSubheader(sector)}<h3 class="craft-title">${sector.name}</h3></div>Environmental profile based on ${demandId} for <b>${sector.id}</b>`;
+  info.innerHTML = `<div class="craft sectorHeading">${sectorIdSubheader(sector)}<h3 class="craft-title">${unRegionName(sector.location)} ${sector.name}</h3></div>Environmental profile based on ${demandId} for <b>${sector.id}</b>`;
   
   // Filter according to the selected impact filter and create the table
   filterTableData();
