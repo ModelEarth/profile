@@ -58,11 +58,15 @@ Scripts in this file don't run there, so the page's scripts go in js/footprint.j
   #matrixDatasets { margin: 8px 0 16px; }
   #matrixDatasets h1 { font-size: 22px; }
   #indicatorToolbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin: 4px 0 10px; clear: both; container-type: inline-size; }
-  #impactSetHolder { margin-left: auto; }
-  /* Narrow: the impact set dropdown moves to its own line above the Suppliers / Industry / Buyers buttons, at the left */
-  @container (max-width: 700px) {
-    #impactSetHolder { order: -1; flex-basis: 100%; margin-left: 0; }
-  }
+  /* The impact set dropdown as a title at the left, on its own line above the Suppliers / Industry / Buyers buttons,
+     with an arrow after it (::after, which clicks pass through) to show it can be changed */
+  #impactSetHolder { order: -1; flex-basis: 100%; display: flex; align-items: center; }
+  #impact-set-select { appearance: none; -webkit-appearance: none; field-sizing: content; border: none; background: transparent; color: inherit;
+    font: inherit; font-size: 22px; font-weight: 700; line-height: 1.2; padding: 2px 28px 2px 0; margin: 0; cursor: pointer; outline: none; box-shadow: none; -webkit-tap-highlight-color: transparent; user-select: none; }
+  #impact-set-select:focus, #impact-set-select:focus-visible { outline: none; box-shadow: none; }
+  #impact-set-select option { font-size: 15px; font-weight: 400; background: var(--bg-card, #fff); color: var(--text-main, #111); }
+  #impactSetHolder::after { content: ""; width: 8px; height: 8px; margin: -6px 0 0 -20px; border: solid currentColor; border-width: 0 2.5px 2.5px 0;
+    transform: rotate(45deg); pointer-events: none; opacity: 0.75; }
   #indicatorParts { margin-right: 5px; }
   /* Part colors, also used for the bar sections */
   #indicatorParts label[data-part-label="supplier"] { --part: #7cc3ee; --part-text: #1f2937; }

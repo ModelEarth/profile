@@ -2875,10 +2875,14 @@ function initializeDropdownsAndEvents() {
     });
   }
 
-  // Impact set dropdown (Air, Water, Land, Energy, Health, Prosperity) from localsite/js/impact-sets.js
+  // Impact set dropdown (All Factors, Adverse Factors, Air Factors ... Positive Factors for Prosperity) from localsite/js/impact-sets.js
   if (typeof addImpactSetSelect === 'function') {
     impactSetControl = addImpactSetSelect('#impact-set-select', {
+      // "Air Factors", "Health Factors", ... and "Positive Factors" for Prosperity
+      allLabel: 'All Factors',
+      titles: Object.assign(Object.fromEntries([impactSetAdverse].concat(impactSets).map(set => [set.id, set.title + ' Factors'])), { prosperity: 'Positive Factors' }),
       onChange: setId => {
+        fitImpactSetTitle();
         if (setId === 'energy' && getHash().state) {
           showNationalModel(setId);
           return;
@@ -2887,6 +2891,7 @@ function initializeDropdownsAndEvents() {
         updateTables();
       }
     });
+    fitImpactSetTitle();
     if (impactSetControl && fullTableData.length) {
       impactSetControl.setAvailable(fullTableData.map(d => d.code), ['energy']);
       filterTableData();
@@ -2897,6 +2902,19 @@ function initializeDropdownsAndEvents() {
 
 // Impact set dropdown control, from addImpactSetSelect in localsite/js/impact-sets.js
 let impactSetControl = null;
+
+// The impact set dropdown is styled as a title with an arrow after it (#impact-set-select in template-footprint.html).
+// field-sizing fits it to the chosen set; other browsers get its width from the chosen option's text.
+function fitImpactSetTitle() {
+  const select = document.getElementById('impact-set-select');
+  if (!select || (window.CSS && CSS.supports('field-sizing', 'content'))) return;
+  const option = select.options[select.selectedIndex];
+  if (!option) return;
+  const style = getComputedStyle(select);
+  const context = (fitImpactSetTitle.canvas || (fitImpactSetTitle.canvas = document.createElement('canvas'))).getContext('2d');
+  context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  select.style.width = Math.ceil(context.measureText(option.textContent).width + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + 2) + 'px';
+}
 
 // The chosen impact set: the dropdown once it is set up, otherwise the hash
 function currentImpactSet() {

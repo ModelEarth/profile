@@ -67,6 +67,17 @@
     .fm-rank-badge { display: flex; align-items: center; justify-content: center; border-radius: 999px; background: #0f172a; color: #fff;
       font-size: 11px; font-weight: 700; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35); box-sizing: border-box; }
     .dark .fm-rank-badge { background: #f8fafc; color: #0f172a; border-color: #18181b; }
+    /* Name tags (showPlaceTags in js/footprint-map.js): over a country covered by its states (US), and over the chosen state.
+       The marker is 0 by 0 at the tag's point, and the span is centered on it. The active tag is the current choice. */
+    .fm-place-tag span { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); white-space: nowrap; padding: 5px 12px;
+      background: #0f172a; color: #fff; font-size: 15px; font-weight: 700; letter-spacing: 0.05em; line-height: 18px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35); cursor: pointer; }
+    .fm-place-tag span:hover, .fm-place-tag:focus-visible span { background: #334155; }
+    /* The country's tag while one of its states is chosen: a lighter charcoal */
+    .fm-place-tag:not(.is-active) span { background: #52525b; }
+    .fm-place-tag:not(.is-active) span:hover, .fm-place-tag:not(.is-active):focus-visible span { background: #3f3f46; }
+    .fm-place-tag:focus-visible { outline: none; }
+    .fm-place-tag.is-below span { transform: translate(-50%, 14px); } /* Under a top or bottom 10 badge at the same point */
     #footprintMapPanel .cs-adjust { font-size: 12px; gap: 4px 6px; margin: 6px 0; }
     #footprintMapPanel .cs-info-body { font-size: 12px; padding: 6px 8px; }
     /* While the inflation info (.cs-info-button) is open, the panel widens to the map's width, up to 600px */

@@ -79,6 +79,7 @@
   let byRegion = false;      // fill=region in the hash
   let countryLayers = null;  // iso3 -> [layers]
   let stateLayer = null;
+  let placeTagLayer = null;  // Name tags over the country covered by its states, and the chosen state
   let rankLayer = null;      // Numbered badges on the top or bottom 10
   const stateLayers = new Map();
   let current = null;        // The drawn data, for the tooltip
@@ -225,6 +226,81 @@
       }
     }).addTo(map);
   }
+  // Name tags on the map: over the chosen country, over a country covered by its states (which still chooses the country),
+  // and over the chosen state. tags: [{ latlng, label, active, below, tooltip(action), select }], or [] to remove them.
+  // An active tag is the current choice, and a click on it returns to the world view; otherwise a click calls select.
+  // below puts the tag under its point, to clear a top or bottom 10 badge there. Usable by any country given states.
+  const WORLD_ACTION = 'Click to return to the world view';
+  function showPlaceTags(tags) {
+    if (!placeTagLayer) placeTagLayer = L.layerGroup().addTo(map);
+    placeTagLayer.clearLayers();
+    tags.forEach(({ latlng, label, active, below, tooltip: tip, select }) => {
+      const tag = L.marker(latlng, {
+        // Sized by its text and centered on latlng in index.html's CSS
+        icon: L.divIcon({ className: 'fm-place-tag' + (active ? ' is-active' : '') + (below ? ' is-below' : ''), html: `<span>${escapeHtml(label)}</span>`, iconSize: [0, 0] }),
+        keyboard: true,
+        alt: label
+      });
+      tag.on('click', () => active ? CD.goPlace(CD.WORLD) : select());
+      tag.on('mouseover', event => tooltip.show(event, tip(active ? WORLD_ACTION : undefined)));
+      tag.on('mousemove', tooltip.move);
+      tag.on('mouseout', tooltip.hide);
+      placeTagLayer.addLayer(tag);
+    });
+  }
+  // A country's tag, labeled with label or its name, at center ([lat, lng]) or the centroid of its largest piece.
+  // With a top or bottom 10 badge on the country, the tag goes just under the badge.
+  function countryTag(iso3, label, center, active) {
+    const layers = countryLayers && countryLayers.get(iso3);
+    if (!layers || !layers.length) return null;
+    const largest = layers.reduce((a, b) => area(b) > area(a) ? b : a);
+    const info = current && countryLoc(current.reference, iso3);
+    const name = (info && info.country.name) || (largest.feature && largest.feature.properties.name) || iso3;
+    const badged = !center && current && current.rankedSet && !byRegion && current.rankedSet.has(iso3);
+    return { latlng: center || (badged ? PM.shapeCenter(layers[0]) : largestCentroid(largest)), label: label || name, active, below: badged,
+      tooltip: action => countryTooltip(iso3, name, action), select: () => CD.goPlace(iso3) };
+  }
+  // The tag for the chosen state, at the centroid of its largest piece (inside curved states like Florida, unlike its bounds' middle)
+  function stateTag(code) {
+    const layer = stateLayers.get(code);
+    if (!layer) return null;
+    const name = (typeof getState === 'function' && getState(code)) || (layer.feature && layer.feature.properties.name) || code;
+    return { latlng: largestCentroid(layer), label: name, active: true, tooltip: action => stateTooltip(code, action), select: () => {} };
+  }
+  // A point inside the largest piece: its centroid, or when that falls outside the piece (Norway's is in Sweden),
+  // the middle of the widest stretch of the piece along the centroid's latitude
+  function largestCentroid(layer) {
+    let best = null;
+    (function walk(latlngs) {
+      if (!Array.isArray(latlngs) || !latlngs.length) return;
+      if (!(latlngs[0] instanceof L.LatLng)) { latlngs.forEach(walk); return; }
+      // The outer ring of a piece: its signed area and centroid, in degrees (fine at a country's size)
+      let a = 0, x = 0, y = 0;
+      for (let i = 0, j = latlngs.length - 1; i < latlngs.length; j = i++) {
+        const p = latlngs[j], q = latlngs[i];
+        const cross = p.lng * q.lat - q.lng * p.lat;
+        a += cross; x += (p.lng + q.lng) * cross; y += (p.lat + q.lat) * cross;
+      }
+      if (a && (!best || Math.abs(a) > best.area)) best = { area: Math.abs(a), ring: latlngs, latlng: L.latLng(y / (3 * a), x / (3 * a)) };
+    })(layer.getLatLngs());
+    if (!best) return layer.getBounds().getCenter();
+    // Where the ring crosses the centroid's latitude, sorted west to east: each pair bounds a stretch inside the piece
+    const { ring, latlng } = best;
+    const crossings = [];
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const p = ring[j], q = ring[i];
+      if ((p.lat > latlng.lat) !== (q.lat > latlng.lat)) crossings.push(p.lng + (latlng.lat - p.lat) / (q.lat - p.lat) * (q.lng - p.lng));
+    }
+    crossings.sort((m, n) => m - n);
+    let widest = null;
+    for (let k = 0; k + 1 < crossings.length; k += 2) {
+      const west = crossings[k], east = crossings[k + 1];
+      if (latlng.lng >= west && latlng.lng <= east) return latlng; // The centroid is inside
+      if (!widest || east - west > widest[1] - widest[0]) widest = [west, east];
+    }
+    return widest ? L.latLng(latlng.lat, (widest[0] + widest[1]) / 2) : latlng;
+  }
+
   async function ensureStates() {
     if (stateLayer) return;
     const features = await PM.stateFeatures();
@@ -244,7 +320,8 @@
     });
   }
 
-  function countryTooltip(iso3, shapeName) {
+  // action: the last line, what a click does
+  function countryTooltip(iso3, shapeName, action = 'Click to show this country') {
     if (!current) return `<b>${escapeHtml(shapeName || iso3)}</b>`;
     const info = countryLoc(current.reference, iso3);
     if (!info) return `<b>${escapeHtml(shapeName || iso3)}</b><div class="tt-muted">Not in the Cornerstone locations</div>`;
@@ -268,14 +345,14 @@
     }
     if (region) lines.push(`<div class="tt-muted">${escapeHtml(region.name)}: ${CD.formatNumber(current.cur.get(region.code))}, World: ${CD.formatNumber(current.cur.get(CD.WORLD))}</div>`);
     if (regional) lines.push(`<div class="tt-muted">${byRegion ? 'Colored by its region' : 'Uses its region\'s factors'}</div>`);
-    lines.push('<div class="tt-muted">Click to show this country</div>');
+    lines.push(`<div class="tt-muted">${action}</div>`);
     return lines.join('');
   }
-  function stateTooltip(code) {
+  function stateTooltip(code, action = 'Click to show this state') {
     const name = (typeof getState === 'function' && getState(code)) || code;
     const lines = [`<b>${escapeHtml(name)}</b>`, '<div class="tt-muted">Cornerstone factors are national, so states share the US factors and US margins.</div>'];
     if (current) lines.push(`<div>US ${escapeHtml(current.viewLabel)}: <b>${formatView(current.view, current.valueOf('USA'))}</b></div>`);
-    lines.push('<div class="tt-muted">Click to show this state</div>');
+    lines.push(`<div class="tt-muted">${action}</div>`);
     return lines.join('');
   }
 
@@ -299,6 +376,14 @@
       weight: selected ? 2.4 : inRegion || ranked ? 1.4 : 0.5
     }));
     if (selected || inRegion || ranked) layers.forEach(layer => layer.bringToFront());
+    // Restyling the US (as on its mouseout, along its border) brings it over the states, so put them back on top
+    if (iso3 === 'USA') statesToFront();
+  }
+  function statesToFront() {
+    if (!stateLayer || !map.hasLayer(stateLayer)) return;
+    stateLayer.bringToFront();
+    const selected = current && current.place.state && stateLayers.get(current.place.state);
+    if (selected) selected.bringToFront();
   }
 
   // ---- Panel and legend ----
@@ -561,8 +646,12 @@
         layer.setStyle({ color: selected ? (dark ? '#f8fafc' : '#0f172a') : (dark ? '#71717a' : '#64748b'), weight: selected ? 2.4 : 0.6 });
         if (selected) layer.bringToFront();
       });
-    } else if (stateLayer && map.hasLayer(stateLayer)) {
-      map.removeLayer(stateLayer);
+      // US at the middle of the continental US (in Kansas), active when the US itself is chosen, and the chosen state
+      showPlaceTags([countryTag('USA', 'US', [39.5, -98.35], !place.state), place.state && stateTag(place.state)].filter(Boolean));
+    } else {
+      if (stateLayer && map.hasLayer(stateLayer)) map.removeLayer(stateLayer);
+      // The chosen country's name over it
+      showPlaceTags(place.kind === 'country' ? [countryTag(place.code, '', null, true)].filter(Boolean) : []);
     }
     // Factor (or emissions) change with a country in the hash: 1 zoom step wider for All, 2 for the top or bottom 10
     const hashCountry = String(getHash().country || '');

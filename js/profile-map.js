@@ -123,16 +123,17 @@
 
     // The middle of a shape's bounds, for its label. Shapes crossing the 180th meridian (Alaska's Aleutian Islands,
     // Russia, Fiji) stretch around the globe, so for one spanning more than half the globe use its largest piece.
-    function shapeCenter(layer) {
+    // options.largestPiece uses the largest piece for any shape (the contiguous US, rather than a center pulled toward Alaska).
+    function shapeCenter(layer, options) {
         const bounds = layer.getBounds();
-        if (bounds.getEast() - bounds.getWest() <= 180) return bounds.getCenter();
+        if (!(options && options.largestPiece) && bounds.getEast() - bounds.getWest() <= 180) return bounds.getCenter();
         let largest = null;
         let largestArea = -1;
         (function walk(latlngs) {
             if (!Array.isArray(latlngs) || !latlngs.length) return;
             if (latlngs[0] instanceof L.LatLng) {
                 const pieceBounds = L.latLngBounds(latlngs);
-                const area = (pieceBounds.getEast() - pieceBounds.getWest()) * (pieceBounds.getNorth() - pieceBounds.getSouth());
+                const area =(pieceBounds.getEast() - pieceBounds.getWest()) * (pieceBounds.getNorth() - pieceBounds.getSouth());
                 if (area > largestArea) { largest = pieceBounds; largestArea = area; }
                 return;
             }
