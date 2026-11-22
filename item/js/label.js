@@ -345,7 +345,9 @@ function compareCsvRowsByColumn(rowA, rowB, key) {
     return String(rawA).toLowerCase().localeCompare(String(rawB).toLowerCase());
 }
 
-function renderProductCsvList(container, rows, country, listSourceUrl, titleText = "Products", categoryPercentiles = {}) {
+// rowPercentiles (optional): a Map from row to its own subcategory's percentiles, for lists that combine
+// subcategories (maincat), since GWP units and spreads differ between subcategories.
+function renderProductCsvList(container, rows, country, listSourceUrl, titleText = "Products", categoryPercentiles = {}, rowPercentiles = null) {
     container.innerHTML = "";
 
     // Fall back to deriving percentiles from just this CSV's rows only when
@@ -371,8 +373,8 @@ function renderProductCsvList(container, rows, country, listSourceUrl, titleText
     const isNameOrGwpColumn = (key) => ["name", "gwp"].includes(key.toLowerCase());
 
     let workingRows = rows;
-    if (!hash.cat) {
-        // Across all categories (no cat hash), rows missing the sorted
+    if (!hash.cat && !hash.maincat) {
+        // Across all categories (no cat or maincat hash), rows missing the sorted
         // column's value have nothing meaningful to sort by - omit them.
         workingRows = workingRows.filter((row) => getRowValue(row, [sortKey]) !== "");
 
@@ -482,8 +484,9 @@ function renderProductCsvList(container, rows, country, listSourceUrl, titleText
             rowDiv.href = detailHref;
 
             if (gwpValue !== null) {
-                const rating = hasGWPPercentileData(categoryPercentiles)
-                    ? getPercentileRating(getGWPPercentileRank(gwpValue, categoryPercentiles))
+                const percentiles = (rowPercentiles && rowPercentiles.get(row)) || categoryPercentiles;
+                const rating = hasGWPPercentileData(percentiles)
+                    ? getPercentileRating(getGWPPercentileRank(gwpValue, percentiles))
                     : getImpactRating(gwpValue, "gwp");
                 const gwpRect = document.createElement("span");
                 gwpRect.className = "file-row-gwp";
@@ -674,7 +677,8 @@ async function loadMenu() {
     }
 
     if (hash.layout == "product") {
-        document.title = "Building Materials" + (hash.cat ? ` - ${hash.cat}` : "");
+        const mainCategory = !hash.cat && hash.maincat ? findProductMainCategory(selectedCountry, hash.maincat) : null;
+        document.title = "Building Materials" + (hash.cat ? ` - ${hash.cat}` : (mainCategory ? ` - ${mainCategory.name}` : ""));
         addUSDASearchBar(); // Show search bar with country dropdown
         searchResultsContainer.style.display = "none";
         menuContainer.style.display = "none";
@@ -705,6 +709,12 @@ async function loadMenu() {
             // If cat parameter exists, load that subcategory
             if (hash.cat) {
                 await selectProductSubcategory(selectedCountry, hash.cat);
+            } else if (mainCategory) {
+                await selectProductMainCategory(selectedCountry, mainCategory);
+            } else if (hash.list !== "all") {
+                // No cat: a visual menu of the main categories instead of the full
+                // list (over 27,000 rows). Its "List all products" link adds list=all.
+                renderProductCategoryGrid(document.getElementById("product-label"), selectedCountry);
             } else {
                 let allCsvUrl = buildAllCsvUrl(selectedCountry);
                 let allRows = await loadCsvList(allCsvUrl);
@@ -931,107 +941,152 @@ const FOOD_CATEGORIES = [
     }
 ];
 
+// short: concise titles for subcategory names of 3+ words, shown in the category cards (renderProductCategoryGrid),
+// with the full name as the tooltip. The left menu keeps the full names.
+// key: the section's maincat hash value, which lists every subcategory in the section (#layout=product&maincat=flooring). Uses "&" for "and" and leaves out "Other".
 const PRODUCT_CATEGORIES = {
     US: [
         {
+            key: "flooring",
             name: "Flooring",
             subcategories: ["Carpet", "Resilient_Flooring", "Ceramic_Tile", "Other_Flooring"]
         },
         {
+            key: "structural",
             name: "Structural Materials",
             subcategories: ["Cement", "Ready_Mix", "Flowable_Concrete_Fill", "Autoclaved_Aerated_Concrete",
-                          "Brick", "Supplementary_Cementitious_Materials", "Cast_Decks_and_Underlayment", "Aggregates"]
+                          "Brick", "Supplementary_Cementitious_Materials", "Cast_Decks_and_Underlayment", "Aggregates"],
+            short: { Flowable_Concrete_Fill: "Flowable Concrete", Autoclaved_Aerated_Concrete: "Aerated Concrete", Supplementary_Cementitious_Materials: "Cementitious Materials", Cast_Decks_and_Underlayment: "Decks & Underlayment" }
         },
         {
+            key: "metals",
             name: "Metals",
             subcategories: ["Aluminium", "Aluminium_Extrusions", "Aluminium_Billets", "Aluminium_Sheet_Goods",
-                          "Aluminium_Suspension_Assemblies", "Steel", "Coil_Steel"]
+                          "Aluminium_Suspension_Assemblies", "Steel", "Coil_Steel"],
+            short: { Aluminium_Sheet_Goods: "Aluminium Sheet", Aluminium_Suspension_Assemblies: "Aluminium Suspension" }
         },
         {
+            key: "walls",
             name: "Wall Systems",
-            subcategories: ["Gypsum_Board", "Cement_Board", "Fiber-cement_Siding", "Insulated_Wall_Panels"]
+            subcategories: ["Gypsum_Board", "Cement_Board", "Fiber-cement_Siding", "Insulated_Wall_Panels"],
+            short: { Insulated_Wall_Panels: "Insulated Panels" }
         },
         {
+            key: "ceilings",
             name: "Ceilings",
             subcategories: ["Acoustical_Ceilings", "Ceiling_Panels"]
         },
         {
+            key: "insulation",
             name: "Insulation",
             subcategories: ["Blanket", "Blown", "Board", "Mechanical_Insulation"]
         },
         {
+            key: "roofing",
             name: "Roofing",
             subcategories: ["Bituminous_Roofing", "Asphalt"]
         },
         {
+            key: "glass",
             name: "Glass & Glazing",
-            subcategories: ["Flat_Glass_Panes", "Processed_Non-insulating_Glass_Panes"]
+            subcategories: ["Flat_Glass_Panes", "Processed_Non-insulating_Glass_Panes"],
+            short: { Flat_Glass_Panes: "Flat Glass", "Processed_Non-insulating_Glass_Panes": "Processed Glass Panes" }
         },
         {
+            key: "doors",
             name: "Doors & Openings",
-            subcategories: ["Metal_Doors_and_Frames"]
+            subcategories: ["Metal_Doors_and_Frames"],
+            short: { Metal_Doors_and_Frames: "Metal Doors" }
         },
         {
+            key: "coatings",
             name: "Coatings & Protection",
             subcategories: ["Paint_By_Area", "Paint_By_Mass", "Applied_Fireproofing",
-                          "Dampproofing_And_Waterproofing", "Grouting"]
+                          "Dampproofing_And_Waterproofing", "Grouting"],
+            short: { Paint_By_Area: "Paint (Area)", Paint_By_Mass: "Paint (Mass)", Dampproofing_And_Waterproofing: "Waterproofing" }
         },
         {
+            key: "mechanical",
             name: "Mechanical & Plumbing",
-            subcategories: ["Utility_Piping", "Water_Closets", "Other_Plumbing_Fixtures", "Elevators"]
+            subcategories: ["Utility_Piping", "Water_Closets", "Other_Plumbing_Fixtures", "Elevators"],
+            short: { Other_Plumbing_Fixtures: "Plumbing Fixtures" }
         },
         {
+            key: "other",
             name: "Other Products",
             subcategories: ["Tables", "Clothing", "Food_Beverage"]
         }
     ],
     IN: [
         {
+            key: "flooring",
             name: "Flooring",
             subcategories: ["Carpet", "Resilient_Flooring", "Other_Flooring"]
         },
         {
+            key: "structural",
             name: "Structural Materials",
-            subcategories: ["Cement", "Ready_Mix", "Flowable_Concrete_Fill", "Brick"]
+            subcategories: ["Cement", "Ready_Mix", "Flowable_Concrete_Fill", "Brick"],
+            short: { Flowable_Concrete_Fill: "Flowable Concrete" }
         },
         {
+            key: "metals",
             name: "Metals",
-            subcategories: ["Aluminium", "Aluminium_Billets", "Aluminium_Sheet_Goods", "Steel", "Coil_Steel"]
+            subcategories: ["Aluminium", "Aluminium_Billets", "Aluminium_Sheet_Goods", "Steel", "Coil_Steel"],
+            short: { Aluminium_Sheet_Goods: "Aluminium Sheet" }
         },
         {
+            key: "walls",
             name: "Wall Systems",
-            subcategories: ["Gypsum_Board", "Cement_Board", "Fiber-cement_Siding", "Insulated_Wall_Panels"]
+            subcategories: ["Gypsum_Board", "Cement_Board", "Fiber-cement_Siding", "Insulated_Wall_Panels"],
+            short: { Insulated_Wall_Panels: "Insulated Panels" }
         },
         {
+            key: "ceilings",
             name: "Ceilings",
             subcategories: ["Acoustical_Ceilings"]
         },
         {
+            key: "insulation",
             name: "Insulation",
             subcategories: ["Mechanical_Insulation"]
         },
         {
+            key: "glass",
             name: "Glass & Glazing",
-            subcategories: ["Flat_Glass_Panes", "Processed_Non-insulating_Glass_Panes"]
+            subcategories: ["Flat_Glass_Panes", "Processed_Non-insulating_Glass_Panes"],
+            short: { Flat_Glass_Panes: "Flat Glass", "Processed_Non-insulating_Glass_Panes": "Processed Glass Panes" }
         },
         {
+            key: "doors",
             name: "Doors & Openings",
-            subcategories: ["Metal_Doors_and_Frames"]
+            subcategories: ["Metal_Doors_and_Frames"],
+            short: { Metal_Doors_and_Frames: "Metal Doors" }
         },
         {
+            key: "coatings",
             name: "Coatings & Protection",
-            subcategories: ["Paint_By_Area", "Paint_By_Mass", "Dampproofing_And_Waterproofing", "Grouting"]
+            subcategories: ["Paint_By_Area", "Paint_By_Mass", "Dampproofing_And_Waterproofing", "Grouting"],
+            short: { Paint_By_Area: "Paint (Area)", Paint_By_Mass: "Paint (Mass)", Dampproofing_And_Waterproofing: "Waterproofing" }
         },
         {
+            key: "mechanical",
             name: "Mechanical & Plumbing",
-            subcategories: ["Utility_Piping", "Water_Closets", "Other_Plumbing_Fixtures", "Elevators"]
+            subcategories: ["Utility_Piping", "Water_Closets", "Other_Plumbing_Fixtures", "Elevators"],
+            short: { Other_Plumbing_Fixtures: "Plumbing Fixtures" }
         },
         {
+            key: "other",
             name: "Consumer Products",
             subcategories: ["Tables", "Clothing", "Food_Beverage"]
         }
     ]
 };
+
+// A subcategory's display title: its short title when the category config has one
+function productSubcategoryTitle(category, subcatName) {
+    return (category.short && category.short[subcatName]) || subcatName.replace(/_/g, " ");
+}
 
 let selectedCategory = null;
 let selectedCountry = "US"; // Default country
@@ -1213,7 +1268,50 @@ function loadProductCategorySidebar() {
     const hash = (typeof getHash === "function") ? getHash() : getUrlHash();
     if (hash.cat) {
         highlightActiveSubcategory(hash.cat);
+    } else if (hash.maincat) {
+        const mainCategory = findProductMainCategory(selectedCountry, hash.maincat);
+        const title = mainCategory && [...categoryList.querySelectorAll(".category-title")]
+            .find(t => t.dataset.categoryName === mainCategory.name);
+        if (title) {
+            title.classList.add("active");
+            const arrow = title.querySelector(".toggle-arrow");
+            if (arrow) arrow.classList.add("open");
+            const subList = title.closest(".category-header").nextElementSibling;
+            if (subList) subList.style.display = "block";
+        }
     }
+}
+
+// The main product categories as cards (localsite/css/craft.css, as in #craftGrid on /desktop/),
+// shown when #layout=product has no cat. Each card's hover color reuses a Craft app color.
+const PRODUCT_CATEGORY_COLORS = ["texturecraft", "materialcraft", "cadcraft", "designcraft", "figcraft", "soundcraft",
+    "lightcraft", "wordcraft", "vectorcraft", "effectcraft", "gridcraft", "filmcraft"];
+
+function renderProductCategoryGrid(container, country) {
+    if (!container) return;
+    const categories = PRODUCT_CATEGORIES[country] || PRODUCT_CATEGORIES.US;
+    const catHref = (subcat) => `#layout=product&country=${country}&cat=${subcat}`;
+    const cards = categories.map((category, i) => {
+        const subcats = category.subcategories || [];
+        const num = String(i + 1).padStart(2, "0");
+        const color = PRODUCT_CATEGORY_COLORS[i % PRODUCT_CATEGORY_COLORS.length];
+        const links = subcats.map(subcat => {
+            const tip = category.short && category.short[subcat] ? ` title="${subcat.replace(/_/g, " ")}"` : "";
+            return `<a href="${catHref(subcat)}"${tip}>${productSubcategoryTitle(category, subcat)}</a>`;
+        }).join("");
+        return `<div class="craft-card craft-${color}">`
+            + `<div class="craft-card-head"><div>`
+            + `<div class="craft-card-cat">${subcats.length} ${subcats.length === 1 ? "subcategory" : "subcategories"}</div>`
+            + `<a class="craft-card-name product-category-link" href="#layout=product&country=${country}&maincat=${category.key}">${category.name}</a>`
+            + `</div><span class="craft-card-num">${num}</span></div>`
+            + `<div class="craft-card-desc product-category-subcats">${links}</div>`
+            + `</div>`;
+    }).join("");
+    container.innerHTML = `<div class="craft product-category-craft">`
+        + `<div class="craft-eyebrow">Building Materials</div>`
+        + `<div class="craft-grid">${cards}</div>`
+        + `<div class="product-category-all"><a href="#layout=product&country=${country}&list=all">List all products</a></div>`
+        + `</div>`;
 }
 
 function highlightActiveSubcategory(activeCat) {
@@ -1287,6 +1385,77 @@ function showCategoryBackBar(title) {
     setupCategoryBackBar();
     titleSpan.textContent = title.replace(/_/g, " ");
     bar.style.display = "flex";
+}
+
+// The left menu section for a maincat hash value: its key (flooring, structural...) or its name
+function findProductMainCategory(country, maincat) {
+    const categories = PRODUCT_CATEGORIES[country] || PRODUCT_CATEGORIES.US;
+    const value = String(maincat).toLowerCase();
+    return categories.find(c => c.key === value || c.name.toLowerCase() === value) || null;
+}
+
+// Lists the products of every subcategory in a left menu section (maincat hash), as one list.
+// Loads each subcategory's CSV, with each row rated against its own subcategory's percentiles.
+async function selectProductMainCategory(country, mainCategory) {
+    const container = document.getElementById("product-label");
+    if (!container) return;
+
+    const profileItemContent = document.getElementById("profile-item-content");
+    const contentWidth = profileItemContent ? profileItemContent.getBoundingClientRect().width : window.innerWidth;
+    const sidebarKey = "maincat:" + mainCategory.key;
+    if (contentWidth <= 800 && sidebarKey !== lastCategoryHashForSidebar) {
+        const categoryList = document.getElementById("category-list");
+        if (categoryList) categoryList.style.display = "none";
+        showCategoryBackBar(mainCategory.name);
+    }
+    lastCategoryHashForSidebar = sidebarKey;
+
+    container.innerHTML = `<h3>Loading ${mainCategory.name} products...</h3>`;
+
+    const loads = (mainCategory.subcategories || []).map(async (subcat) => {
+        let csvUrl = buildCategoryCsvUrl(country, subcat);
+        let rows = await loadCsvList(csvUrl).catch(() => null);
+        if (!rows || !rows.length) {
+            csvUrl = `${RAW_BASE}/${country}/${country}-${subcat}.csv`;
+            rows = await loadCsvList(csvUrl).catch(() => null);
+        }
+        if (!rows || !rows.length) return null;
+        let percentiles = await fetchCategoryGWPPercentiles(country, subcat, rows);
+        if (!hasGWPPercentileData(percentiles) && typeof computeGWPPercentiles === "function") {
+            percentiles = computeGWPPercentiles(rows.map(r => toNumber(getRowValue(r, ["gwp", "GWP"]))).filter(v => v !== null));
+        }
+        return { subcat, csvUrl, rows, percentiles };
+    });
+    const results = await Promise.all(loads);
+    const loaded = results.filter(Boolean);
+
+    // Subcategories without a CSV list their YAML files on their own page (selectProductSubcategory)
+    const missing = (mainCategory.subcategories || []).filter((subcat, i) => !results[i]);
+    const missingNote = document.createElement("div");
+    missingNote.className = "list-source";
+    missingNote.innerHTML = (loaded.length ? "Not in this list, without a CSV yet: " : "")
+        + missing.map(subcat => `<a href="#layout=product&country=${country}&cat=${subcat}">${subcat.replace(/_/g, " ")}</a>`).join(", ");
+
+    if (!loaded.length) {
+        container.innerHTML = `<h3>${mainCategory.name}</h3><p>No product CSVs yet for ${mainCategory.name}. View each subcategory's products:</p>`;
+        container.appendChild(missingNote);
+        return;
+    }
+
+    const rows = [];
+    const rowPercentiles = new Map();
+    loaded.forEach(({ rows: subRows, percentiles }) => {
+        subRows.forEach(row => { rows.push(row); rowPercentiles.set(row, percentiles); });
+    });
+    renderProductCsvList(container, rows, country, null, mainCategory.name, {}, rowPercentiles);
+
+    // The list's sources: one CSV per subcategory
+    const sources = document.createElement("div");
+    sources.className = "list-source";
+    sources.innerHTML = "List Sources: " + loaded.map(({ subcat, csvUrl }) =>
+        `<a href="${csvUrl}" target="_blank" rel="noopener">${subcat.replace(/_/g, " ")}</a>`).join(", ");
+    container.appendChild(sources);
+    if (missing.length) container.appendChild(missingNote);
 }
 
 async function selectProductSubcategory(country, subcategoryName) {

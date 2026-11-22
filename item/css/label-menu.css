@@ -435,3 +435,21 @@
   background-color: #334155;
   color: #f1f5f9;
 }
+
+/* Product category cards (renderProductCategoryGrid in js/label.js), shown for #layout=product without a cat.
+   Card styles are localsite/css/craft.css's .craft-grid, as in #craftGrid on /desktop/. Columns follow the
+   containing div: 3, then 4 when wider, and 2 or 1 when narrower. */
+.product-category-craft { container-type: inline-size; margin: 8px 0 20px; }
+.product-category-craft .craft-eyebrow { margin-bottom: 14px; }
+.product-category-craft .craft-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@container (min-width: 1100px) { .product-category-craft .craft-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@container (max-width: 720px) { .product-category-craft .craft-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 460px) { .product-category-craft .craft-grid { grid-template-columns: minmax(0, 1fr); } }
+/* The name's link covers the card, and the subcategory links sit above it */
+.product-category-craft .product-category-link, .product-category-craft .product-category-link:visited { color: var(--craft-ink); text-decoration: none; }
+.product-category-craft .product-category-link::after { content: ""; position: absolute; inset: 0; }
+.product-category-craft .product-category-subcats { display: flex; flex-wrap: wrap; align-content: flex-start; align-items: flex-start; gap: 6px; }
+.product-category-craft .product-category-subcats a { position: relative; z-index: 1; padding: 3px 9px; font-size: 13px;
+  border: 1px solid var(--craft-line); border-radius: 999px; color: var(--craft-muted); text-decoration: none; }
+.product-category-craft .product-category-subcats a:hover { color: var(--app-ink); border-color: var(--app); }
+.product-category-craft .product-category-all { margin-top: 18px; font-size: 14px; }
