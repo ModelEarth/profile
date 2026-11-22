@@ -108,3 +108,16 @@ Test with various products and categories:
 - Different percentile ranges
 - Missing data scenarios
 - Dark mode compatibility
+
+## Follow-up: Subcategories Without a CSV
+
+The building materials menus (`PRODUCT_CATEGORIES` in js/label.js) list only subcategories that have a CSV in products-data (`{country}/{country}-{subcategory}.csv`), since the lists and maincat sections load from those CSVs. The US subcategories below have YAML folders but no CSV yet, so they're in each section's `noCsv` list and left out of the left menu and the category cards. US Mechanical & Plumbing and Other Products have none left, so those sections are hidden.
+
+- Structural Materials: Supplementary_Cementitious_Materials
+- Metals: Aluminium_Billets, Aluminium_Sheet_Goods
+- Wall Systems: Cement_Board, Fiber-cement_Siding
+- Coatings & Protection: Dampproofing_And_Waterproofing, Grouting
+- Mechanical & Plumbing: Utility_Piping, Water_Closets, Other_Plumbing_Fixtures, Elevators
+- Other Products: Tables, Clothing, Food_Beverage
+
+To restore one, generate its CSV in products-data, then move its name from `noCsv` back into `subcategories`.

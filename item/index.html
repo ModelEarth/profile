@@ -13,18 +13,22 @@
 
 <!-- Before label.css, whose .supporting-industries-inline overrides the panel -->
 <link type="text/css" rel="stylesheet" href="css/supporting-industries.css" />
-<link type="text/css" rel="stylesheet" href="css/label.css?v=10" />
+<link type="text/css" rel="stylesheet" href="css/label.css?v=28" />
 <link type="text/css" rel="stylesheet" href="css/label-menu.css" />
 <link type="text/css" rel="stylesheet" href="../../localsite/css/craft.css" />
+<style>
+/* Light mode: the greyer page background of /desktop/ (base.css .lite, #eee). Dark mode keeps its own. */
+body:not(.dark) { background-color: #eee; }
+</style>
 <!-- Shared param UI  -->
 <link rel="stylesheet" href="/realitystream/css/param.css">
 <script src="https://cdn.jsdelivr.net/npm/js-yaml@4/dist/js-yaml.min.js"></script>
 <script src="/realitystream/js/param-input.js"></script>
 
-<script type="text/javascript" src="js/shared.js"></script>
+<script type="text/javascript" src="js/shared.js?v=2"></script>
 <script type="text/javascript" src="js/layout-product.js"></script>
 <script type="text/javascript" src="js/supporting-industries.js"></script>
-<script type="text/javascript" src="js/label-product.js?v=18"></script>
+<script type="text/javascript" src="js/label-product.js?v=29"></script>
 <script type="text/javascript" src="js/label.js"></script>
 <script>
 document.addEventListener('hashChangeEvent', hashChangedMenu, false);

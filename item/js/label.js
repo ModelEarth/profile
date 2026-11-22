@@ -942,146 +942,181 @@ const FOOD_CATEGORIES = [
 ];
 
 // short: concise titles for subcategory names of 3+ words, shown in the category cards (renderProductCategoryGrid),
-// with the full name as the tooltip. The left menu keeps the full names.
-// key: the section's maincat hash value, which lists every subcategory in the section (#layout=product&maincat=flooring). Uses "&" for "and" and leaves out "Other".
+// with the full name as the tooltip. Uses "&" for "and" and leaves out "Other". The left menu keeps the full names.
+// noCsv: subcategories left out of the menus until products-data has their CSV ({country}/{country}-{subcategory}.csv).
+//   Follow-up: generate those CSVs, then move each name back into subcategories. A section without subcategories
+//   (US Mechanical & Plumbing and Other Products, for now) is left out of the left menu and the category cards.
+// action: the work the section's materials go into (laying flooring, shingling roofs), the eyebrow on its category card.
+// key: the section's maincat hash value, which lists every subcategory in the section (#layout=product&maincat=flooring).
 const PRODUCT_CATEGORIES = {
     US: [
         {
             key: "flooring",
+            action: "Laying",
             name: "Flooring",
             subcategories: ["Carpet", "Resilient_Flooring", "Ceramic_Tile", "Other_Flooring"]
         },
         {
             key: "structural",
+            action: "Pouring",
             name: "Structural Materials",
-            subcategories: ["Cement", "Ready_Mix", "Flowable_Concrete_Fill", "Autoclaved_Aerated_Concrete",
-                          "Brick", "Supplementary_Cementitious_Materials", "Cast_Decks_and_Underlayment", "Aggregates"],
+            subcategories: ["Cement", "Ready_Mix", "Flowable_Concrete_Fill", "Autoclaved_Aerated_Concrete", "Brick", "Cast_Decks_and_Underlayment", "Aggregates"],
+            noCsv: ["Supplementary_Cementitious_Materials"],
             short: { Flowable_Concrete_Fill: "Flowable Concrete", Autoclaved_Aerated_Concrete: "Aerated Concrete", Supplementary_Cementitious_Materials: "Cementitious Materials", Cast_Decks_and_Underlayment: "Decks & Underlayment" }
         },
         {
             key: "metals",
+            action: "Fabricating",
             name: "Metals",
-            subcategories: ["Aluminium", "Aluminium_Extrusions", "Aluminium_Billets", "Aluminium_Sheet_Goods",
-                          "Aluminium_Suspension_Assemblies", "Steel", "Coil_Steel"],
+            subcategories: ["Aluminium", "Aluminium_Extrusions", "Aluminium_Suspension_Assemblies", "Steel", "Coil_Steel"],
+            noCsv: ["Aluminium_Billets", "Aluminium_Sheet_Goods"],
             short: { Aluminium_Sheet_Goods: "Aluminium Sheet", Aluminium_Suspension_Assemblies: "Aluminium Suspension" }
         },
         {
             key: "walls",
+            action: "Partitioning",
             name: "Wall Systems",
-            subcategories: ["Gypsum_Board", "Cement_Board", "Fiber-cement_Siding", "Insulated_Wall_Panels"],
+            subcategories: ["Gypsum_Board", "Insulated_Wall_Panels"],
+            noCsv: ["Cement_Board", "Fiber-cement_Siding"],
             short: { Insulated_Wall_Panels: "Insulated Panels" }
         },
         {
             key: "ceilings",
+            action: "Suspending",
             name: "Ceilings",
             subcategories: ["Acoustical_Ceilings", "Ceiling_Panels"]
         },
         {
             key: "insulation",
+            action: "Wrapping",
             name: "Insulation",
             subcategories: ["Blanket", "Blown", "Board", "Mechanical_Insulation"]
         },
         {
             key: "roofing",
+            action: "Shingling",
             name: "Roofing",
             subcategories: ["Bituminous_Roofing", "Asphalt"]
         },
         {
             key: "glass",
+            action: "Glazing",
             name: "Glass & Glazing",
             subcategories: ["Flat_Glass_Panes", "Processed_Non-insulating_Glass_Panes"],
             short: { Flat_Glass_Panes: "Flat Glass", "Processed_Non-insulating_Glass_Panes": "Processed Glass Panes" }
         },
         {
             key: "doors",
+            action: "Hanging",
             name: "Doors & Openings",
             subcategories: ["Metal_Doors_and_Frames"],
             short: { Metal_Doors_and_Frames: "Metal Doors" }
         },
         {
             key: "coatings",
+            action: "Finishing",
             name: "Coatings & Protection",
-            subcategories: ["Paint_By_Area", "Paint_By_Mass", "Applied_Fireproofing",
-                          "Dampproofing_And_Waterproofing", "Grouting"],
+            subcategories: ["Paint_By_Area", "Paint_By_Mass", "Applied_Fireproofing"],
+            noCsv: ["Dampproofing_And_Waterproofing", "Grouting"],
             short: { Paint_By_Area: "Paint (Area)", Paint_By_Mass: "Paint (Mass)", Dampproofing_And_Waterproofing: "Waterproofing" }
         },
         {
             key: "mechanical",
+            action: "Fitting",
             name: "Mechanical & Plumbing",
-            subcategories: ["Utility_Piping", "Water_Closets", "Other_Plumbing_Fixtures", "Elevators"],
+            subcategories: [],
+            noCsv: ["Utility_Piping", "Water_Closets", "Other_Plumbing_Fixtures", "Elevators"],
             short: { Other_Plumbing_Fixtures: "Plumbing Fixtures" }
         },
         {
             key: "other",
+            action: "Furnishing",
             name: "Other Products",
-            subcategories: ["Tables", "Clothing", "Food_Beverage"]
+            subcategories: [],
+            noCsv: ["Tables", "Clothing", "Food_Beverage"]
         }
     ],
     IN: [
         {
             key: "flooring",
+            action: "Laying",
             name: "Flooring",
             subcategories: ["Carpet", "Resilient_Flooring", "Other_Flooring"]
         },
         {
             key: "structural",
+            action: "Pouring",
             name: "Structural Materials",
             subcategories: ["Cement", "Ready_Mix", "Flowable_Concrete_Fill", "Brick"],
             short: { Flowable_Concrete_Fill: "Flowable Concrete" }
         },
         {
             key: "metals",
+            action: "Fabricating",
             name: "Metals",
             subcategories: ["Aluminium", "Aluminium_Billets", "Aluminium_Sheet_Goods", "Steel", "Coil_Steel"],
             short: { Aluminium_Sheet_Goods: "Aluminium Sheet" }
         },
         {
             key: "walls",
+            action: "Partitioning",
             name: "Wall Systems",
             subcategories: ["Gypsum_Board", "Cement_Board", "Fiber-cement_Siding", "Insulated_Wall_Panels"],
             short: { Insulated_Wall_Panels: "Insulated Panels" }
         },
         {
             key: "ceilings",
+            action: "Suspending",
             name: "Ceilings",
             subcategories: ["Acoustical_Ceilings"]
         },
         {
             key: "insulation",
+            action: "Wrapping",
             name: "Insulation",
             subcategories: ["Mechanical_Insulation"]
         },
         {
             key: "glass",
+            action: "Glazing",
             name: "Glass & Glazing",
             subcategories: ["Flat_Glass_Panes", "Processed_Non-insulating_Glass_Panes"],
             short: { Flat_Glass_Panes: "Flat Glass", "Processed_Non-insulating_Glass_Panes": "Processed Glass Panes" }
         },
         {
             key: "doors",
+            action: "Hanging",
             name: "Doors & Openings",
             subcategories: ["Metal_Doors_and_Frames"],
             short: { Metal_Doors_and_Frames: "Metal Doors" }
         },
         {
             key: "coatings",
+            action: "Finishing",
             name: "Coatings & Protection",
             subcategories: ["Paint_By_Area", "Paint_By_Mass", "Dampproofing_And_Waterproofing", "Grouting"],
             short: { Paint_By_Area: "Paint (Area)", Paint_By_Mass: "Paint (Mass)", Dampproofing_And_Waterproofing: "Waterproofing" }
         },
         {
             key: "mechanical",
+            action: "Fitting",
             name: "Mechanical & Plumbing",
             subcategories: ["Utility_Piping", "Water_Closets", "Other_Plumbing_Fixtures", "Elevators"],
             short: { Other_Plumbing_Fixtures: "Plumbing Fixtures" }
         },
         {
             key: "other",
+            action: "Furnishing",
             name: "Consumer Products",
             subcategories: ["Tables", "Clothing", "Food_Beverage"]
         }
     ]
 };
+
+// The sections shown in the left menu and the category cards: those with subcategories (see noCsv above)
+function getProductCategories(country) {
+    return (PRODUCT_CATEGORIES[country] || PRODUCT_CATEGORIES.US).filter(c => c.subcategories && c.subcategories.length);
+}
 
 // A subcategory's display title: its short title when the category config has one
 function productSubcategoryTitle(category, subcatName) {
@@ -1200,7 +1235,7 @@ function loadProductCategorySidebar() {
 
     categoryList.innerHTML = "";
 
-    const categories = PRODUCT_CATEGORIES[selectedCountry] || PRODUCT_CATEGORIES.US;
+    const categories = getProductCategories(selectedCountry);
 
     categories.forEach((category, index) => {
         // Create category container
@@ -1289,7 +1324,7 @@ const PRODUCT_CATEGORY_COLORS = ["texturecraft", "materialcraft", "cadcraft", "d
 
 function renderProductCategoryGrid(container, country) {
     if (!container) return;
-    const categories = PRODUCT_CATEGORIES[country] || PRODUCT_CATEGORIES.US;
+    const categories = getProductCategories(country);
     const catHref = (subcat) => `#layout=product&country=${country}&cat=${subcat}`;
     const cards = categories.map((category, i) => {
         const subcats = category.subcategories || [];
@@ -1297,11 +1332,11 @@ function renderProductCategoryGrid(container, country) {
         const color = PRODUCT_CATEGORY_COLORS[i % PRODUCT_CATEGORY_COLORS.length];
         const links = subcats.map(subcat => {
             const tip = category.short && category.short[subcat] ? ` title="${subcat.replace(/_/g, " ")}"` : "";
-            return `<a href="${catHref(subcat)}"${tip}>${productSubcategoryTitle(category, subcat)}</a>`;
+            return `<span><a href="${catHref(subcat)}"${tip}>${productSubcategoryTitle(category, subcat)}</a></span>`;
         }).join("");
         return `<div class="craft-card craft-${color}">`
             + `<div class="craft-card-head"><div>`
-            + `<div class="craft-card-cat">${subcats.length} ${subcats.length === 1 ? "subcategory" : "subcategories"}</div>`
+            + `<div class="craft-card-cat">${category.action || ""}</div>`
             + `<a class="craft-card-name product-category-link" href="#layout=product&country=${country}&maincat=${category.key}">${category.name}</a>`
             + `</div><span class="craft-card-num">${num}</span></div>`
             + `<div class="craft-card-desc product-category-subcats">${links}</div>`
@@ -1389,7 +1424,7 @@ function showCategoryBackBar(title) {
 
 // The left menu section for a maincat hash value: its key (flooring, structural...) or its name
 function findProductMainCategory(country, maincat) {
-    const categories = PRODUCT_CATEGORIES[country] || PRODUCT_CATEGORIES.US;
+    const categories = getProductCategories(country);
     const value = String(maincat).toLowerCase();
     return categories.find(c => c.key === value || c.name.toLowerCase() === value) || null;
 }
@@ -2024,10 +2059,7 @@ async function loadYAMLProfile(region, category, file) {
     // Clear old content
     container.innerHTML = "";
 
-    // Add breadcrumb at the very top (outside all other containers)
-    if (typeof renderCategoryBreadcrumb === "function") {
-        container.appendChild(renderCategoryBreadcrumb(data));
-    }
+    // The product's category and name are in the Product Details section header (renderProductTitle in label-product.js)
 
     // Create a flex container for label and details side by side
     const mainContent = document.createElement("div");

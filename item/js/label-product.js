@@ -196,6 +196,14 @@ function renderProductLabel(profileObject, quantity = 1, options = {}) {
         ? renderProductBadgeStyle(profileObject, quantity, verbosity)
         : renderProductFDAStyle(profileObject, quantity, verbosity);
     badgeWrapper.appendChild(badgeContent);
+    // The category back link, at the bottom inside the label (.eco-badge-label or .nutrition-label)
+    const categoryLink = productCategoryLink(profileObject);
+    if (categoryLink) {
+        const categoryBack = document.createElement("div");
+        categoryBack.className = "category-back";
+        categoryBack.innerHTML = categoryLink;
+        badgeContent.appendChild(categoryBack);
+    }
 
     const imageRect = document.createElement("div");
     if (profileObject.priorityImage) {
@@ -397,6 +405,59 @@ function openProductImageModal(imageUrl, imageList = null, startIndex = null) {
     modal.setAttribute("aria-hidden", "false");
 }
 
+// The category link above a label: a back triangle and the category's title, to the category's list. Its cat is the products-data folder name: the category's display
+// name (Ready Mix) with underscores where spaces reside (Ready_Mix), not the EC3 code (ReadyMix).
+function productCategoryLink(profileObject) {
+    const name = (profileObject.categoryDisplay || profileObject.category || "").trim();
+    if (!name) return "";
+    const cat = name.replace(/\s+/g, "_");
+    const title = name.replace(/_/g, " ");
+    // A small back triangle, with the category's title beside it in grey (css/label.css)
+    return `<a href="${getCategoryLinkPrefix()}#layout=product&cat=${cat}" class="category-link" title="Back to ${title}">`
+        + `<span class="category-link-arrow" aria-hidden="true">&#9664;</span>`
+        + `<span class="category-link-title">${title}</span></a>`;
+}
+
+// The declared unit in words, starting with "Effect": "1 m^2" -> "Effect per square meter",
+// "1000 ft2" -> "Effect per 1,000 square feet". Unknown units stay as given: "Effect per 2 bags".
+const DECLARED_UNIT_WORDS = {
+    m3: ["cubic meter", "cubic meters"], m2: ["square meter", "square meters"], m: ["meter", "meters"],
+    yd3: ["cubic yard", "cubic yards"], ft2: ["square foot", "square feet"], sf: ["square foot", "square feet"],
+    sqft: ["square foot", "square feet"], kg: ["kilogram", "kilograms"], t: ["metric ton", "metric tons"],
+    tonne: ["metric ton", "metric tons"], metricton: ["metric ton", "metric tons"], shortton: ["short ton", "short tons"],
+    ton: ["ton", "tons"], lb: ["pound", "pounds"], lbs: ["pound", "pounds"], unit: ["unit", "units"],
+    piece: ["piece", "pieces"], ea: ["item", "items"]
+};
+function declaredUnitPhrase(declaredUnit, quantity = 1) {
+    const raw = String(declaredUnit || "unit").trim();
+    const match = raw.match(/^([0-9.,]+(?:e[+-]?\d+)?)?\s*(.*)$/i);
+    let amount = match && match[1] ? parseFloat(match[1].replace(/,/g, "")) : 1;
+    if (!isFinite(amount)) amount = 1;
+    amount *= quantity || 1;
+    const unitText = (match ? match[2] : raw) || "unit";
+    const key = unitText.toLowerCase().replace(/²/g, "2").replace(/³/g, "3").replace(/[\s^.]/g, "");
+    const words = DECLARED_UNIT_WORDS[key];
+    if (!words) return `Effect per ${amount === 1 ? "" : amount.toLocaleString() + " "}${unitText}`;
+    return amount === 1
+        ? `Effect per ${words[0]}`
+        : `Effect per ${amount.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${words[1]}`;
+}
+
+// The label's toggles in its .category-header: Label / Badge at the left in the bordered .badge-style-holder,
+// and the Simple / Medium / Detailed popup at the right, outside that border. Each re-renders the label.
+function fillBadgeStyleHolder(labelDiv, profileObject) {
+    const holder = labelDiv.querySelector(".badge-style-holder");
+    if (!holder) return;
+    const reRender = (newSettings) => {
+        const container = document.getElementById("product-label");
+        if (container) {
+            reRenderProductLabel(profileObject, profileObject.rawData || {}, container, newSettings);
+        }
+    };
+    if (typeof createStyleToggle === "function") holder.appendChild(createStyleToggle(reRender));
+    if (typeof createVerbosityToggle === "function") holder.after(createVerbosityToggle(reRender));
+}
+
 // ============================================
 // FDA Nutrition Facts Style
 // ============================================
@@ -406,21 +467,16 @@ function renderProductFDAStyle(profileObject, quantity = 1, verbosity = "medium"
     div.className = "nutrition-label product-label fda-style";
 
     const declaredUnit = profileObject.declaredUnit || "unit";
-    const category = profileObject.category || "";
-    const categoryLink = category ? `<a href="${getCategoryLinkPrefix()}#layout=product&cat=${category}" class="category-link">${category.replace(/_/g, ' ')}</a>` : "";
-
-    // Header
+    // Header: the same product title and declared unit line as the Badge style (.product-info)
     div.innerHTML = `
         <div class="category-header">
-            <div class="category-header-left">${categoryLink || ""}</div>
-            <div class="category-header-right"></div>
+            <div class="badge-style-holder"></div>
         </div>
-        <div class="item-label-header">
-            <div class="item-name">${profileObject.itemName || "Product"}</div>
+        <div class="product-info product-label-title">
+            <div class="product-name">${profileObject.itemName || "Product"}</div>
+            <div class="declared-unit" title="Declared unit: ${declaredUnit}">${declaredUnitPhrase(declaredUnit, quantity)}</div>
         </div>
         <hr class="thick-line">
-        <div class="serving-size">Impact Per ${quantity > 1 ? quantity + " " : ""}${declaredUnit}</div>
-        <hr class="thin-line">
     `;
 
     // Filter sections based on verbosity
@@ -434,15 +490,7 @@ function renderProductFDAStyle(profileObject, quantity = 1, verbosity = "medium"
         div.appendChild(hr);
     });
 
-    const headerRight = div.querySelector(".category-header-right");
-    if (headerRight && typeof createStyleToggle === "function") {
-        headerRight.appendChild(createStyleToggle((newSettings) => {
-            const container = document.getElementById("product-label");
-            if (container) {
-                reRenderProductLabel(profileObject, profileObject.rawData || {}, container, newSettings);
-            }
-        }));
-    }
+    fillBadgeStyleHolder(div, profileObject);
 
     // Footer with benchmark info
     if (verbosity !== "simple") {
@@ -528,8 +576,6 @@ function renderProductBadgeStyle(profileObject, quantity = 1, verbosity = "mediu
     div.className = "eco-badge-label product-label badge-style";
 
     const declaredUnit = profileObject.declaredUnit || "unit";
-    const category = profileObject.category || "";
-    const categoryLink = category ? `<a href="${getCategoryLinkPrefix()}#layout=product&cat=${category}" class="category-link">${category.replace(/_/g, ' ')}</a>` : "";
 
     // Get primary GWP for the main badge
     const primaryGWP = profileObject.sections.find(s =>
@@ -547,13 +593,12 @@ function renderProductBadgeStyle(profileObject, quantity = 1, verbosity = "mediu
     // Header with product name above eco score badge
     div.innerHTML = `
         <div class="category-header">
-            <div class="category-header-left">${categoryLink || ""}</div>
-            <div class="category-header-right"></div>
+            <div class="badge-style-holder"></div>
         </div>
         <div class="eco-badge-header-vertical">
             <div class="product-info">
                 <div class="product-name">${profileObject.itemName || "Product"}</div>
-                <div class="declared-unit">Per ${quantity > 1 ? quantity + " " : ""}${declaredUnit}</div>
+                <div class="declared-unit" title="Declared unit: ${declaredUnit}">${declaredUnitPhrase(declaredUnit, quantity)}</div>
             </div>
             <hr class="badge-divider">
             <div class="eco-score-badge" style="background-color: ${rating.color}">
@@ -578,15 +623,7 @@ function renderProductBadgeStyle(profileObject, quantity = 1, verbosity = "mediu
 
     div.appendChild(breakdownDiv);
 
-    const headerRight = div.querySelector(".category-header-right");
-    if (headerRight && typeof createStyleToggle === "function") {
-        headerRight.appendChild(createStyleToggle((newSettings) => {
-            const container = document.getElementById("product-label");
-            if (container) {
-                reRenderProductLabel(profileObject, profileObject.rawData || {}, container, newSettings);
-            }
-        }));
-    }
+    fillBadgeStyleHolder(div, profileObject);
 
     // Composition section (if available)
     if (profileObject.composition && profileObject.composition.length > 0 && verbosity !== "simple") {
@@ -987,41 +1024,50 @@ function cleanText(text) {
 }
 
 // ============================================
-// OpenEPD Category Breadcrumb
+// Product Title (Product Details section header)
 // ============================================
 
-function renderCategoryBreadcrumb(data) {
+// The category link and product name, at the left of the Product Details section header (renderProductDescription).
+// Replaces the former .product-title-holder panel above the label.
+function renderProductTitle(data) {
     const div = document.createElement("div");
-    div.className = "product-title-holder";
+    div.className = "product-title-block";
 
     const hash = (typeof getHash === "function") ? getHash() : getUrlHash();
     const hashCategory = hash && hash.cat ? hash.cat : "";
     const displayName = cleanText(data.category?.display_name || "");
     const categoryLabel = displayName || (hashCategory ? hashCategory.replace(/_/g, " ") : "");
-
     const productName = cleanText(data.name || data.product_name || "");
 
-    if (!categoryLabel) {
-        div.style.display = "none";
+    if (!categoryLabel && !productName) {
+        div.innerHTML = "<h4>Product Details</h4>";
         return div;
     }
 
-    const catValue = categoryLabel.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    // The cat is the products-data folder: underscores where spaces reside, hyphens kept (Fiber-cement_Siding)
+    const catValue = categoryLabel.trim().replace(/\s+/g, "_");
     const countryParam = hash && hash.country ? `&country=${hash.country}` : "";
-    const titleContent = `
-        <a href="#layout=product${countryParam}&cat=${catValue}" class="product-title breadcrumb-link">${categoryLabel}</a>${hasSupportingIndustries(data) ? `<i class="material-icons si-category-icon" role="img"
-            aria-label="Industry supply data available" title="Industry supply data available: click a state under Geolocations to view its top ${SUPPORTING_INDUSTRIES_COUNT} supplying industries">bar_chart</i>` : ""}<br>
-        ${productName ? `<span class="product-title current" style="font-size: 1.3em; font-weight: 500;">${productName}</span>` : ""}
-    `;
-
-    div.innerHTML = `
-        <div style="flex: 1;">${titleContent}</div>
-        <button class="circular-close-btn" aria-label="Close" title="Close" onclick="if(typeof goHash === 'function') goHash({}, 'id');">
-            <i class="material-icons">cancel</i>
-        </button>
-    `;
-
+    const categoryHTML = categoryLabel
+        ? `<a href="#layout=product${countryParam}&cat=${catValue}" class="product-title breadcrumb-link">${categoryLabel}</a>${hasSupportingIndustries(data) ? `<i class="material-icons si-category-icon" role="img"
+            aria-label="Industry supply data available" title="Industry supply data available: click a state under Geolocations to view its top ${SUPPORTING_INDUSTRIES_COUNT} supplying industries">bar_chart</i>` : ""}`
+        : "";
+    div.innerHTML = categoryHTML
+        + (categoryHTML && productName ? "<br>" : "")
+        + (productName ? `<span class="product-title current">${productName}</span>` : "");
     return div;
+}
+
+// Closes the product (removes id from the hash), at the right of the Product Details section header
+function renderProductCloseButton() {
+    const button = document.createElement("button");
+    button.className = "circular-close-btn product-close-btn";
+    button.setAttribute("aria-label", "Close");
+    button.title = "Close";
+    button.innerHTML = '<i class="material-icons">cancel</i>';
+    button.addEventListener("click", () => {
+        if (typeof goHash === "function") goHash({}, "id");
+    });
+    return button;
 }
 
 // ============================================
@@ -2342,7 +2388,19 @@ function renderProductDescription(data, priorityImageUrl = null, profileObject =
         contentHTML += `<div class="description-text-wrapper"><p class="description-text">${description}</p></div>`;
     }
 
-    // Right side: single image with navigation (if images exist)
+    // Right side, when there's room: the first six images in two columns (css/label.css container query)
+    if (allImages.length > 1) {
+        contentHTML += `
+            <div class="description-images-grid">
+                ${allImages.slice(0, 6).map((img, i) => `
+                    <button type="button" class="description-grid-item" data-image-index="${i}" title="${String(img.path || "").replace(/"/g, "&quot;")}">
+                        <img src="${img.url}" alt="Product image ${i + 1}" loading="lazy" onerror="this.parentElement.style.display='none'">
+                    </button>`).join("")}
+                <button type="button" class="view-gallery-btn description-grid-all" aria-label="View all images" title="View all images">&#8862; All ${galleryImages.length} images</button>
+            </div>`;
+    }
+
+    // Right side otherwise: a single image with navigation (if images exist)
     if (allImages.length > 0) {
         const uniqueId = 'img-nav-' + Math.random().toString(36).substr(2, 9);
         div.dataset.imageNavId = uniqueId;
@@ -2389,22 +2447,16 @@ function renderProductDescription(data, priorityImageUrl = null, profileObject =
     }
 
     div.innerHTML = `
-        <div class="section-header">
-            <h4>Product Details</h4>
-            <div class="section-header-right"></div>
-        </div>
+        <div class="section-header"></div>
         ${contentHTML}
     `;
 
-    const sectionHeaderRight = div.querySelector(".section-header-right");
-    if (sectionHeaderRight && typeof createVerbosityToggle === "function" && profileObject) {
-        sectionHeaderRight.appendChild(createVerbosityToggle((newSettings) => {
-            const container = document.getElementById("product-label");
-            if (container && typeof reRenderProductLabel === "function") {
-                reRenderProductLabel(profileObject, data, container, newSettings);
-            }
-        }));
-    }
+    // The product's category and name at the left of the header, and its close button at the right
+    const sectionHeader = div.querySelector(".section-header");
+    sectionHeader.prepend(renderProductTitle(data));
+    sectionHeader.appendChild(renderProductCloseButton());
+
+    // The Simple / Medium / Detailed toggle is beside Label / Badge in the label's .badge-style-holder
 
     // Setup image navigation after DOM insertion
     if (allImages.length > 0) {
@@ -2442,7 +2494,7 @@ function setupImageNavigation(container, images, galleryImages = []) {
     const counter = navContainer?.querySelector('.image-counter');
     const viewGalleryBtn = navContainer?.querySelector('.view-gallery-btn');
     const gallery = container.querySelector('.image-gallery');
-    const closeGalleryBtn = container.querySelector('.circular-close-btn');
+    const closeGalleryBtn = container.querySelector('.image-gallery .circular-close-btn');
 
     if (!navContainer || !imageItem) return;
 
@@ -2484,19 +2536,33 @@ function setupImageNavigation(container, images, galleryImages = []) {
         });
     }
 
+    // The gallery replaces the single image or the two-column grid while open (.gallery-open in css/label.css)
+    const openGallery = () => {
+        gallery.style.display = 'block';
+        container.classList.add('gallery-open');
+    };
     if (viewGalleryBtn && gallery) {
-        viewGalleryBtn.addEventListener('click', () => {
-            gallery.style.display = 'block';
-            navContainer.style.display = 'none';
-        });
+        viewGalleryBtn.addEventListener('click', openGallery);
+    }
+    const gridAllBtn = container.querySelector('.description-grid-all');
+    if (gridAllBtn && gallery) {
+        gridAllBtn.addEventListener('click', openGallery);
     }
 
     if (closeGalleryBtn && gallery) {
         closeGalleryBtn.addEventListener('click', () => {
             gallery.style.display = 'none';
-            navContainer.style.display = 'flex';
+            container.classList.remove('gallery-open');
         });
     }
+
+    // Two-column grid: each image opens the image viewer at that image
+    container.querySelectorAll('.description-grid-item').forEach((item) => {
+        item.addEventListener('click', () => {
+            currentIndex = Number(item.dataset.imageIndex || 0);
+            openModalForCurrentImage();
+        });
+    });
 
     imageItem.addEventListener('click', openModalForCurrentImage);
 
@@ -2982,7 +3048,7 @@ if (typeof module !== 'undefined' && module.exports) {
         setupTravelDistanceCalculatorEnhanced,
         loadProductLabel,
         renderProductDetailsPanel,
-        renderCategoryBreadcrumb,
+        renderProductTitle,
         renderPercentileBarChart,
         renderProductionLocations,
         renderMaterialComposition,

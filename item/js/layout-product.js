@@ -94,6 +94,8 @@ function createProductProfileObject(sourceData) {
     const category = sourceData.category_name ||
                     (sourceData.category && sourceData.category.name) ||
                     sourceData.openepd_name?.split('>>')[0]?.trim() || "";
+    // The category's display name (Ready Mix), whose words joined by underscores name its products-data folder (Ready_Mix)
+    const categoryDisplay = (sourceData.category && sourceData.category.display_name) || "";
 
     // Build sections array with all available metrics
     const sections = buildProductSections(sourceData);
@@ -120,6 +122,7 @@ function createProductProfileObject(sourceData) {
         itemName,
         declaredUnit,
         category,
+        categoryDisplay,
         sections,
         composition,
         percentiles,

@@ -276,30 +276,64 @@ function createStyleToggle(onChange) {
     return styleToggle;
 }
 
+// Simple / Medium / Detailed as a popup menu: the button shows the current choice, and the popup
+// lists all three with a check mark beside the current one.
+const VERBOSITY_CHOICES = [["simple", "Simple"], ["medium", "Medium"], ["detailed", "Detailed"]];
+
 function createVerbosityToggle(onChange) {
     const settings = getLabelSettings();
+    const current = VERBOSITY_CHOICES.find(c => c[0] === settings.verbosity) || VERBOSITY_CHOICES[1];
     const verbosityToggle = document.createElement("div");
-    verbosityToggle.className = "verbosity-toggle";
+    verbosityToggle.className = "verbosity-toggle verbosity-menu";
     verbosityToggle.innerHTML = `
-        <button class="verbosity-btn sm-btn ${settings.verbosity === 'simple' ? 'active' : ''}" data-verbosity="simple">
-            Simple
+        <button type="button" class="verbosity-current sm-btn" aria-haspopup="menu" aria-expanded="false" title="Label detail">
+            <span class="verbosity-current-text">${current[1]}</span><span class="verbosity-caret" aria-hidden="true">&#9662;</span>
         </button>
-        <button class="verbosity-btn sm-btn ${settings.verbosity === 'medium' ? 'active' : ''}" data-verbosity="medium">
-            Medium
-        </button>
-        <button class="verbosity-btn sm-btn ${settings.verbosity === 'detailed' ? 'active' : ''}" data-verbosity="detailed">
-            Detailed
-        </button>
+        <div class="verbosity-popup" role="menu" hidden>
+            ${VERBOSITY_CHOICES.map(([value, label]) => `
+                <button type="button" class="verbosity-option" role="menuitemradio" data-verbosity="${value}"
+                    aria-checked="${value === current[0]}"><span class="verbosity-check" aria-hidden="true">${value === current[0] ? "&#10003;" : ""}</span>${label}</button>`).join("")}
+        </div>
     `;
 
-    verbosityToggle.querySelectorAll(".verbosity-btn").forEach(btn => {
-        btn.addEventListener("click", () => {
-            verbosityToggle.querySelectorAll(".verbosity-btn").forEach(b => b.classList.remove("active"));
-            btn.classList.add("active");
-            const newSettings = updateLabelSetting("verbosity", btn.dataset.verbosity);
+    const currentBtn = verbosityToggle.querySelector(".verbosity-current");
+    const popup = verbosityToggle.querySelector(".verbosity-popup");
+    const setOpen = (open) => {
+        popup.hidden = !open;
+        currentBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    };
+    currentBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        setOpen(popup.hidden);
+    });
+    verbosityToggle.querySelectorAll(".verbosity-option").forEach(option => {
+        option.addEventListener("click", (e) => {
+            e.stopPropagation();
+            setOpen(false);
+            const value = option.dataset.verbosity;
+            verbosityToggle.querySelectorAll(".verbosity-option").forEach(o => {
+                const selected = o === option;
+                o.setAttribute("aria-checked", selected ? "true" : "false");
+                o.querySelector(".verbosity-check").innerHTML = selected ? "&#10003;" : "";
+            });
+            verbosityToggle.querySelector(".verbosity-current-text").textContent = option.textContent.trim();
+            if (value === getLabelSettings().verbosity) return;
+            const newSettings = updateLabelSetting("verbosity", value);
             if (onChange) onChange(newSettings);
         });
     });
+
+    // One listener for the page closes any open verbosity popup on an outside click or Escape
+    if (!window.verbosityMenuListeners) {
+        window.verbosityMenuListeners = true;
+        const closeAll = () => document.querySelectorAll(".verbosity-popup:not([hidden])").forEach(p => {
+            p.hidden = true;
+            const btn = p.parentElement.querySelector(".verbosity-current");
+            if (btn) btn.setAttribute("aria-expanded", "false");
+        });
+        document.addEventListener("click", (e) => { if (!e.target.closest(".verbosity-menu")) closeAll(); });
+        document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll(); });
+    }
 
     return verbosityToggle;
 }

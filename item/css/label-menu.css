@@ -446,10 +446,13 @@
 @container (max-width: 720px) { .product-category-craft .craft-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @container (max-width: 460px) { .product-category-craft .craft-grid { grid-template-columns: minmax(0, 1fr); } }
 /* The name's link covers the card, and the subcategory links sit above it */
-.product-category-craft .product-category-link, .product-category-craft .product-category-link:visited { color: var(--craft-ink); text-decoration: none; }
+/* The section titles: black, and white in dark mode (#product-label outranks base.css's .dark .content a:link) */
+#product-label .product-category-craft .product-category-link:link, #product-label .product-category-craft .product-category-link:visited { color: #000; text-decoration: none; }
+.dark #product-label .product-category-craft .product-category-link:link, .dark #product-label .product-category-craft .product-category-link:visited { color: #fff; }
 .product-category-craft .product-category-link::after { content: ""; position: absolute; inset: 0; }
-.product-category-craft .product-category-subcats { display: flex; flex-wrap: wrap; align-content: flex-start; align-items: flex-start; gap: 6px; }
-.product-category-craft .product-category-subcats a { position: relative; z-index: 1; padding: 3px 9px; font-size: 13px;
-  border: 1px solid var(--craft-line); border-radius: 999px; color: var(--craft-muted); text-decoration: none; }
-.product-category-craft .product-category-subcats a:hover { color: var(--app-ink); border-color: var(--app); }
+/* Subcategory links: plain text links that wrap, separated by a middle dot */
+.product-category-craft .product-category-subcats { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 4px 0; font-size: 14px; line-height: 1.5; }
+.product-category-craft .product-category-subcats a { position: relative; z-index: 1; color: var(--craft-muted); text-decoration: none; }
+.product-category-craft .product-category-subcats span:not(:last-child)::after { content: "\00b7"; margin: 0 7px; font-size: 22px; line-height: 0; vertical-align: -3px; color: var(--craft-faint); }
+.product-category-craft .product-category-subcats a:hover { color: var(--app-ink); text-decoration: underline; text-underline-offset: 3px; }
 .product-category-craft .product-category-all { margin-top: 18px; font-size: 14px; }
