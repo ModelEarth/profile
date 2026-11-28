@@ -1832,12 +1832,39 @@ function renderMatrixTreemap(matrixData) {
     }
 
     el.style.display = 'block';
-    // Industry name as the title above the treemap, followed by the tagline
+    // The treemap shows the top 10 or top 25 of the list, chosen at the start of the title
+    const listLength = matrixData.length;
+    matrixData = matrixData.slice(0, matrixTreemapTop);
+    // Top 10 / Top 25 and the industry name as the title above the treemap, followed by the tagline
     try {
       const sectorName = (document.querySelector('#info h3') || {}).textContent || '';
       if (titleEl) {
-        titleEl.textContent = sectorName;
-        titleEl.style.display = sectorName ? 'block' : 'none';
+        titleEl.innerHTML = '';
+        const toggle = document.createElement('span');
+        toggle.className = 'matrix-toggle';
+        toggle.setAttribute('role', 'group');
+        toggle.setAttribute('aria-label', 'Industries in the treemap');
+        [10, 25].forEach(top => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.textContent = `Top ${top}`;
+          btn.title = `Show the top ${top} in the treemap`;
+          btn.classList.toggle('active', matrixTreemapTop === top);
+          btn.disabled = top > 10 && listLength <= 10; // Top 10 already shows the whole list
+          btn.addEventListener('click', () => {
+            if (matrixTreemapTop === top) return;
+            matrixTreemapTop = top;
+            renderMatrixTreemap(matrixTreemapData);
+          });
+          toggle.appendChild(btn);
+        });
+        titleEl.appendChild(toggle);
+        if (sectorName) {
+          const name = document.createElement('span');
+          name.textContent = sectorName;
+          titleEl.appendChild(name);
+        }
+        titleEl.style.display = 'block';
       }
       if (taglineEl && regionView) {
         taglineEl.style.display = 'block';
@@ -2306,6 +2333,8 @@ var mainTable, matrixTable;
 var matrixDirection = 'sellers';
 // Rank and size by 'spent' (total dollars), 'coefficient' (amount per $1) or 'impact' (one indicator)
 var matrixRank = 'spent';
+// How many of the top 25 the treemap shows: 10 or 25, chosen by the Top 10 / Top 25 toggle in its title
+var matrixTreemapTop = 25;
 var matrixLists = null;
 // Indicator for the Impact ranking, chosen by clicking a row in the impacts chart: {code, index, name, unit}
 var matrixImpact = null;
